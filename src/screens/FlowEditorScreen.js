@@ -41,6 +41,11 @@ const getRect = node => ({
   height: node.size.height,
 });
 
+const getCenter = node => ({
+  x: node.position.x + node.size.width / 2,
+  y: node.position.y + node.size.height / 2,
+});
+
 const doRectsOverlap = (rect1, rect2) => {
   return (
     rect1.x < rect2.x + rect2.width &&
@@ -438,14 +443,30 @@ const FlowEditorScreen = ({ route, navigation }) => {
     }
   };
 
-  const getClosestHandle = (node, point) => {
+  const getClosestHandle = (sourceNode, targetNode) => {
+    const sourceCenter = getCenter(sourceNode);
+    const targetCenter = getCenter(targetNode);
+
+    const dx = targetCenter.x - sourceCenter.x;
+    const dy = targetCenter.y - sourceCenter.y;
+
+    let candidateHandles = [];
+    if (Math.abs(dy) > Math.abs(dx)) {
+      // 主に垂直方向
+      candidateHandles = ['handleTop', 'handleBottom'];
+    } else {
+      // 主に水平方向
+      candidateHandles = ['handleLeft', 'handleRight'];
+    }
+
     let minDistance = Infinity;
     let closestHandle = null;
 
-    HANDLE_NAMES.forEach(handleName => {
-      const handlePos = getHandlePosition(node, handleName);
+    candidateHandles.forEach(handleName => {
+      const handlePos = getHandlePosition(sourceNode, handleName);
       const distance = Math.sqrt(
-        Math.pow(handlePos.x - point.x, 2) + Math.pow(handlePos.y - point.y, 2),
+        Math.pow(handlePos.x - targetCenter.x, 2) +
+          Math.pow(handlePos.y - targetCenter.y, 2),
       );
       if (distance < minDistance) {
         minDistance = distance;
@@ -479,14 +500,8 @@ const FlowEditorScreen = ({ route, navigation }) => {
         );
 
         if (!existingEdge) {
-          const sourceHandle = getClosestHandle(
-            sourceNode,
-            targetNode.position,
-          );
-          const targetHandle = getClosestHandle(
-            targetNode,
-            sourceNode.position,
-          );
+          const sourceHandle = getClosestHandle(sourceNode, targetNode);
+          const targetHandle = getClosestHandle(targetNode, sourceNode);
 
           const newEdge = {
             id: uuidv4(),
