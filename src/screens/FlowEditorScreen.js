@@ -16,6 +16,7 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   runOnJS,
+  useAnimatedProps,
 } from 'react-native-reanimated';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
@@ -33,6 +34,8 @@ import OriginalTheme from './OriginalTheme'; // 既存のテーマをインポ�
 
 const CARD_MIN_SIZE = { width: 150, height: 70 };
 const { width, height } = Dimensions.get('window');
+
+const AnimatedLine = Animated.createAnimatedComponent(Line);
 
 const getRect = node => ({
   x: node.position.x,
@@ -55,6 +58,46 @@ const doRectsOverlap = (rect1, rect2) => {
   );
 };
 const HANDLE_NAMES = ['handleTop', 'handleRight', 'handleBottom', 'handleLeft'];
+
+const AnimatedEdge = ({
+  edge,
+  sourceNode,
+  targetNode,
+  translateX,
+  translateY,
+  getHandlePosition,
+}) => {
+  const p1 = getHandlePosition(sourceNode, edge.sourceHandle);
+  const p2 = getHandlePosition(targetNode, edge.targetHandle);
+
+  const animatedProps = useAnimatedProps(() => {
+    return {
+      x1: p1.x + translateX.value,
+      y1: p1.y + translateY.value,
+      x2: p2.x + translateX.value,
+      y2: p2.y + translateY.value,
+    };
+  });
+
+  return (
+    <React.Fragment>
+      {/* Hit area for tap gesture */}
+      <AnimatedLine
+        animatedProps={animatedProps}
+        stroke="transparent"
+        strokeWidth="15"
+      />
+      {/* Visible line */}
+      <AnimatedLine
+        animatedProps={animatedProps}
+        stroke="black"
+        strokeWidth="2"
+        markerEnd="url(#arrow)"
+        pointerEvents="none"
+      />
+    </React.Fragment>
+  );
+};
 
 const FlowEditorScreen = ({ route, navigation }) => {
   const { flowId, flowName } = route.params; // flowNameを受け取る
@@ -600,31 +643,16 @@ const FlowEditorScreen = ({ route, navigation }) => {
       const targetNode = displayNodes.find(n => n.id === edge.target);
       if (!sourceNode || !targetNode) return null;
 
-      const p1 = getHandlePosition(sourceNode, edge.sourceHandle);
-      const p2 = getHandlePosition(targetNode, edge.targetHandle);
       return (
-        <React.Fragment key={edge.id}>
-          {/* Hit area */}
-          <Line
-            x1={p1.x}
-            y1={p1.y}
-            x2={p2.x}
-            y2={p2.y}
-            stroke="transparent"
-            strokeWidth="15"
-          />
-          {/* Visible line */}
-          <Line
-            x1={p1.x}
-            y1={p1.y}
-            x2={p2.x}
-            y2={p2.y}
-            stroke="black"
-            strokeWidth="2"
-            markerEnd="url(#arrow)"
-            pointerEvents="none"
-          />
-        </React.Fragment>
+        <AnimatedEdge
+          key={edge.id}
+          edge={edge}
+          sourceNode={sourceNode}
+          targetNode={targetNode}
+          translateX={translateX}
+          translateY={translateY}
+          getHandlePosition={getHandlePosition}
+        />
       );
     });
   };
@@ -677,6 +705,30 @@ const FlowEditorScreen = ({ route, navigation }) => {
           gesture={linkingState.active ? tapGesture : panGesture}
         >
           <Animated.View style={[styles.flowArea, { overflow: 'hidden' }]}>
+            <Svg
+              style={{
+                position: 'absolute',
+                width: width,
+                height: height,
+              }}
+              pointerEvents="box-none"
+            >
+              <Defs>
+                <Marker
+                  id="arrow"
+                  viewBox="0 0 10 10"
+                  refX="8"
+                  refY="5"
+                  markerWidth="6"
+                  markerHeight="6"
+                  orient="auto"
+                >
+                  <Path d="M 0 0 L 10 5 L 0 10 z" fill="black" />
+                </Marker>
+              </Defs>
+              {renderEdges()}
+            </Svg>
+
             <Animated.View style={animatedStyle}>
               {displayNodes.map(node => (
                 <Card
@@ -698,25 +750,6 @@ const FlowEditorScreen = ({ route, navigation }) => {
                   zIndex={node.zIndex}
                 />
               ))}
-              <Svg
-                style={{ position: 'absolute', width, height, zIndex: 99 }}
-                pointerEvents="box-none"
-              >
-                <Defs>
-                  <Marker
-                    id="arrow"
-                    viewBox="0 0 10 10"
-                    refX="8"
-                    refY="5"
-                    markerWidth="6"
-                    markerHeight="6"
-                    orient="auto"
-                  >
-                    <Path d="M 0 0 L 10 5 L 0 10 z" fill="black" />
-                  </Marker>
-                </Defs>
-                {renderEdges()}
-              </Svg>
             </Animated.View>
           </Animated.View>
         </GestureDetector>
