@@ -28,6 +28,8 @@ import {
   deleteNode,
   insertEdge,
   deleteEdge,
+  updateFlow,
+  getFlows,
 } from '../db';
 import { FAB, IconButton, Provider as PaperProvider } from 'react-native-paper';
 import OriginalTheme from './OriginalTheme'; // 既存のテーマをインポート
@@ -156,6 +158,41 @@ const FlowEditorScreen = ({ route, navigation }) => {
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
   const context = useSharedValue({ x: 0, y: 0 });
+
+  useEffect(() => {
+    const loadPosition = async () => {
+      try {
+        const flows = await getFlows();
+        const currentFlow = flows.find(f => f.id === flowId);
+        if (currentFlow && currentFlow.lastPosition) {
+          const position = JSON.parse(currentFlow.lastPosition);
+          translateX.value = position.x;
+          translateY.value = position.y;
+          runOnJS(setPanOffset)({ x: position.x, y: position.y });
+        }
+      } catch (error) {
+        console.error('Failed to load last position:', error);
+      }
+    };
+    loadPosition();
+  }, [flowId, translateX, translateY]);
+
+  useEffect(() => {
+    return () => {
+      const savePosition = async () => {
+        try {
+          const position = {
+            x: translateX.value,
+            y: translateY.value,
+          };
+          await updateFlow(flowId, { lastPosition: JSON.stringify(position) });
+        } catch (error) {
+          console.error('Failed to save last position:', error);
+        }
+      };
+      savePosition();
+    };
+  }, [flowId, translateX, translateY]);
 
   const fetchData = useCallback(async () => {
     try {
