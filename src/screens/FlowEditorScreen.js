@@ -35,7 +35,7 @@ import OriginalTheme from './OriginalTheme'; // 既存のテーマをインポ�
 const CARD_MIN_SIZE = { width: 150, height: 70 };
 const { width, height } = Dimensions.get('window');
 
-const AnimatedLine = Animated.createAnimatedComponent(Line);
+const AnimatedPath = Animated.createAnimatedComponent(Path);
 
 const getRect = node => ({
   x: node.position.x,
@@ -71,29 +71,70 @@ const AnimatedEdge = ({
   const p2 = getHandlePosition(targetNode, edge.targetHandle);
 
   const animatedProps = useAnimatedProps(() => {
+    const startX = p1.x + translateX.value;
+    const startY = p1.y + translateY.value;
+    const endX = p2.x + translateX.value;
+    const endY = p2.y + translateY.value;
+
+    const dx = endX - startX;
+    const dy = endY - startY;
+    const curvature = 0.5;
+    let c1x, c1y, c2x, c2y;
+
+    if (edge.sourceHandle === 'handleRight') {
+      c1x = startX + Math.abs(dx) * curvature;
+      c1y = startY;
+    } else if (edge.sourceHandle === 'handleLeft') {
+      c1x = startX - Math.abs(dx) * curvature;
+      c1y = startY;
+    } else if (edge.sourceHandle === 'handleTop') {
+      c1x = startX;
+      c1y = startY - Math.abs(dy) * curvature;
+    } else {
+      // handleBottom
+      c1x = startX;
+      c1y = startY + Math.abs(dy) * curvature;
+    }
+
+    if (edge.targetHandle === 'handleRight') {
+      c2x = endX + Math.abs(dx) * curvature;
+      c2y = endY;
+    } else if (edge.targetHandle === 'handleLeft') {
+      c2x = endX - Math.abs(dx) * curvature;
+      c2y = endY;
+    } else if (edge.targetHandle === 'handleTop') {
+      c2x = endX;
+      c2y = endY - Math.abs(dy) * curvature;
+    } else {
+      // handleBottom
+      c2x = endX;
+      c2y = endY + Math.abs(dy) * curvature;
+    }
+
+    const path = `M ${startX} ${startY} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${endX} ${endY}`;
+
     return {
-      x1: p1.x + translateX.value,
-      y1: p1.y + translateY.value,
-      x2: p2.x + translateX.value,
-      y2: p2.y + translateY.value,
+      d: path,
     };
   });
 
   return (
     <React.Fragment>
       {/* Hit area for tap gesture */}
-      <AnimatedLine
+      <AnimatedPath
         animatedProps={animatedProps}
         stroke="transparent"
         strokeWidth="15"
+        fill="none"
       />
       {/* Visible line */}
-      <AnimatedLine
+      <AnimatedPath
         animatedProps={animatedProps}
         stroke="black"
         strokeWidth="2"
         markerEnd="url(#arrow)"
         pointerEvents="none"
+        fill="none"
       />
     </React.Fragment>
   );
