@@ -1,14 +1,13 @@
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
-import { View, StyleSheet, TextInput, Dimensions, Alert } from 'react-native';
+import { View, StyleSheet, Dimensions, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Svg, { Path, Defs, Marker } from 'react-native-svg';
+import { Canvas, Path, Skia, Group } from '@shopify/react-native-skia';
 import Card from '../components/Card';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   runOnJS,
-  useAnimatedProps,
   useDerivedValue,
 } from 'react-native-reanimated';
 import 'react-native-get-random-values';
@@ -26,14 +25,9 @@ import {
 } from '../db';
 import { FAB, Provider as PaperProvider } from 'react-native-paper';
 import OriginalTheme from './OriginalTheme'; // 既存のテーマをインポート
-import { get } from 'react-native/Libraries/TurboModule/TurboModuleRegistry';
 
 const CARD_MIN_SIZE = { width: 150, height: 70 };
 const { width, height } = Dimensions.get('window');
-
-const AnimatedPath = Animated.createAnimatedComponent(Path);
-const AnimatedTextInput = Animated.createAnimatedComponent(TextInput);
-const AnimatedSvg = Animated.createAnimatedComponent(Svg);
 
 const getRect = node => ({
   x: node.position.x,
@@ -55,7 +49,6 @@ const doRectsOverlap = (rect1, rect2) => {
     rect1.y + rect1.height > rect2.y
   );
 };
-const HANDLE_NAMES = ['handleTop', 'handleRight', 'handleBottom', 'handleLeft'];
 
 const getHandlePosition = (node, handleName) => {
   'worklet';
@@ -75,91 +68,81 @@ const getHandlePosition = (node, handleName) => {
   }
 };
 
-const AnimatedEdge = ({
-  edge,
-  sourceNode,
-  targetNode,
-  translateX,
-  translateY,
-  scale,
-}) => {
-  // 座標計算をuseDerivedValueでリアクティブに
-  const sourcePos = useDerivedValue(() => {
-    const raw = getHandlePosition(sourceNode, edge.sourceHandle);
-    return { x: raw.x, y: raw.y };
-  }, [sourceNode, edge.sourceHandle]);
+const CalcSkiaEdgeStroke = ({ edge, sourceNode, targetNode }) => {
+  const sourcePos = getHandlePosition(sourceNode, edge.sourceHandle);
+  const targetPos = getHandlePosition(targetNode, edge.targetHandle);
 
-  const targetPos = useDerivedValue(() => {
-    const raw = getHandlePosition(targetNode, edge.targetHandle);
-    return { x: raw.x, y: raw.y };
-  }, [targetNode, edge.targetHandle]);
+  const startX = sourcePos.x;
+  const startY = sourcePos.y;
+  const endX = targetPos.x;
+  const endY = targetPos.y;
 
-  const animatedProps = useAnimatedProps(() => {
-    // SVGのviewBox補正を考慮
-    const startX = sourcePos.value.x;
-    const startY = sourcePos.value.y;
-    const endX = targetPos.value.x;
-    const endY = targetPos.value.y;
+  const dx = endX - startX;
+  const dy = endY - startY;
+  const curvature = 0.5;
+  let c1x, c1y, c2x, c2y;
 
-    const dx = endX - startX;
-    const dy = endY - startY;
-    const curvature = 0.5;
-    let c1x, c1y, c2x, c2y;
+  if (edge.sourceHandle === 'handleRight') {
+    c1x = startX + Math.abs(dx) * curvature;
+    c1y = startY;
+  } else if (edge.sourceHandle === 'handleLeft') {
+    c1x = startX - Math.abs(dx) * curvature;
+    c1y = startY;
+  } else if (edge.sourceHandle === 'handleTop') {
+    c1x = startX;
+    c1y = startY - Math.abs(dy) * curvature;
+  } else {
+    c1x = startX;
+    c1y = startY + Math.abs(dy) * curvature;
+  }
 
-    if (edge.sourceHandle === 'handleRight') {
-      c1x = startX + Math.abs(dx) * curvature;
-      c1y = startY;
-    } else if (edge.sourceHandle === 'handleLeft') {
-      c1x = startX - Math.abs(dx) * curvature;
-      c1y = startY;
-    } else if (edge.sourceHandle === 'handleTop') {
-      c1x = startX;
-      c1y = startY - Math.abs(dy) * curvature;
-    } else {
-      c1x = startX;
-      c1y = startY + Math.abs(dy) * curvature;
-    }
+  if (edge.targetHandle === 'handleRight') {
+    c2x = endX + Math.abs(dx) * curvature;
+    c2y = endY;
+  } else if (edge.targetHandle === 'handleLeft') {
+    c2x = endX - Math.abs(dx) * curvature;
+    c2y = endY;
+  } else if (edge.targetHandle === 'handleTop') {
+    c2x = endX;
+    c2y = endY - Math.abs(dy) * curvature;
+  } else {
+    c2x = endX;
+    c2y = endY + Math.abs(dy) * curvature;
+  }
 
-    if (edge.targetHandle === 'handleRight') {
-      c2x = endX + Math.abs(dx) * curvature;
-      c2y = endY;
-    } else if (edge.targetHandle === 'handleLeft') {
-      c2x = endX - Math.abs(dx) * curvature;
-      c2y = endY;
-    } else if (edge.targetHandle === 'handleTop') {
-      c2x = endX;
-      c2y = endY - Math.abs(dy) * curvature;
-    } else {
-      c2x = endX;
-      c2y = endY + Math.abs(dy) * curvature;
-    }
+  const skPath = Skia.Path.Make();
+  skPath.moveTo(startX, startY);
+  skPath.cubicTo(c1x, c1y, c2x, c2y, endX, endY);
 
-    const path = `M ${startX} ${startY} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${endX} ${endY}`;
-    return { d: path };
-  });
+  // Arrowhead
+  const angle = Math.atan2(endY - c2y, endX - c2x);
+  const arrowSize = 10;
+  const arrowAngle = Math.PI / 6;
 
-  return (
-    <>
-      <AnimatedPath
-        animatedProps={animatedProps}
-        stroke="transparent"
-        strokeWidth="15"
-        fill="none"
-      />
-      <AnimatedPath
-        animatedProps={animatedProps}
-        stroke="black"
-        strokeWidth="2"
-        markerEnd="url(#arrow)"
-        pointerEvents="none"
-        fill="none"
-      />
-    </>
-  );
+  const x1 = endX - arrowSize * Math.cos(angle - arrowAngle);
+  const y1 = endY - arrowSize * Math.sin(angle - arrowAngle);
+  skPath.moveTo(endX, endY);
+  skPath.lineTo(x1, y1);
+
+  const x2 = endX - arrowSize * Math.cos(angle + arrowAngle);
+  const y2 = endY - arrowSize * Math.sin(angle + arrowAngle);
+  skPath.moveTo(endX, endY);
+  skPath.lineTo(x2, y2);
+
+  return skPath;
+};
+
+const CalcSkiaInteractionEdgeStroke = ({ edge, sourceNode, targetNode }) => {
+  const sourcePos = getHandlePosition(sourceNode, edge.sourceHandle);
+  const targetPos = getHandlePosition(targetNode, edge.targetHandle);
+  const skPath = Skia.Path.Make();
+  skPath.moveTo(sourcePos.x, sourcePos.y);
+  skPath.lineTo(targetPos.x, targetPos.y);
+  return skPath;
 };
 
 const FlowEditorScreen = ({ route, navigation }) => {
-  const { flowId, flowName } = route.params; // flowNameを受け取る
+  const { flowId, flowName } = route.params;
   const [allNodes, setAllNodes] = useState([]);
   const [edges, setEdges] = useState([]);
   const [currentParentId, setCurrentParentId] = useState('root');
@@ -279,27 +262,11 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [
-      { scale: scale.value },
       { translateX: translateX.value },
       { translateY: translateY.value },
+      { scale: scale.value },
     ],
   }));
-
-  const animatedViewBoxProps = useAnimatedProps(() => {
-    const viewBoxWidth = width / scale.value;
-    const viewBoxHeight = height / scale.value;
-    const viewBoxX = -translateX.value / scale.value;
-    const viewBoxY = -translateY.value / scale.value;
-    return {
-      viewBox: `${viewBoxX} ${viewBoxY} ${viewBoxWidth} ${viewBoxHeight}`,
-    };
-  });
-
-  const animatedZoomTextProps = useAnimatedProps(() => {
-    return {
-      text: `${Math.round(scale.value * 100)}%`,
-    };
-  });
 
   const composedGesture = Gesture.Simultaneous(panGesture, pinchGesture);
 
@@ -471,8 +438,8 @@ const FlowEditorScreen = ({ route, navigation }) => {
       parentId: currentParentId,
       label: '新しいカード',
       description: '',
-      x: 10 - panOffset.x,
-      y: 10 - panOffset.y,
+      x: (10 - translateX.value) / scale.value,
+      y: (10 - translateY.value) / scale.value,
       width: CARD_MIN_SIZE.width,
       height: CARD_MIN_SIZE.height,
     };
@@ -614,10 +581,8 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
     let candidateHandles = [];
     if (Math.abs(dy) > Math.abs(dx)) {
-      // 主に垂直方向
       candidateHandles = ['handleTop', 'handleBottom'];
     } else {
-      // 主に水平方向
       candidateHandles = ['handleLeft', 'handleRight'];
     }
 
@@ -743,9 +708,9 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
   const tapGesture = Gesture.Tap().onEnd((event, success) => {
     if (success) {
-      const pannedTapX = event.x - translateX.value;
-      const pannedTapY = event.y - translateY.value;
-      runOnJS(checkForEdgeTap)({ x: pannedTapX, y: pannedTapY });
+      const worldX = (event.x - translateX.value) / scale.value;
+      const worldY = (event.y - translateY.value) / scale.value;
+      runOnJS(checkForEdgeTap)({ x: worldX, y: worldY });
     }
   });
 
@@ -761,58 +726,30 @@ const FlowEditorScreen = ({ route, navigation }) => {
       const targetNode = displayNodes.find(n => n.id === edge.target);
       if (!sourceNode || !targetNode) return null;
 
+      const interactionPath = CalcSkiaInteractionEdgeStroke({
+        edge,
+        sourceNode,
+        targetNode,
+      });
+      const path = CalcSkiaEdgeStroke({ edge, sourceNode, targetNode });
+
       return (
-        <AnimatedEdge
-          key={edge.id}
-          edge={edge}
-          sourceNode={sourceNode}
-          targetNode={targetNode}
-          translateX={translateX}
-          translateY={translateY}
-          scale={scale}
-        />
+        <Group key={edge.id + '_group'}>
+          {/* Path for interaction (wider, transparent) */}
+          <Path
+            path={interactionPath}
+            style="stroke"
+            strokeWidth={15}
+            color="transparent"
+          />
+          {/* Visible path */}
+          <Path path={path} style="stroke" strokeWidth={2} color="black" />
+        </Group>
       );
     });
   };
 
-  // FABの表示制御
   const fabDisabled = linkingState.active;
-
-  // SVGの描画範囲を動的に計算
-  const svgBounds = useMemo(() => {
-    if (displayNodes.length === 0) {
-      return { minX: 0, minY: 0, maxX: width, maxY: height };
-    }
-    const minX = Math.min(...displayNodes.map(n => n.position.x));
-    const minY = Math.min(...displayNodes.map(n => n.position.y));
-    const maxX = Math.max(
-      ...displayNodes.map(n => n.position.x + n.size.width),
-    );
-    const maxY = Math.max(
-      ...displayNodes.map(n => n.position.y + n.size.height),
-    );
-    // 余白を追加
-    return {
-      minX: minX - 100,
-      minY: minY - 100,
-      maxX: maxX + 100,
-      maxY: maxY + 100,
-    };
-  }, [displayNodes]);
-
-  const svgCenter = useMemo(() => {
-    return {
-      x: (svgBounds.maxX + svgBounds.minX) / 2,
-      y: (svgBounds.maxY + svgBounds.minY) / 2,
-    };
-  }, [svgBounds]);
-
-  useEffect(() => {
-    // 初期表示時のみ中央に移動
-    translateX.value = width / 2 - svgCenter.x;
-    translateY.value = height / 2 - svgCenter.y;
-    setPanOffset({ x: translateX.value, y: translateY.value });
-  }, [svgCenter.x, svgCenter.y]);
 
   return (
     <PaperProvider theme={OriginalTheme}>
@@ -858,30 +795,11 @@ const FlowEditorScreen = ({ route, navigation }) => {
         <GestureDetector
           gesture={linkingState.active ? tapGesture : composedGesture}
         >
-          <Animated.View style={[styles.flowArea, { overflow: 'hidden' }]}>
+          <View style={styles.flowArea}>
+            <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
+              {renderEdges()}
+            </Canvas>
             <Animated.View style={animatedStyle}>
-              <Svg
-                style={styles.svg}
-                width={svgBounds.maxX - svgBounds.minX}
-                height={svgBounds.maxY - svgBounds.minY}
-                pointerEvents="box-none"
-              >
-                <Defs>
-                  <Marker
-                    id="arrow"
-                    viewBox="0 0 10 10"
-                    refX="8"
-                    refY="5"
-                    markerWidth="6"
-                    markerHeight="6"
-                    orient="auto"
-                  >
-                    <Path d="M 0 0 L 10 5 L 0 10 z" fill="black" />
-                  </Marker>
-                </Defs>
-                {renderEdges()}
-              </Svg>
-              {/* カード群 */}
               {displayNodes.map(node => (
                 <Card
                   key={node.id}
@@ -895,14 +813,14 @@ const FlowEditorScreen = ({ route, navigation }) => {
                   onUpdate={handleUpdateNode}
                   onDoubleClick={handleDoubleClick}
                   onCardTap={handleCardTap}
-                  isLinkingMode={linkingState.active} // ← 追加
-                  isLinkSource={linkingState.sourceNodeId === node.id} // ← 追加
+                  isLinkingMode={linkingState.active}
+                  isLinkSource={linkingState.sourceNodeId === node.id}
                   isSeeThrough={isSeeThrough}
                   zIndex={node.zIndex}
                 />
               ))}
             </Animated.View>
-          </Animated.View>
+          </View>
         </GestureDetector>
       </SafeAreaView>
     </PaperProvider>
@@ -915,13 +833,6 @@ const styles = StyleSheet.create({
   },
   flowArea: {
     flex: 1,
-    // borderWidth: 1,
-    // borderColor: 'red',
-  },
-  svg: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
   },
   fabContainer: {
     position: 'absolute',
@@ -930,7 +841,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'flex-end',
     alignItems: 'center',
-    // zIndex: 1000,
   },
   fab: {
     marginHorizontal: 4,
