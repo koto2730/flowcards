@@ -1,8 +1,15 @@
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { View, StyleSheet, Dimensions, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Canvas, Path, Skia, Group } from '@shopify/react-native-skia';
-import Card from '../components/Card';
+import {
+  Canvas,
+  Path,
+  Skia,
+  Group,
+  Text,
+  Rect,
+  useFont,
+} from '@shopify/react-native-skia';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   useSharedValue,
@@ -141,6 +148,62 @@ const CalcSkiaInteractionEdgeStroke = ({ edge, sourceNode, targetNode }) => {
   return skPath;
 };
 
+const SkiaCard = ({ node, font }) => {
+  const cardColor = 'white';
+  const borderColor = '#ddd';
+  const titleColor = 'black';
+  const deleteButtonColor = 'red';
+  const deleteButtonTextColor = 'white';
+
+  const deleteButtonRadius = 11;
+  const deleteButtonX = node.position.x + node.size.width + deleteButtonRadius;
+  const deleteButtonY = node.position.y - deleteButtonRadius;
+
+  const crossPath = Skia.Path.Make();
+  crossPath.moveTo(deleteButtonX - 5, deleteButtonY - 5);
+  crossPath.lineTo(deleteButtonX + 5, deleteButtonY + 5);
+  crossPath.moveTo(deleteButtonX + 5, deleteButtonY - 5);
+  crossPath.lineTo(deleteButtonX - 5, deleteButtonY + 5);
+
+  return (
+    <Group>
+      <Rect
+        x={node.position.x}
+        y={node.position.y}
+        width={node.size.width}
+        height={node.size.height}
+        color={cardColor}
+        strokeWidth={1}
+      />
+      <Path
+        path={`M${node.position.x},${node.position.y} h${node.size.width} v${node.size.height} h-${node.size.width} Z`}
+        color={borderColor}
+        style="stroke"
+        strokeWidth={1}
+      />
+      {font && (
+        <Text
+          font={font}
+          x={node.position.x + 10}
+          y={node.position.y + 20}
+          text={node.data.label}
+          color={titleColor}
+        />
+      )}
+      <Group>
+        <Rect
+          x={deleteButtonX - deleteButtonRadius}
+          y={deleteButtonY - deleteButtonRadius}
+          width={deleteButtonRadius * 2}
+          height={deleteButtonRadius * 2}
+          color={deleteButtonColor}
+        />
+        <Path path={crossPath} style="stroke" strokeWidth={2} color="white" />
+      </Group>
+    </Group>
+  );
+};
+
 const FlowEditorScreen = ({ route, navigation }) => {
   const { flowId, flowName } = route.params;
   const [allNodes, setAllNodes] = useState([]);
@@ -159,6 +222,17 @@ const FlowEditorScreen = ({ route, navigation }) => {
   const scale = useSharedValue(1);
   const savedScale = useSharedValue(1);
   const context = useSharedValue({ x: 0, y: 0 });
+  const origin_x = useSharedValue(0);
+  const origin_y = useSharedValue(0);
+
+  const font = useFont(
+    require('../../assets/fonts/Noto_Sans_JP/NotoSansJP-VariableFont_wght.ttf'),
+    14,
+  );
+  const font_c = useFont(
+    require('../../assets/fonts/Noto_Sans_SC/NotoSansSC-VariableFont_wght.ttf'),
+    14,
+  );
 
   useEffect(() => {
     const loadPosition = async () => {
@@ -240,32 +314,47 @@ const FlowEditorScreen = ({ route, navigation }) => {
     });
 
   const pinchGesture = Gesture.Pinch()
+    .onStart(event => {
+      context.value = {
+        x: translateX.value,
+        y: translateY.value,
+        focalX: event.focalX,
+        focalY: event.focalY,
+        scale: scale.value,
+      };
+      const worldFocalX = (event.focalX - translateX.value) / scale.value;
+      const worldFocalY = (event.focalY - translateY.value) / scale.value;
+      origin_x.value = worldFocalX;
+      origin_y.value = worldFocalY;
+    })
     .onUpdate(event => {
-      const oldScale = scale.value;
       const newScale = savedScale.value * event.scale;
       if (newScale < 0.1) {
         return;
       }
       scale.value = newScale;
 
-      if (oldScale > 0) {
-        const scaleRatio = newScale / oldScale;
-        translateX.value =
-          event.focalX - (event.focalX - translateX.value) * scaleRatio;
-        translateY.value =
-          event.focalY - (event.focalY - translateY.value) * scaleRatio;
-      }
+      // ピンチの中心をズームの中心にする
+      const focalX = event.focalX;
+      const focalY = event.focalY;
+      translateX.value = focalX - (focalX - context.value.x) * event.scale;
+      translateY.value = focalY - (focalY - context.value.y) * event.scale;
     })
     .onEnd(() => {
       savedScale.value = scale.value;
+      origin_x.value = 0;
+      origin_y.value = 0;
     });
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: translateX.value },
-      { translateY: translateY.value },
-      { scale: scale.value },
-    ],
+  const skiaTransform = useDerivedValue(() => [
+    { translateX: translateX.value },
+    { translateY: translateY.value },
+    { scale: scale.value },
+  ]);
+
+  const skiaOrigin = useDerivedValue(() => ({
+    x: origin_x.value,
+    y: origin_y.value,
   }));
 
   const composedGesture = Gesture.Simultaneous(panGesture, pinchGesture);
@@ -792,34 +881,16 @@ const FlowEditorScreen = ({ route, navigation }) => {
             visible={true}
           />
         </View>
-        <GestureDetector
-          gesture={linkingState.active ? tapGesture : composedGesture}
-        >
+        <GestureDetector gesture={composedGesture}>
           <View style={styles.flowArea}>
-            <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
-              {renderEdges()}
+            <Canvas style={StyleSheet.absoluteFill}>
+              <Group transform={skiaTransform} origin={skiaOrigin}>
+                {renderEdges()}
+                {displayNodes.map(node => (
+                  <SkiaCard key={node.id} node={node} font={font} />
+                ))}
+              </Group>
             </Canvas>
-            <Animated.View style={animatedStyle}>
-              {displayNodes.map(node => (
-                <Card
-                  key={node.id}
-                  node_id={node.id}
-                  title={node.data.label}
-                  description={node.data.description}
-                  position={node.position}
-                  size={node.size}
-                  onDragEnd={onDragEnd}
-                  onDelete={handleDeleteNode}
-                  onUpdate={handleUpdateNode}
-                  onDoubleClick={handleDoubleClick}
-                  onCardTap={handleCardTap}
-                  isLinkingMode={linkingState.active}
-                  isLinkSource={linkingState.sourceNodeId === node.id}
-                  isSeeThrough={isSeeThrough}
-                  zIndex={node.zIndex}
-                />
-              ))}
-            </Animated.View>
           </View>
         </GestureDetector>
       </SafeAreaView>
