@@ -61,6 +61,9 @@ const getHandlePosition = (node, handleName) => {
   'worklet';
   const { x, y } = node.position;
   const { width, height } = node.size;
+  if (!node || !node.position || !node.size) {
+    return { x: 0, y: 0 }; // ← 防御的にデフォルト値
+  }
   switch (handleName) {
     case 'handleTop':
       return { x: x + width / 2, y: y };
@@ -148,12 +151,22 @@ const CalcSkiaInteractionEdgeStroke = ({ edge, sourceNode, targetNode }) => {
   return skPath;
 };
 
-const SkiaCard = ({ node, font }) => {
-  const cardColor = 'white';
-  const borderColor = '#ddd';
+// --- カードのヒット判定関数 ---
+const isPointInCard = (node, x, y) => {
+  return (
+    x >= node.position.x &&
+    x <= node.position.x + node.size.width &&
+    y >= node.position.y &&
+    y <= node.position.y + node.size.height
+  );
+};
+
+// --- SkiaCardのイベント実装（Card.jsの内容を参考に） ---
+const SkiaCard = ({ node, font, isSelected, isLinkingMode, isLinkSource }) => {
+  const cardColor = isSelected ? '#E3F2FD' : 'white';
+  const borderColor = isLinkSource ? '#34C759' : '#ddd';
   const titleColor = 'black';
   const deleteButtonColor = 'red';
-  const deleteButtonTextColor = 'white';
 
   const deleteButtonRadius = 11;
   const deleteButtonX = node.position.x + node.size.width + deleteButtonRadius;
@@ -173,13 +186,9 @@ const SkiaCard = ({ node, font }) => {
         width={node.size.width}
         height={node.size.height}
         color={cardColor}
-        strokeWidth={1}
-      />
-      <Path
-        path={`M${node.position.x},${node.position.y} h${node.size.width} v${node.size.height} h-${node.size.width} Z`}
-        color={borderColor}
+        strokeWidth={2}
         style="stroke"
-        strokeWidth={1}
+        strokeColor={borderColor}
       />
       {font && (
         <Text
@@ -224,6 +233,14 @@ const FlowEditorScreen = ({ route, navigation }) => {
   const context = useSharedValue({ x: 0, y: 0 });
   const origin_x = useSharedValue(0);
   const origin_y = useSharedValue(0);
+
+  // --- カード操作用のShared Values ---
+  // アクティブな（操作対象の）カードID
+  const activeNodeId = useSharedValue(null);
+  // カードのドラッグ開始時の相対位置
+  const dragStartOffset = useSharedValue({ x: 0, y: 0 });
+  // カードの現在の位置
+  const nodePosition = useSharedValue({ x: 0, y: 0 });
 
   const font = useFont(
     require('../../assets/fonts/Noto_Sans_JP/NotoSansJP-VariableFont_wght.ttf'),
@@ -302,30 +319,83 @@ const FlowEditorScreen = ({ route, navigation }) => {
   }, [navigation, flowName]);
 
   const panGesture = Gesture.Pan()
-    .onStart(() => {
+    .onStart(event => {
+      const worldX = Number.isFinite(event.x - translateX.value)
+        ? (event.x - translateX.value) / scale.value
+        : 0;
+      const worldY = Number.isFinite(event.y - translateY.value)
+        ? (event.y - translateY.value) / scale.value
+        : 0;
+      if (!Array.isArray(displayNodes)) return;
+      const hitNode = [...displayNodes]
+        .reverse()
+        .find(node => isPointInCard(node, worldX, worldY));
+      if (hitNode) {
+        activeNodeId.value = hitNode.id;
+        dragStartOffset.value = {
+          x: worldX - hitNode.position.x,
+          y: worldY - hitNode.position.y,
+        };
+        nodePosition.value = hitNode.position;
+      } else {
+        activeNodeId.value = null;
+        dragStartOffset.value = { x: 0, y: 0 };
+        nodePosition.value = { x: 0, y: 0 };
+        // ★ ここで context.value を毎回 translateX/translateY で初期化しているのが原因
+        // context.value = { x: translateX.value, y: translateY.value }; ← これを削除
+        // 代わりに onStart で context.value をセットするのは最初のパン時のみ
+      }
+      // context.value のセットはここで
       context.value = { x: translateX.value, y: translateY.value };
     })
     .onUpdate(event => {
-      translateX.value = context.value.x + event.translationX;
-      translateY.value = context.value.y + event.translationY;
+      if (activeNodeId.value) {
+        const worldX = (event.x - translateX.value) / scale.value;
+        const worldY = (event.y - translateY.value) / scale.value;
+        const newPosition = {
+          x: worldX - dragStartOffset.value.x,
+          y: worldY - dragStartOffset.value.y,
+        };
+        nodePosition.value = newPosition;
+        runOnJS(setAllNodes)(currentNodes =>
+          currentNodes.map(n =>
+            n.id === activeNodeId.value ? { ...n, position: newPosition } : n,
+          ),
+        );
+      } else {
+        // context.value はパン開始時の translateX/translateY を保持しているので、ここで使う
+        translateX.value = context.value.x + event.translationX;
+        translateY.value = context.value.y + event.translationY;
+      }
     })
     .onEnd(() => {
-      runOnJS(setPanOffset)({ x: translateX.value, y: translateY.value });
+      if (activeNodeId.value) {
+        runOnJS(onDragEnd)(activeNodeId.value, nodePosition.value);
+        activeNodeId.value = null;
+      } else {
+        runOnJS(setPanOffset)({ x: translateX.value, y: translateY.value });
+      }
     });
 
   const pinchGesture = Gesture.Pinch()
     .onStart(event => {
+      const focalX = Number.isFinite(event.focalX) ? event.focalX : 0;
+      const focalY = Number.isFinite(event.focalY) ? event.focalY : 0;
+      const tx = Number.isFinite(translateX.value) ? translateX.value : 0;
+      const ty = Number.isFinite(translateY.value) ? translateY.value : 0;
+      const sc =
+        Number.isFinite(scale.value) && scale.value !== 0 ? scale.value : 1;
       context.value = {
-        x: translateX.value,
-        y: translateY.value,
-        focalX: event.focalX,
-        focalY: event.focalY,
-        scale: scale.value,
+        x: tx,
+        y: ty,
+        focalX: focalX,
+        focalY: focalY,
+        scale: sc,
       };
       const worldFocalX = (event.focalX - translateX.value) / scale.value;
       const worldFocalY = (event.focalY - translateY.value) / scale.value;
-      origin_x.value = worldFocalX;
-      origin_y.value = worldFocalY;
+      origin_x.value = Number.isFinite(worldFocalX) ? worldFocalX : 0;
+      origin_y.value = Number.isFinite(worldFocalY) ? worldFocalY : 0;
     })
     .onUpdate(event => {
       const newScale = savedScale.value * event.scale;
@@ -333,8 +403,6 @@ const FlowEditorScreen = ({ route, navigation }) => {
         return;
       }
       scale.value = newScale;
-
-      // ピンチの中心をズームの中心にする
       const focalX = event.focalX;
       const focalY = event.focalY;
       translateX.value = focalX - (focalX - context.value.x) * event.scale;
@@ -346,18 +414,52 @@ const FlowEditorScreen = ({ route, navigation }) => {
       origin_y.value = 0;
     });
 
+  const tapGesture = Gesture.Tap().onEnd((event, success) => {
+    if (success) {
+      const worldX = (event.x - translateX.value) / scale.value;
+      const worldY = (event.y - translateY.value) / scale.value;
+      if (!Array.isArray(displayNodes)) return;
+      const hitNode = [...displayNodes]
+        .reverse()
+        .find(node => isPointInCard(node, worldX, worldY));
+      if (hitNode) {
+        runOnJS(handleCardTap)(hitNode.id);
+      } else {
+        runOnJS(checkForEdgeTap)({ x: worldX, y: worldY });
+      }
+    }
+  });
+
+  const longPressGesture = Gesture.LongPress()
+    .minDuration(800)
+    .onStart(event => {
+      const worldX = (event.x - translateX.value) / scale.value;
+      const worldY = (event.y - translateY.value) / scale.value;
+      const hitNode = [...displayNodes]
+        .reverse()
+        .find(node => isPointInCard(node, worldX, worldY));
+      if (hitNode) {
+        runOnJS(handleDeleteNode)(hitNode.id);
+      }
+    });
+
   const skiaTransform = useDerivedValue(() => [
-    { translateX: translateX.value },
-    { translateY: translateY.value },
-    { scale: scale.value },
+    { translateX: Number.isFinite(translateX.value) ? translateX.value : 0 },
+    { translateY: Number.isFinite(translateY.value) ? translateY.value : 0 },
+    { scale: Number.isFinite(scale.value) ? scale.value : 1 },
   ]);
 
   const skiaOrigin = useDerivedValue(() => ({
-    x: origin_x.value,
-    y: origin_y.value,
+    x: Number.isFinite(origin_x.value) ? origin_x.value : 0,
+    y: Number.isFinite(origin_y.value) ? origin_y.value : 0,
   }));
 
-  const composedGesture = Gesture.Simultaneous(panGesture, pinchGesture);
+  const composedGesture = Gesture.Simultaneous(
+    panGesture,
+    pinchGesture,
+    tapGesture,
+    longPressGesture,
+  );
 
   const displayNodes = useMemo(() => {
     const baseNodes = allNodes.filter(
@@ -365,7 +467,8 @@ const FlowEditorScreen = ({ route, navigation }) => {
     );
 
     if (!isSeeThrough) {
-      return baseNodes.map(n => ({ ...n, zIndex: 1 }));
+      const newMap = baseNodes.map(n => ({ ...n, zIndex: 1 }));
+      return Array.isArray(newMap) ? newMap : [];
     }
 
     const PADDING = 20;
@@ -517,7 +620,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
       }
     });
 
-    return finalNodes;
+    return Array.isArray(finalNodes) ? finalNodes : [];
   }, [allNodes, currentParentId, isSeeThrough, edges]);
 
   const addCard = async () => {
@@ -795,14 +898,6 @@ const FlowEditorScreen = ({ route, navigation }) => {
     [displayNodes, edges, handleDeleteEdge],
   );
 
-  const tapGesture = Gesture.Tap().onEnd((event, success) => {
-    if (success) {
-      const worldX = (event.x - translateX.value) / scale.value;
-      const worldY = (event.y - translateY.value) / scale.value;
-      runOnJS(checkForEdgeTap)({ x: worldX, y: worldY });
-    }
-  });
-
   const renderEdges = () => {
     const displayNodeIds = new Set(displayNodes.map(n => n.id));
     const relevantEdges = edges.filter(
@@ -887,7 +982,14 @@ const FlowEditorScreen = ({ route, navigation }) => {
               <Group transform={skiaTransform} origin={skiaOrigin}>
                 {renderEdges()}
                 {displayNodes.map(node => (
-                  <SkiaCard key={node.id} node={node} font={font} />
+                  <SkiaCard
+                    key={node.id}
+                    node={node}
+                    font={font}
+                    isSelected={false}
+                    isLinkingMode={linkingState.active}
+                    isLinkSource={linkingState.sourceNodeId === node.id}
+                  />
                 ))}
               </Group>
             </Canvas>
