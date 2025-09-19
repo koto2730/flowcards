@@ -153,11 +153,29 @@ const CalcSkiaInteractionEdgeStroke = ({ edge, sourceNode, targetNode }) => {
 
 // --- カードのヒット判定関数 ---
 const isPointInCard = (node, x, y) => {
+  'worklet';
   return (
     x >= node.position.x &&
     x <= node.position.x + node.size.width &&
     y >= node.position.y &&
     y <= node.position.y + node.size.height
+  );
+};
+
+const isPointInDeleteButton = (node, x, y) => {
+  'worklet';
+  const deleteButtonRadius = 11;
+  const deleteButtonCenterX =
+    node.position.x + node.size.width + deleteButtonRadius;
+  const deleteButtonCenterY = node.position.y - deleteButtonRadius;
+
+  const buttonLeft = deleteButtonCenterX - deleteButtonRadius;
+  const buttonRight = deleteButtonCenterX + deleteButtonRadius;
+  const buttonTop = deleteButtonCenterY - deleteButtonRadius;
+  const buttonBottom = deleteButtonCenterY + deleteButtonRadius;
+
+  return (
+    x >= buttonLeft && x <= buttonRight && y >= buttonTop && y <= buttonBottom
   );
 };
 
@@ -195,7 +213,7 @@ const SkiaCard = ({ node, font, isSelected, isLinkingMode, isLinkSource }) => {
           font={font}
           x={node.position.x + 10}
           y={node.position.y + 20}
-          text={node.data.label}
+          text={node.data.label ?? ''} // ← 防御
           color={titleColor}
         />
       )}
@@ -215,12 +233,12 @@ const SkiaCard = ({ node, font, isSelected, isLinkingMode, isLinkSource }) => {
 
 const FlowEditorScreen = ({ route, navigation }) => {
   const { flowId, flowName } = route.params;
+  // --- allNodesの防御 ---
   const [allNodes, setAllNodes] = useState([]);
   const [edges, setEdges] = useState([]);
   const [currentParentId, setCurrentParentId] = useState('root');
   const [parentIdHistory, setParentIdHistory] = useState([]);
   const [isSeeThrough, setIsSeeThrough] = useState(false);
-  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
   const [linkingState, setLinkingState] = useState({
     active: false,
     sourceNodeId: null,
@@ -230,6 +248,8 @@ const FlowEditorScreen = ({ route, navigation }) => {
   const translateY = useSharedValue(0);
   const scale = useSharedValue(1);
   const savedScale = useSharedValue(1);
+  const savedTranslateX = useSharedValue(0);
+  const savedTranslateY = useSharedValue(0);
   const context = useSharedValue({ x: 0, y: 0 });
   const origin_x = useSharedValue(0);
   const origin_y = useSharedValue(0);
@@ -260,14 +280,15 @@ const FlowEditorScreen = ({ route, navigation }) => {
           const position = JSON.parse(currentFlow.lastPosition);
           translateX.value = position.x;
           translateY.value = position.y;
-          runOnJS(setPanOffset)({ x: position.x, y: position.y });
+          savedTranslateX.value = position.x;
+          savedTranslateY.value = position.y;
         }
       } catch (error) {
         console.error('Failed to load last position:', error);
       }
     };
     loadPosition();
-  }, [flowId, translateX, translateY]);
+  }, [flowId, translateX, translateY, savedTranslateX, savedTranslateY]);
 
   useEffect(() => {
     return () => {
@@ -286,21 +307,26 @@ const FlowEditorScreen = ({ route, navigation }) => {
     };
   }, [flowId, translateX, translateY]);
 
+  // fetchDataなどでsetAllNodesする際に必ず配列を渡す
   const fetchData = useCallback(async () => {
     try {
       const nodesData = await getNodes(flowId);
       const edgesData = await getEdges(flowId);
 
-      const formattedNodes = nodesData.map(n => ({
-        id: n.id,
-        parentId: n.parentId,
-        data: { label: n.label, description: n.description },
-        position: { x: n.x, y: n.y },
-        size: { width: n.width, height: n.height },
-      }));
-      setAllNodes(formattedNodes);
-      setEdges(edgesData);
+      const formattedNodes = Array.isArray(nodesData)
+        ? nodesData.map(n => ({
+            id: n.id,
+            parentId: n.parentId,
+            data: { label: n.label ?? '', description: n.description ?? '' },
+            position: { x: n.x, y: n.y },
+            size: { width: n.width, height: n.height },
+          }))
+        : [];
+      setAllNodes(Array.isArray(formattedNodes) ? formattedNodes : []);
+      setEdges(Array.isArray(edgesData) ? edgesData : []);
     } catch (error) {
+      setAllNodes([]); // ← 失敗時も空配列
+      setEdges([]); // ← 失敗時も空配列
       console.error('Failed to fetch data:', error);
       Alert.alert('Error', 'Failed to load flow data.');
     }
@@ -318,149 +344,51 @@ const FlowEditorScreen = ({ route, navigation }) => {
     });
   }, [navigation, flowName]);
 
-  const panGesture = Gesture.Pan()
-    .onStart(event => {
-      const worldX = Number.isFinite(event.x - translateX.value)
-        ? (event.x - translateX.value) / scale.value
-        : 0;
-      const worldY = Number.isFinite(event.y - translateY.value)
-        ? (event.y - translateY.value) / scale.value
-        : 0;
-      if (!Array.isArray(displayNodes)) return;
-      const hitNode = [...displayNodes]
-        .reverse()
-        .find(node => isPointInCard(node, worldX, worldY));
-      if (hitNode) {
-        activeNodeId.value = hitNode.id;
-        dragStartOffset.value = {
-          x: worldX - hitNode.position.x,
-          y: worldY - hitNode.position.y,
-        };
-        nodePosition.value = hitNode.position;
-      } else {
-        activeNodeId.value = null;
-        dragStartOffset.value = { x: 0, y: 0 };
-        nodePosition.value = { x: 0, y: 0 };
-        // ★ ここで context.value を毎回 translateX/translateY で初期化しているのが原因
-        // context.value = { x: translateX.value, y: translateY.value }; ← これを削除
-        // 代わりに onStart で context.value をセットするのは最初のパン時のみ
-      }
-      // context.value のセットはここで
-      context.value = { x: translateX.value, y: translateY.value };
-    })
-    .onUpdate(event => {
-      if (activeNodeId.value) {
-        const worldX = (event.x - translateX.value) / scale.value;
-        const worldY = (event.y - translateY.value) / scale.value;
-        const newPosition = {
-          x: worldX - dragStartOffset.value.x,
-          y: worldY - dragStartOffset.value.y,
-        };
-        nodePosition.value = newPosition;
-        runOnJS(setAllNodes)(currentNodes =>
-          currentNodes.map(n =>
-            n.id === activeNodeId.value ? { ...n, position: newPosition } : n,
-          ),
-        );
-      } else {
-        // context.value はパン開始時の translateX/translateY を保持しているので、ここで使う
-        translateX.value = context.value.x + event.translationX;
-        translateY.value = context.value.y + event.translationY;
-      }
-    })
-    .onEnd(() => {
-      if (activeNodeId.value) {
-        runOnJS(onDragEnd)(activeNodeId.value, nodePosition.value);
-        activeNodeId.value = null;
-      } else {
-        runOnJS(setPanOffset)({ x: translateX.value, y: translateY.value });
-      }
-    });
-
-  const pinchGesture = Gesture.Pinch()
-    .onStart(event => {
-      const focalX = Number.isFinite(event.focalX) ? event.focalX : 0;
-      const focalY = Number.isFinite(event.focalY) ? event.focalY : 0;
-      const tx = Number.isFinite(translateX.value) ? translateX.value : 0;
-      const ty = Number.isFinite(translateY.value) ? translateY.value : 0;
-      const sc =
-        Number.isFinite(scale.value) && scale.value !== 0 ? scale.value : 1;
-      context.value = {
-        x: tx,
-        y: ty,
-        focalX: focalX,
-        focalY: focalY,
-        scale: sc,
-      };
-      const worldFocalX = (event.focalX - translateX.value) / scale.value;
-      const worldFocalY = (event.focalY - translateY.value) / scale.value;
-      origin_x.value = Number.isFinite(worldFocalX) ? worldFocalX : 0;
-      origin_y.value = Number.isFinite(worldFocalY) ? worldFocalY : 0;
-    })
-    .onUpdate(event => {
-      const newScale = savedScale.value * event.scale;
-      if (newScale < 0.1) {
-        return;
-      }
-      scale.value = newScale;
-      const focalX = event.focalX;
-      const focalY = event.focalY;
-      translateX.value = focalX - (focalX - context.value.x) * event.scale;
-      translateY.value = focalY - (focalY - context.value.y) * event.scale;
-    })
-    .onEnd(() => {
-      savedScale.value = scale.value;
-      origin_x.value = 0;
-      origin_y.value = 0;
-    });
-
-  const tapGesture = Gesture.Tap().onEnd((event, success) => {
-    if (success) {
-      const worldX = (event.x - translateX.value) / scale.value;
-      const worldY = (event.y - translateY.value) / scale.value;
-      if (!Array.isArray(displayNodes)) return;
-      const hitNode = [...displayNodes]
-        .reverse()
-        .find(node => isPointInCard(node, worldX, worldY));
-      if (hitNode) {
-        runOnJS(handleCardTap)(hitNode.id);
-      } else {
-        runOnJS(checkForEdgeTap)({ x: worldX, y: worldY });
-      }
+  // setAllNodesを使う全ての箇所で防御
+  const handleUpdateNode = async (nodeId, newData) => {
+    try {
+      await updateNode(nodeId, {
+        label: newData.title,
+        description: newData.description,
+      });
+      setAllNodes(nds =>
+        Array.isArray(nds)
+          ? nds.map(node =>
+              node.id === nodeId
+                ? {
+                    ...node,
+                    data: {
+                      ...node.data,
+                      label: newData.title ?? '',
+                      description: newData.description ?? '',
+                    },
+                  }
+                : node,
+            )
+          : [],
+      );
+    } catch (error) {
+      console.error('Failed to update node data:', error);
     }
-  });
+  };
 
-  const longPressGesture = Gesture.LongPress()
-    .minDuration(800)
-    .onStart(event => {
-      const worldX = (event.x - translateX.value) / scale.value;
-      const worldY = (event.y - translateY.value) / scale.value;
-      const hitNode = [...displayNodes]
-        .reverse()
-        .find(node => isPointInCard(node, worldX, worldY));
-      if (hitNode) {
-        runOnJS(handleDeleteNode)(hitNode.id);
-      }
-    });
+  const onDragEnd = async (nodeId, newPosition) => {
+    if (isSeeThrough) return;
+    try {
+      await updateNode(nodeId, { x: newPosition.x, y: newPosition.y });
+      setAllNodes(nds =>
+        Array.isArray(nds)
+          ? nds.map(node =>
+              node.id === nodeId ? { ...node, position: newPosition } : node,
+            )
+          : [],
+      );
+    } catch (error) {
+      console.error('Failed to update node position:', error);
+    }
+  };
 
-  const skiaTransform = useDerivedValue(() => [
-    { translateX: Number.isFinite(translateX.value) ? translateX.value : 0 },
-    { translateY: Number.isFinite(translateY.value) ? translateY.value : 0 },
-    { scale: Number.isFinite(scale.value) ? scale.value : 1 },
-  ]);
-
-  const skiaOrigin = useDerivedValue(() => ({
-    x: Number.isFinite(origin_x.value) ? origin_x.value : 0,
-    y: Number.isFinite(origin_y.value) ? origin_y.value : 0,
-  }));
-
-  const composedGesture = Gesture.Simultaneous(
-    panGesture,
-    pinchGesture,
-    tapGesture,
-    longPressGesture,
-  );
-
+  // displayNodesのuseMemoも防御
   const displayNodes = useMemo(() => {
     const baseNodes = allNodes.filter(
       node => node.parentId === currentParentId,
@@ -623,103 +551,41 @@ const FlowEditorScreen = ({ route, navigation }) => {
     return Array.isArray(finalNodes) ? finalNodes : [];
   }, [allNodes, currentParentId, isSeeThrough, edges]);
 
-  const addCard = async () => {
-    const newNodeData = {
-      id: uuidv4(),
-      flowId: flowId,
-      parentId: currentParentId,
-      label: '新しいカード',
-      description: '',
-      x: (10 - translateX.value) / scale.value,
-      y: (10 - translateY.value) / scale.value,
-      width: CARD_MIN_SIZE.width,
-      height: CARD_MIN_SIZE.height,
+  // --- 1. worklet関数を通常関数に変更し、内部でPromise処理に統一 ---
+  // --- 2. runOnJSで呼ぶように修正（runOnJSはPromiseを返さないように） ---
+
+  // 例：handleDeleteNode
+  const handleDeleteNode = async nodeId => {
+    const nodesToRemove = new Set();
+    const findChildren = id => {
+      nodesToRemove.add(id);
+      allNodes.forEach(n => {
+        if (n.parentId === id) {
+          findChildren(n.id);
+        }
+      });
     };
+    findChildren(nodeId);
+
     try {
-      await insertNode(newNodeData);
+      await Promise.all(Array.from(nodesToRemove).map(id => deleteNode(id)));
       fetchData();
     } catch (error) {
-      console.error('Failed to add node:', error);
+      console.error('Failed to delete node(s):', error);
     }
   };
 
-  const onDragEnd = useCallback(
-    async (nodeId, newPosition) => {
-      if (isSeeThrough) return;
-      try {
-        await updateNode(nodeId, { x: newPosition.x, y: newPosition.y });
-        setAllNodes(nds =>
-          nds.map(node =>
-            node.id === nodeId ? { ...node, position: newPosition } : node,
-          ),
-        );
-      } catch (error) {
-        console.error('Failed to update node position:', error);
-      }
-    },
-    [isSeeThrough],
-  );
-
-  const handleDeleteNode = useCallback(
-    async nodeId => {
-      const nodesToRemove = new Set();
-      const findChildren = id => {
-        nodesToRemove.add(id);
-        allNodes.forEach(n => {
-          if (n.parentId === id) {
-            findChildren(n.id);
-          }
-        });
-      };
-      findChildren(nodeId);
-
-      try {
-        await Promise.all(Array.from(nodesToRemove).map(id => deleteNode(id)));
-        fetchData();
-      } catch (error) {
-        console.error('Failed to delete node(s):', error);
-      }
-    },
-    [allNodes, fetchData],
-  );
-
-  const handleUpdateNode = useCallback(async (nodeId, newData) => {
-    try {
-      await updateNode(nodeId, {
-        label: newData.title,
-        description: newData.description,
-      });
-      setAllNodes(nds =>
-        nds.map(node =>
-          node.id === nodeId
-            ? {
-                ...node,
-                data: {
-                  ...node.data,
-                  label: newData.title,
-                  description: newData.description,
-                },
-              }
-            : node,
-        ),
-      );
-    } catch (error) {
-      console.error('Failed to update node data:', error);
+  // 例：handleDoubleClick
+  const handleDoubleClick = nodeId => {
+    if (isSeeThrough) return;
+    const node = allNodes.find(n => n.id === nodeId);
+    if (node) {
+      setParentIdHistory(history => [...history, currentParentId]);
+      setCurrentParentId(nodeId);
     }
-  }, []);
+  };
 
-  const handleDoubleClick = useCallback(
-    nodeId => {
-      if (isSeeThrough) return;
-      const node = allNodes.find(n => n.id === nodeId);
-      if (node) {
-        setParentIdHistory(history => [...history, currentParentId]);
-        setCurrentParentId(nodeId);
-      }
-    },
-    [allNodes, currentParentId, isSeeThrough],
-  );
-
+  // 例：handleSectionUp
   const handleSectionUp = async () => {
     if (parentIdHistory.length > 0) {
       const newHistory = [...parentIdHistory];
@@ -755,46 +621,17 @@ const FlowEditorScreen = ({ route, navigation }) => {
     }
   };
 
-  const handleDeleteEdge = useCallback(async edgeId => {
+  // 例：handleDeleteEdge
+  const handleDeleteEdge = async edgeId => {
     try {
       await deleteEdge(edgeId);
       setEdges(eds => eds.filter(edge => edge.id !== edgeId));
     } catch (error) {
       console.error('Failed to delete edge:', error);
     }
-  }, []);
-
-  const getClosestHandle = (sourceNode, targetNode) => {
-    const sourceCenter = getCenter(sourceNode);
-    const targetCenter = getCenter(targetNode);
-
-    const dx = targetCenter.x - sourceCenter.x;
-    const dy = targetCenter.y - sourceCenter.y;
-
-    let candidateHandles = [];
-    if (Math.abs(dy) > Math.abs(dx)) {
-      candidateHandles = ['handleTop', 'handleBottom'];
-    } else {
-      candidateHandles = ['handleLeft', 'handleRight'];
-    }
-
-    let minDistance = Infinity;
-    let closestHandle = null;
-
-    candidateHandles.forEach(handleName => {
-      const handlePos = getHandlePosition(sourceNode, handleName);
-      const distance = Math.sqrt(
-        Math.pow(handlePos.x - targetCenter.x, 2) +
-          Math.pow(handlePos.y - targetCenter.y, 2),
-      );
-      if (distance < minDistance) {
-        minDistance = distance;
-        closestHandle = handleName;
-      }
-    });
-    return closestHandle;
   };
 
+  // 例：handleCardTap
   const handleCardTap = async nodeId => {
     if (!linkingState.active) return;
 
@@ -847,56 +684,279 @@ const FlowEditorScreen = ({ route, navigation }) => {
     setLinkingState(prev => ({ active: !prev.active, sourceNodeId: null }));
   };
 
-  const checkForEdgeTap = useCallback(
-    point => {
-      const TAP_THRESHOLD = 15;
+  // --- イベント管理用のstate ---
+  const [pendingEvent, setPendingEvent] = useState(null);
+  // pendingEvent: { type: 'tap'|'doubleTap'|'drag'|'longPress'|'delete', nodeId, extra }
 
-      const displayNodeIds = new Set(displayNodes.map(n => n.id));
-      const relevantEdges = edges.filter(
-        edge =>
-          displayNodeIds.has(edge.source) && displayNodeIds.has(edge.target),
-      );
+  useEffect(() => {
+    if (!pendingEvent) return;
 
-      for (const edge of relevantEdges) {
-        const sourceNode = displayNodes.find(n => n.id === edge.source);
-        const targetNode = displayNodes.find(n => n.id === edge.target);
-        if (!sourceNode || !targetNode) continue;
+    const { type, nodeId, extra } = pendingEvent;
 
-        const p1 = getHandlePosition(sourceNode, edge.sourceHandle);
-        const p2 = getHandlePosition(targetNode, edge.targetHandle);
+    const run = async () => {
+      if (type === 'tap') {
+        await handleCardTap(nodeId);
+      } else if (type === 'doubleTap') {
+        handleDoubleClick(nodeId);
+      } else if (type === 'drag') {
+        await onDragEnd(nodeId, extra?.newPosition);
+      } else if (type === 'longPress') {
+        await handleUpdateNode(nodeId, extra?.newData);
+      } else if (type === 'delete') {
+        await handleDeleteNode(nodeId);
+      }
+    };
 
-        const dx = p2.x - p1.x;
-        const dy = p2.y - p1.y;
-        const l2 = dx * dx + dy * dy;
+    run();
+    setPendingEvent(null);
+  }, [pendingEvent]);
 
-        if (l2 === 0) {
-          const dist = Math.sqrt(
-            Math.pow(point.x - p1.x, 2) + Math.pow(point.y - p1.y, 2),
-          );
-          if (dist < TAP_THRESHOLD) {
-            runOnJS(handleDeleteEdge)(edge.id);
-            return;
-          }
-        } else {
-          let t = ((point.x - p1.x) * dx + (point.y - p1.y) * dy) / l2;
-          t = Math.max(0, Math.min(1, t));
-          const closestPoint = {
-            x: p1.x + t * dx,
-            y: p1.y + t * dy,
-          };
-          const dist = Math.sqrt(
-            Math.pow(point.x - closestPoint.x, 2) +
-              Math.pow(point.y - closestPoint.y, 2),
-          );
-          if (dist < TAP_THRESHOLD) {
-            runOnJS(handleDeleteEdge)(edge.id);
-            return;
-          }
+  const panGesture = Gesture.Pan()
+    .onStart(event => {
+      const worldX = Number.isFinite(event.x - translateX.value)
+        ? (event.x - translateX.value) / scale.value
+        : 0;
+      const worldY = Number.isFinite(event.y - translateY.value)
+        ? (event.y - translateY.value) / scale.value
+        : 0;
+      if (!Array.isArray(displayNodes)) return;
+      const hitNode = [...displayNodes]
+        .reverse()
+        .find(node => isPointInCard(node, worldX, worldY));
+      if (hitNode) {
+        activeNodeId.value = hitNode.id;
+        dragStartOffset.value = {
+          x: worldX - hitNode.position.x,
+          y: worldY - hitNode.position.y,
+        };
+        nodePosition.value = hitNode.position;
+      } else {
+        activeNodeId.value = null;
+      }
+    })
+    .onUpdate(event => {
+      if (activeNodeId.value) {
+        const worldX = (event.x - translateX.value) / scale.value;
+        const worldY = (event.y - translateY.value) / scale.value;
+        const newPosition = {
+          x: worldX - dragStartOffset.value.x,
+          y: worldY - dragStartOffset.value.y,
+        };
+        nodePosition.value = newPosition;
+        runOnJS(setAllNodes)(currentNodes =>
+          currentNodes.map(n =>
+            n.id === activeNodeId.value ? { ...n, position: newPosition } : n,
+          ),
+        );
+      } else {
+        translateX.value = savedTranslateX.value + event.translationX;
+        translateY.value = savedTranslateY.value + event.translationY;
+      }
+    })
+    .onEnd(() => {
+      if (activeNodeId.value) {
+        // ドラッグ終了イベントをキック
+        runOnJS(setPendingEvent)({
+          type: 'drag',
+          nodeId: activeNodeId.value,
+          extra: { newPosition: nodePosition.value },
+        });
+        activeNodeId.value = null;
+      } else {
+        savedTranslateX.value = translateX.value;
+        savedTranslateY.value = translateY.value;
+      }
+    });
+
+  const pinchGesture = Gesture.Pinch()
+    .onStart(event => {
+      savedScale.value = scale.value;
+    })
+    .onUpdate(event => {
+      const newScale = savedScale.value * event.scale;
+      if (newScale < 0.1) {
+        return;
+      }
+
+      const deltaScale = newScale / scale.value;
+      if (Number.isFinite(deltaScale) && deltaScale > 0) {
+        scale.value = newScale;
+
+        const focalX = event.focalX;
+        const focalY = event.focalY;
+
+        translateX.value = focalX - (focalX - translateX.value) * deltaScale;
+        translateY.value = focalY - (focalY - translateY.value) * deltaScale;
+      }
+    })
+    .onEnd(() => {
+      savedScale.value = scale.value;
+    });
+
+  const tapGesture = Gesture.Tap().onEnd((event, success) => {
+    if (success) {
+      const worldX = (event.x - translateX.value) / scale.value;
+      const worldY = (event.y - translateY.value) / scale.value;
+      if (!Array.isArray(displayNodes)) return;
+
+      // 削除ボタン
+      const nodeToDelete = [...displayNodes]
+        .reverse()
+        .find(node => isPointInDeleteButton(node, worldX, worldY));
+      if (nodeToDelete) {
+        runOnJS(setPendingEvent)({
+          type: 'delete',
+          nodeId: nodeToDelete.id,
+        });
+        return;
+      }
+
+      // カードタップ
+      const hitNode = [...displayNodes]
+        .reverse()
+        .find(node => isPointInCard(node, worldX, worldY));
+      if (hitNode) {
+        runOnJS(setPendingEvent)({
+          type: 'tap',
+          nodeId: hitNode.id,
+        });
+      } else {
+        // エッジタップ（必要なら追加）
+        if (linkingState.active) {
+          runOnJS(checkForEdgeTap)({ x: worldX, y: worldY });
         }
       }
-    },
-    [displayNodes, edges, handleDeleteEdge],
+    }
+  });
+
+  const longPressGesture = Gesture.LongPress()
+    .minDuration(800)
+    .onStart(event => {
+      const worldX = (event.x - translateX.value) / scale.value;
+      const worldY = (event.y - translateY.value) / scale.value;
+      if (!Array.isArray(displayNodes)) return;
+      const hitNode = [...displayNodes]
+        .reverse()
+        .find(node => isPointInCard(node, worldX, worldY));
+      if (hitNode) {
+        runOnJS(setPendingEvent)({
+          type: 'longPress',
+          nodeId: hitNode.id,
+          extra: {
+            newData: {
+              /* 必要なら編集データ */
+            },
+          },
+        });
+      }
+    });
+
+  // ダブルタップ（GestureHandlerでDoubleTapは独立して扱う必要あり）
+  const doubleTapGesture = Gesture.Tap()
+    .numberOfTaps(2)
+    .onEnd((event, success) => {
+      if (success) {
+        const worldX = (event.x - translateX.value) / scale.value;
+        const worldY = (event.y - translateY.value) / scale.value;
+        if (!Array.isArray(displayNodes)) return;
+        const hitNode = [...displayNodes]
+          .reverse()
+          .find(node => isPointInCard(node, worldX, worldY));
+        if (hitNode) {
+          runOnJS(setPendingEvent)({
+            type: 'doubleTap',
+            nodeId: hitNode.id,
+          });
+        }
+      }
+    });
+
+  const skiaTransform = useDerivedValue(() => [
+    { translateX: Number.isFinite(translateX.value) ? translateX.value : 0 },
+    { translateY: Number.isFinite(translateY.value) ? translateY.value : 0 },
+    { scale: Number.isFinite(scale.value) ? scale.value : 1 },
+  ]);
+
+  const skiaOrigin = useDerivedValue(() => ({
+    x: Number.isFinite(origin_x.value) ? origin_x.value : 0,
+    y: Number.isFinite(origin_y.value) ? origin_y.value : 0,
+  }));
+
+  const composedGesture = Gesture.Simultaneous(
+    panGesture,
+    pinchGesture,
+    tapGesture,
+    longPressGesture,
+    doubleTapGesture,
   );
+
+  const addCard = async () => {
+    const newNodeData = {
+      id: uuidv4(),
+      flowId: flowId,
+      parentId: currentParentId,
+      label: '新しいカード',
+      description: '',
+      x: (10 - translateX.value) / scale.value,
+      y: (10 - translateY.value) / scale.value,
+      width: CARD_MIN_SIZE.width,
+      height: CARD_MIN_SIZE.height,
+    };
+    try {
+      await insertNode(newNodeData);
+      fetchData();
+    } catch (error) {
+      console.error('Failed to add node:', error);
+    }
+  };
+
+  const checkForEdgeTap = point => {
+    const TAP_THRESHOLD = 15;
+
+    const displayNodeIds = new Set(displayNodes.map(n => n.id));
+    const relevantEdges = edges.filter(
+      edge =>
+        displayNodeIds.has(edge.source) && displayNodeIds.has(edge.target),
+    );
+
+    for (const edge of relevantEdges) {
+      const sourceNode = displayNodes.find(n => n.id === edge.source);
+      const targetNode = displayNodes.find(n => n.id === edge.target);
+      if (!sourceNode || !targetNode) continue;
+
+      const p1 = getHandlePosition(sourceNode, edge.sourceHandle);
+      const p2 = getHandlePosition(targetNode, edge.targetHandle);
+
+      const dx = p2.x - p1.x;
+      const dy = p2.y - p1.y;
+      const l2 = dx * dx + dy * dy;
+
+      if (l2 === 0) {
+        const dist = Math.sqrt(
+          Math.pow(point.x - p1.x, 2) + Math.pow(point.y - p1.y, 2),
+        );
+        if (dist < TAP_THRESHOLD) {
+          handleDeleteEdge(edge.id);
+          return;
+        }
+      } else {
+        let t = ((point.x - p1.x) * dx + (point.y - p1.y) * dy) / l2;
+        t = Math.max(0, Math.min(1, t));
+        const closestPoint = {
+          x: p1.x + t * dx,
+          y: p1.y + t * dy,
+        };
+        const dist = Math.sqrt(
+          Math.pow(point.x - closestPoint.x, 2) +
+            Math.pow(point.y - closestPoint.y, 2),
+        );
+        if (dist < TAP_THRESHOLD) {
+          handleDeleteEdge(edge.id);
+          return;
+        }
+      }
+    }
+  };
 
   const renderEdges = () => {
     const displayNodeIds = new Set(displayNodes.map(n => n.id));
