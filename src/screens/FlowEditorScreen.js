@@ -390,6 +390,10 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
   // displayNodesのuseMemoも防御
   const displayNodes = useMemo(() => {
+    // --- allNodesが配列でない場合、クラッシュを避けるために空配列を返す ---
+    if (!Array.isArray(allNodes)) {
+      return [];
+    }
     const baseNodes = allNodes.filter(
       node => node.parentId === currentParentId,
     );
@@ -686,7 +690,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
   // --- イベント管理用のstate ---
   const [pendingEvent, setPendingEvent] = useState(null);
-  // pendingEvent: { type: 'tap'|'doubleTap'|'drag'|'longPress'|'delete', nodeId, extra }
+  // pendingEvent: { type: 'tap'|'doubleTap'|'dragEnd'|'longPress'|'delete', nodeId, extra }
 
   useEffect(() => {
     if (!pendingEvent) return;
@@ -698,7 +702,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
         await handleCardTap(nodeId);
       } else if (type === 'doubleTap') {
         handleDoubleClick(nodeId);
-      } else if (type === 'drag') {
+      } else if (type === 'dragEnd') {
         await onDragEnd(nodeId, extra?.newPosition);
       } else if (type === 'longPress') {
         await handleUpdateNode(nodeId, extra?.newData);
@@ -743,11 +747,10 @@ const FlowEditorScreen = ({ route, navigation }) => {
           y: worldY - dragStartOffset.value.y,
         };
         nodePosition.value = newPosition;
-        runOnJS(setAllNodes)(currentNodes =>
-          currentNodes.map(n =>
-            n.id === activeNodeId.value ? { ...n, position: newPosition } : n,
-          ),
+        const newAllNodes = allNodes.map(n =>
+          n.id === activeNodeId.value ? { ...n, position: newPosition } : n,
         );
+        runOnJS(setAllNodes)(newAllNodes);
       } else {
         translateX.value = savedTranslateX.value + event.translationX;
         translateY.value = savedTranslateY.value + event.translationY;
@@ -757,7 +760,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
       if (activeNodeId.value) {
         // ドラッグ終了イベントをキック
         runOnJS(setPendingEvent)({
-          type: 'drag',
+          type: 'dragEnd',
           nodeId: activeNodeId.value,
           extra: { newPosition: nodePosition.value },
         });
