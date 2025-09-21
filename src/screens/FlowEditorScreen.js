@@ -803,6 +803,9 @@ const FlowEditorScreen = ({ route, navigation }) => {
       }
     })
     .onUpdate(event => {
+      if (event.numberOfPointers > 1) {
+        return;
+      }
       if (activeNodeId.value) {
         const worldX = (event.x - translateX.value) / scale.value;
         const worldY = (event.y - translateY.value) / scale.value;
@@ -839,26 +842,23 @@ const FlowEditorScreen = ({ route, navigation }) => {
   const pinchGesture = Gesture.Pinch()
     .onStart(event => {
       savedScale.value = scale.value;
+      context.value = { focalX: event.focalX, focalY: event.focalY };
+      origin_x.value = (event.focalX - translateX.value) / scale.value;
+      origin_y.value = (event.focalY - translateY.value) / scale.value;
     })
     .onUpdate(event => {
       const newScale = savedScale.value * event.scale;
       if (newScale < 0.1) {
         return;
       }
-
-      const deltaScale = newScale / scale.value;
-      if (Number.isFinite(deltaScale) && deltaScale > 0) {
-        scale.value = newScale;
-
-        const focalX = event.focalX;
-        const focalY = event.focalY;
-
-        translateX.value = focalX - (focalX - translateX.value) * deltaScale;
-        translateY.value = focalY - (focalY - translateY.value) * deltaScale;
-      }
+      scale.value = newScale;
+      translateX.value = context.value.focalX - origin_x.value * newScale;
+      translateY.value = context.value.focalY - origin_y.value * newScale;
     })
     .onEnd(() => {
       savedScale.value = scale.value;
+      savedTranslateX.value = translateX.value;
+      savedTranslateY.value = translateY.value;
     })
     .enabled(!linkingState.active);
 
