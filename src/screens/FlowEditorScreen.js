@@ -1,5 +1,14 @@
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
-import { View, StyleSheet, Dimensions, Alert } from 'react-native';
+import {
+  View,
+  StyleSheet,
+  Dimensions,
+  Alert,
+  TextInput,
+  Button,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Canvas,
@@ -33,7 +42,7 @@ import {
 import { FAB, Provider as PaperProvider } from 'react-native-paper';
 import OriginalTheme from './OriginalTheme'; // 既存のテーマをインポート
 
-const CARD_MIN_SIZE = { width: 150, height: 70 };
+const CARD_MIN_SIZE = { width: 150, height: 100 };
 const { width, height } = Dimensions.get('window');
 
 const getRect = node => ({
@@ -180,10 +189,18 @@ const isPointInDeleteButton = (node, x, y) => {
 };
 
 // --- SkiaCardのイベント実装（Card.jsの内容を参考に） ---
-const SkiaCard = ({ node, font, isSelected, isLinkingMode, isLinkSource }) => {
+const SkiaCard = ({
+  node,
+  font,
+  isSelected,
+  isLinkingMode,
+  isLinkSource,
+  isEditing,
+}) => {
   const cardColor = isSelected ? '#E3F2FD' : 'white';
   const borderColor = isLinkSource ? '#34C759' : '#ddd';
   const titleColor = 'black';
+  const descriptionColor = '#555';
   const deleteButtonColor = 'red';
 
   const deleteButtonRadius = 11;
@@ -197,7 +214,7 @@ const SkiaCard = ({ node, font, isSelected, isLinkingMode, isLinkSource }) => {
   crossPath.lineTo(deleteButtonX - 5, deleteButtonY + 5);
 
   return (
-    <Group>
+    <Group opacity={isEditing ? 0.5 : 1.0}>
       <Rect
         x={node.position.x}
         y={node.position.y}
@@ -209,13 +226,25 @@ const SkiaCard = ({ node, font, isSelected, isLinkingMode, isLinkSource }) => {
         strokeColor={borderColor}
       />
       {font && (
-        <Text
-          font={font}
-          x={node.position.x + 10}
-          y={node.position.y + 20}
-          text={node.data.label ?? ''} // ← 防御
-          color={titleColor}
-        />
+        <>
+          <Text
+            font={font}
+            x={node.position.x + 10}
+            y={node.position.y + 20}
+            text={node.data.label ?? ''} // ← 防御
+            color={titleColor}
+          />
+          {node.data.description && (
+            <Text
+              font={font}
+              x={node.position.x + 10}
+              y={node.position.y + 40}
+              text={node.data.description}
+              color={descriptionColor}
+              maxWidth={node.size.width - 20}
+            />
+          )}
+        </>
       )}
       <Group>
         <Rect
@@ -243,6 +272,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
     active: false,
     sourceNodeId: null,
   });
+  const [editingNode, setEditingNode] = useState(null);
 
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
@@ -579,9 +609,42 @@ const FlowEditorScreen = ({ route, navigation }) => {
     }
   };
 
+  const getClosestHandle = (sourceNode, targetNode) => {
+    const sourceCenter = getCenter(sourceNode);
+    const targetCenter = getCenter(targetNode);
+
+    const dx = targetCenter.x - sourceCenter.x;
+    const dy = targetCenter.y - sourceCenter.y;
+
+    let candidateHandles = [];
+    if (Math.abs(dy) > Math.abs(dx)) {
+      // 主に垂直方向
+      candidateHandles = ['handleTop', 'handleBottom'];
+    } else {
+      // 主に水平方向
+      candidateHandles = ['handleLeft', 'handleRight'];
+    }
+
+    let minDistance = Infinity;
+    let closestHandle = null;
+
+    candidateHandles.forEach(handleName => {
+      const handlePos = getHandlePosition(sourceNode, handleName);
+      const distance = Math.sqrt(
+        Math.pow(handlePos.x - targetCenter.x, 2) +
+          Math.pow(handlePos.y - targetCenter.y, 2),
+      );
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestHandle = handleName;
+      }
+    });
+    return closestHandle;
+  };
+
   // 例：handleDoubleClick
   const handleDoubleClick = nodeId => {
-    if (isSeeThrough) return;
+    if (isSeeThrough || linkingState.active) return;
     const node = allNodes.find(n => n.id === nodeId);
     if (node) {
       setParentIdHistory(history => [...history, currentParentId]);
@@ -600,14 +663,17 @@ const FlowEditorScreen = ({ route, navigation }) => {
       if (displayNodes.length === 0) return;
 
       const newParentId = uuidv4();
+      const screenCenterX = (width / 2 - translateX.value) / scale.value;
+      const screenCenterY = (height / 2 - translateY.value) / scale.value;
+
       const newParentNode = {
         id: newParentId,
         flowId: flowId,
         parentId: 'root',
         label: '新しいセクション',
         description: 'グループ化されました',
-        x: 100,
-        y: 100,
+        x: screenCenterX - CARD_MIN_SIZE.width / 2,
+        y: screenCenterY - CARD_MIN_SIZE.height / 2,
         width: CARD_MIN_SIZE.width,
         height: CARD_MIN_SIZE.height,
       };
@@ -704,8 +770,6 @@ const FlowEditorScreen = ({ route, navigation }) => {
         handleDoubleClick(nodeId);
       } else if (type === 'dragEnd') {
         await onDragEnd(nodeId, extra?.newPosition);
-      } else if (type === 'longPress') {
-        await handleUpdateNode(nodeId, extra?.newData);
       } else if (type === 'delete') {
         await handleDeleteNode(nodeId);
       }
@@ -769,7 +833,8 @@ const FlowEditorScreen = ({ route, navigation }) => {
         savedTranslateX.value = translateX.value;
         savedTranslateY.value = translateY.value;
       }
-    });
+    })
+    .enabled(!linkingState.active);
 
   const pinchGesture = Gesture.Pinch()
     .onStart(event => {
@@ -794,7 +859,8 @@ const FlowEditorScreen = ({ route, navigation }) => {
     })
     .onEnd(() => {
       savedScale.value = scale.value;
-    });
+    })
+    .enabled(!linkingState.active);
 
   const tapGesture = Gesture.Tap().onEnd((event, success) => {
     if (success) {
@@ -842,14 +908,10 @@ const FlowEditorScreen = ({ route, navigation }) => {
         .reverse()
         .find(node => isPointInCard(node, worldX, worldY));
       if (hitNode) {
-        runOnJS(setPendingEvent)({
-          type: 'longPress',
-          nodeId: hitNode.id,
-          extra: {
-            newData: {
-              /* 必要なら編集データ */
-            },
-          },
+        runOnJS(setEditingNode)({
+          id: hitNode.id,
+          title: hitNode.data.label,
+          description: hitNode.data.description,
         });
       }
     });
@@ -885,12 +947,11 @@ const FlowEditorScreen = ({ route, navigation }) => {
     y: Number.isFinite(origin_y.value) ? origin_y.value : 0,
   }));
 
-  const composedGesture = Gesture.Simultaneous(
-    panGesture,
-    pinchGesture,
-    tapGesture,
-    longPressGesture,
+  const composedGesture = Gesture.Exclusive(
+    Gesture.Simultaneous(panGesture, pinchGesture),
     doubleTapGesture,
+    longPressGesture,
+    tapGesture,
   );
 
   const addCard = async () => {
@@ -996,7 +1057,17 @@ const FlowEditorScreen = ({ route, navigation }) => {
     });
   };
 
-  const fabDisabled = linkingState.active;
+  const handleSaveEditingNode = () => {
+    if (editingNode) {
+      handleUpdateNode(editingNode.id, {
+        title: editingNode.title,
+        description: editingNode.description,
+      });
+      setEditingNode(null);
+    }
+  };
+
+  const fabDisabled = linkingState.active || !!editingNode;
 
   return (
     <PaperProvider theme={OriginalTheme}>
@@ -1049,15 +1120,51 @@ const FlowEditorScreen = ({ route, navigation }) => {
                     key={node.id}
                     node={node}
                     font={font}
-                    isSelected={false}
+                    isSelected={linkingState.sourceNodeId === node.id}
                     isLinkingMode={linkingState.active}
                     isLinkSource={linkingState.sourceNodeId === node.id}
+                    isEditing={editingNode && editingNode.id === node.id}
                   />
                 ))}
               </Group>
             </Canvas>
           </View>
         </GestureDetector>
+        {editingNode && (
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={styles.editingOverlay}
+          >
+            <View style={styles.editingContainer}>
+              <TextInput
+                value={editingNode.title}
+                onChangeText={text =>
+                  setEditingNode(prev => ({ ...prev, title: text }))
+                }
+                style={styles.input}
+                placeholder="Title"
+                autoFocus
+              />
+              <TextInput
+                value={editingNode.description}
+                onChangeText={text =>
+                  setEditingNode(prev => ({ ...prev, description: text }))
+                }
+                style={styles.input}
+                placeholder="Description"
+                multiline
+              />
+              <View style={styles.buttonContainer}>
+                <Button title="保存" onPress={handleSaveEditingNode} />
+                <Button
+                  title="キャンセル"
+                  onPress={() => setEditingNode(null)}
+                  color="gray"
+                />
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        )}
       </SafeAreaView>
     </PaperProvider>
   );
@@ -1092,6 +1199,29 @@ const styles = StyleSheet.create({
   },
   fabBottom: {
     backgroundColor: OriginalTheme.colors.primary,
+  },
+  editingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  editingContainer: {
+    backgroundColor: 'white',
+    padding: 20,
+    borderRadius: 10,
+    width: '80%',
+  },
+  input: {
+    borderBottomWidth: 1,
+    borderColor: '#ccc',
+    padding: 8,
+    marginBottom: 10,
+  },
+  buttonContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginTop: 10,
   },
 });
 
