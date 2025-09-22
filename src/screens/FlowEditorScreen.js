@@ -18,6 +18,7 @@ import {
   Text,
   Rect,
   useFont,
+  Circle,
 } from '@shopify/react-native-skia';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -42,7 +43,7 @@ import {
 import { FAB, Provider as PaperProvider } from 'react-native-paper';
 import OriginalTheme from './OriginalTheme'; // 既存のテーマをインポート
 
-const CARD_MIN_SIZE = { width: 150, height: 100 };
+const CARD_MIN_SIZE = { width: 150, height: 70 };
 const { width, height } = Dimensions.get('window');
 
 const getRect = node => ({
@@ -174,24 +175,21 @@ const isPointInCard = (node, x, y) => {
 const isPointInDeleteButton = (node, x, y) => {
   'worklet';
   const deleteButtonRadius = 11;
-  const deleteButtonCenterX =
-    node.position.x + node.size.width + deleteButtonRadius;
-  const deleteButtonCenterY = node.position.y - deleteButtonRadius;
+  const deleteButtonCenterX = node.position.x + node.size.width;
+  const deleteButtonCenterY = node.position.y;
 
-  const buttonLeft = deleteButtonCenterX - deleteButtonRadius;
-  const buttonRight = deleteButtonCenterX + deleteButtonRadius;
-  const buttonTop = deleteButtonCenterY - deleteButtonRadius;
-  const buttonBottom = deleteButtonCenterY + deleteButtonRadius;
-
-  return (
-    x >= buttonLeft && x <= buttonRight && y >= buttonTop && y <= buttonBottom
-  );
+  const dx = x - deleteButtonCenterX;
+  const dy = y - deleteButtonCenterY;
+  return dx * dx + dy * dy <= deleteButtonRadius * deleteButtonRadius;
 };
 
 // --- SkiaCardのイベント実装（Card.jsの内容を参考に） ---
 const SkiaCard = ({
   node,
-  font,
+  fontTitleJP,
+  fontDescriptionJP,
+  fontTitleSC,
+  fontDescriptionSC,
   isSelected,
   isLinkingMode,
   isLinkSource,
@@ -204,8 +202,8 @@ const SkiaCard = ({
   const deleteButtonColor = 'red';
 
   const deleteButtonRadius = 11;
-  const deleteButtonX = node.position.x + node.size.width + deleteButtonRadius;
-  const deleteButtonY = node.position.y - deleteButtonRadius;
+  const deleteButtonX = node.position.x + node.size.width;
+  const deleteButtonY = node.position.y;
 
   const crossPath = Skia.Path.Make();
   crossPath.moveTo(deleteButtonX - 5, deleteButtonY - 5);
@@ -221,37 +219,59 @@ const SkiaCard = ({
         width={node.size.width}
         height={node.size.height}
         color={cardColor}
+      />
+      <Rect
+        x={node.position.x}
+        y={node.position.y}
+        width={node.size.width}
+        height={node.size.height}
         strokeWidth={2}
         style="stroke"
         strokeColor={borderColor}
       />
-      {font && (
+      {fontTitleJP && fontDescriptionJP && fontTitleSC && fontDescriptionSC && (
         <>
           <Text
-            font={font}
+            font={fontTitleJP}
             x={node.position.x + 10}
             y={node.position.y + 20}
-            text={node.data.label ?? ''} // ← 防御
+            text={node.data.label ?? ''}
+            color={titleColor}
+          />
+          <Text
+            font={fontTitleSC}
+            x={node.position.x + 10}
+            y={node.position.y + 20}
+            text={node.data.label ?? ''}
             color={titleColor}
           />
           {node.data.description && (
-            <Text
-              font={font}
-              x={node.position.x + 10}
-              y={node.position.y + 40}
-              text={node.data.description}
-              color={descriptionColor}
-              maxWidth={node.size.width - 20}
-            />
+            <>
+              <Text
+                font={fontDescriptionJP}
+                x={node.position.x + 10}
+                y={node.position.y + 40}
+                text={node.data.description}
+                color={descriptionColor}
+                maxWidth={node.size.width - 20}
+              />
+              <Text
+                font={fontDescriptionSC}
+                x={node.position.x + 10}
+                y={node.position.y + 40}
+                text={node.data.description}
+                color={descriptionColor}
+                maxWidth={node.size.width - 20}
+              />
+            </>
           )}
         </>
       )}
       <Group>
-        <Rect
-          x={deleteButtonX - deleteButtonRadius}
-          y={deleteButtonY - deleteButtonRadius}
-          width={deleteButtonRadius * 2}
-          height={deleteButtonRadius * 2}
+        <Circle
+          cx={deleteButtonX}
+          cy={deleteButtonY}
+          r={deleteButtonRadius}
           color={deleteButtonColor}
         />
         <Path path={crossPath} style="stroke" strokeWidth={2} color="white" />
@@ -292,12 +312,20 @@ const FlowEditorScreen = ({ route, navigation }) => {
   // カードの現在の位置
   const nodePosition = useSharedValue({ x: 0, y: 0 });
 
-  const font = useFont(
-    require('../../assets/fonts/Noto_Sans_JP/NotoSansJP-VariableFont_wght.ttf'),
+  const fontTitleJP = useFont(
+    require('../../assets/fonts/Noto_Sans_JP/static/NotoSansJP-Bold.ttf'),
+    16,
+  );
+  const fontDescriptionJP = useFont(
+    require('../../assets/fonts/Noto_Sans_JP/static/NotoSansJP-Regular.ttf'),
     14,
   );
-  const font_c = useFont(
-    require('../../assets/fonts/Noto_Sans_SC/NotoSansSC-VariableFont_wght.ttf'),
+  const fontTitleSC = useFont(
+    require('../../assets/fonts/Noto_Sans_SC/static/NotoSansSC-Bold.ttf'),
+    16,
+  );
+  const fontDescriptionSC = useFont(
+    require('../../assets/fonts/Noto_Sans_SC/static/NotoSansSC-Regular.ttf'),
     14,
   );
 
@@ -424,166 +452,8 @@ const FlowEditorScreen = ({ route, navigation }) => {
     if (!Array.isArray(allNodes)) {
       return [];
     }
-    const baseNodes = allNodes.filter(
-      node => node.parentId === currentParentId,
-    );
-
-    if (!isSeeThrough) {
-      const newMap = baseNodes.map(n => ({ ...n, zIndex: 1 }));
-      return Array.isArray(newMap) ? newMap : [];
-    }
-
-    const PADDING = 20;
-    const TITLE_HEIGHT = 40;
-    const CARD_SPACING = 20;
-
-    const workingNodes = JSON.parse(JSON.stringify(baseNodes));
-    const allNodesCopy = JSON.parse(JSON.stringify(allNodes));
-
-    const initialCenters = new Map();
-    workingNodes.forEach(node => {
-      initialCenters.set(node.id, {
-        x: node.position.x + node.size.width / 2,
-        y: node.position.y + node.size.height / 2,
-      });
-    });
-
-    const topLevelNodes = [];
-    const childrenByParent = new Map();
-    const originalNodesMap = new Map();
-
-    workingNodes.forEach(node => {
-      originalNodesMap.set(node.id, JSON.parse(JSON.stringify(node)));
-      const children = allNodesCopy.filter(n => n.parentId === node.id);
-      if (children.length > 0) {
-        const minX = Math.min(...children.map(c => c.position.x));
-        const minY = Math.min(...children.map(c => c.position.y));
-
-        const arrangedChildren = children.map(child => {
-          const newX = node.position.x + PADDING + (child.position.x - minX);
-          const newY =
-            node.position.y + TITLE_HEIGHT + (child.position.y - minY);
-          return {
-            ...child,
-            position: { x: newX, y: newY },
-          };
-        });
-
-        const maxChildX = Math.max(
-          ...arrangedChildren.map(
-            c => c.position.x - node.position.x + c.size.width,
-          ),
-        );
-        const maxChildY = Math.max(
-          ...arrangedChildren.map(
-            c => c.position.y - node.position.y + c.size.height,
-          ),
-        );
-
-        const calculatedParentWidth = Math.max(
-          node.size.width,
-          maxChildX + PADDING,
-        );
-        const calculatedParentHeight = Math.max(
-          node.size.height,
-          maxChildY + PADDING,
-        );
-
-        node.size = {
-          width: calculatedParentWidth,
-          height: calculatedParentHeight,
-        };
-        node.isSeeThroughParent = true;
-        node.zIndex = 1;
-        childrenByParent.set(node.id, arrangedChildren);
-      } else {
-        node.isSeeThroughParent = false;
-        node.zIndex = 1;
-      }
-      topLevelNodes.push(node);
-    });
-
-    let changed = true;
-    const MAX_ITERATIONS = 100;
-    let iterations = 0;
-
-    while (changed && iterations < MAX_ITERATIONS) {
-      changed = false;
-      iterations++;
-
-      for (let i = 0; i < topLevelNodes.length; i++) {
-        for (let j = i + 1; j < topLevelNodes.length; j++) {
-          const nodeA = topLevelNodes[i];
-          const nodeB = topLevelNodes[j];
-
-          if (doRectsOverlap(getRect(nodeA), getRect(nodeB))) {
-            changed = true;
-
-            const overlapX =
-              Math.min(
-                nodeA.position.x + nodeA.size.width,
-                nodeB.position.x + nodeB.size.width,
-              ) - Math.max(nodeA.position.x, nodeB.position.x);
-            const overlapY =
-              Math.min(
-                nodeA.position.y + nodeA.size.height,
-                nodeB.position.y + nodeB.size.height,
-              ) - Math.max(nodeA.position.y, nodeB.position.y);
-
-            const initialCenterA = initialCenters.get(nodeA.id);
-            const initialCenterB = initialCenters.get(nodeB.id);
-
-            const initialDx = initialCenterB.x - initialCenterA.x;
-            const initialDy = initialCenterB.y - initialCenterA.y;
-
-            if (overlapX < overlapY) {
-              const move = (overlapX + CARD_SPACING) / 2;
-              if (initialDx > 0) {
-                nodeA.position.x -= move;
-                nodeB.position.x += move;
-              } else {
-                nodeA.position.x += move;
-                nodeB.position.x -= move;
-              }
-            } else {
-              const move = (overlapY + CARD_SPACING) / 2;
-              if (initialDy > 0) {
-                nodeA.position.y -= move;
-                nodeB.position.y += move;
-              } else {
-                nodeA.position.y += move;
-                nodeB.position.y -= move;
-              }
-            }
-          }
-        }
-      }
-    }
-
-    const finalNodes = [...topLevelNodes];
-
-    topLevelNodes.forEach(adjustedParent => {
-      if (childrenByParent.has(adjustedParent.id)) {
-        const originalParent = originalNodesMap.get(adjustedParent.id);
-        const children = childrenByParent.get(adjustedParent.id);
-
-        const dx = adjustedParent.position.x - originalParent.position.x;
-        const dy = adjustedParent.position.y - originalParent.position.y;
-
-        const adjustedChildren = children.map(child => ({
-          ...child,
-          position: {
-            x: child.position.x + dx,
-            y: child.position.y + dy,
-          },
-          zIndex: 10,
-        }));
-        finalNodes.push(...adjustedChildren);
-      }
-    });
-
-    return Array.isArray(finalNodes) ? finalNodes : [];
-  }, [allNodes, currentParentId, isSeeThrough, edges]);
+    return allNodes.filter(node => node.parentId === currentParentId);
+  }, [allNodes, currentParentId]);
 
   // --- 1. worklet関数を通常関数に変更し、内部でPromise処理に統一 ---
   // --- 2. runOnJSで呼ぶように修正（runOnJSはPromiseを返さないように） ---
@@ -791,7 +661,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
       const hitNode = [...displayNodes]
         .reverse()
         .find(node => isPointInCard(node, worldX, worldY));
-      if (hitNode) {
+      if (hitNode && !isSeeThrough) {
         activeNodeId.value = hitNode.id;
         dragStartOffset.value = {
           x: worldX - hitNode.position.x,
@@ -1119,7 +989,10 @@ const FlowEditorScreen = ({ route, navigation }) => {
                   <SkiaCard
                     key={node.id}
                     node={node}
-                    font={font}
+                    fontTitleJP={fontTitleJP}
+                    fontDescriptionJP={fontDescriptionJP}
+                    fontTitleSC={fontTitleSC}
+                    fontDescriptionSC={fontDescriptionSC}
                     isSelected={linkingState.sourceNodeId === node.id}
                     isLinkingMode={linkingState.active}
                     isLinkSource={linkingState.sourceNodeId === node.id}
