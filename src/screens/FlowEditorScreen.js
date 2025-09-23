@@ -8,6 +8,7 @@ import {
   Button,
   KeyboardAvoidingView,
   Platform,
+  TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -19,6 +20,7 @@ import {
   Rect,
   useFont,
   Circle,
+  DashPathEffect,
 } from '@shopify/react-native-skia';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -26,6 +28,7 @@ import Animated, {
   useAnimatedStyle,
   runOnJS,
   useDerivedValue,
+  withTiming,
 } from 'react-native-reanimated';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
@@ -40,7 +43,7 @@ import {
   updateFlow,
   getFlows,
 } from '../db';
-import { FAB, Provider as PaperProvider } from 'react-native-paper';
+import { Divider, FAB, Provider as PaperProvider } from 'react-native-paper';
 import OriginalTheme from './OriginalTheme'; // 既存のテーマをインポート
 
 const CARD_MIN_SIZE = { width: 150, height: 70 };
@@ -194,6 +197,7 @@ const SkiaCard = ({
   isLinkingMode,
   isLinkSource,
   isEditing,
+  isSeeThroughParent,
 }) => {
   const cardColor = isSelected ? '#E3F2FD' : 'white';
   const borderColor = isLinkSource ? '#34C759' : '#ddd';
@@ -211,6 +215,16 @@ const SkiaCard = ({
   crossPath.moveTo(deleteButtonX + 5, deleteButtonY - 5);
   crossPath.lineTo(deleteButtonX - 5, deleteButtonY + 5);
 
+  const borderPath = Skia.Path.Make();
+  borderPath.addRect(
+    Skia.XYWHRect(
+      node.position.x,
+      node.position.y,
+      node.size.width,
+      node.size.height,
+    ),
+  );
+
   return (
     <Group opacity={isEditing ? 0.5 : 1.0}>
       <Rect
@@ -220,15 +234,26 @@ const SkiaCard = ({
         height={node.size.height}
         color={cardColor}
       />
-      <Rect
-        x={node.position.x}
-        y={node.position.y}
-        width={node.size.width}
-        height={node.size.height}
-        strokeWidth={2}
-        style="stroke"
-        strokeColor={borderColor}
-      />
+      {isSeeThroughParent ? (
+        <Path
+          path={borderPath}
+          style="stroke"
+          strokeWidth={2}
+          color={borderColor}
+        >
+          <DashPathEffect intervals={[4, 4]} />
+        </Path>
+      ) : (
+        <Rect
+          x={node.position.x}
+          y={node.position.y}
+          width={node.size.width}
+          height={node.size.height}
+          strokeWidth={2}
+          style="stroke"
+          strokeColor={borderColor}
+        />
+      )}
       {fontTitleJP && fontDescriptionJP && fontTitleSC && fontDescriptionSC && (
         <>
           <Text
@@ -279,6 +304,8 @@ const SkiaCard = ({
     </Group>
   );
 };
+
+const AnimatedTextInput = Animated.createAnimatedComponent(TextInput);
 
 const FlowEditorScreen = ({ route, navigation }) => {
   const { flowId, flowName } = route.params;
@@ -452,8 +479,166 @@ const FlowEditorScreen = ({ route, navigation }) => {
     if (!Array.isArray(allNodes)) {
       return [];
     }
-    return allNodes.filter(node => node.parentId === currentParentId);
-  }, [allNodes, currentParentId]);
+    const baseNodes = allNodes.filter(
+      node => node.parentId === currentParentId,
+    );
+
+    if (!isSeeThrough) {
+      const newMap = baseNodes.map(n => ({ ...n, zIndex: 1 }));
+      return Array.isArray(newMap) ? newMap : [];
+    }
+
+    const PADDING = 20;
+    const TITLE_HEIGHT = 40;
+    const CARD_SPACING = 20;
+
+    const workingNodes = JSON.parse(JSON.stringify(baseNodes));
+    const allNodesCopy = JSON.parse(JSON.stringify(allNodes));
+
+    const initialCenters = new Map();
+    workingNodes.forEach(node => {
+      initialCenters.set(node.id, {
+        x: node.position.x + node.size.width / 2,
+        y: node.position.y + node.size.height / 2,
+      });
+    });
+
+    const topLevelNodes = [];
+    const childrenByParent = new Map();
+    const originalNodesMap = new Map();
+
+    workingNodes.forEach(node => {
+      originalNodesMap.set(node.id, JSON.parse(JSON.stringify(node)));
+      const children = allNodesCopy.filter(n => n.parentId === node.id);
+      if (children.length > 0) {
+        const minX = Math.min(...children.map(c => c.position.x));
+        const minY = Math.min(...children.map(c => c.position.y));
+
+        const arrangedChildren = children.map(child => {
+          const newX = node.position.x + PADDING + (child.position.x - minX);
+          const newY =
+            node.position.y + TITLE_HEIGHT + (child.position.y - minY);
+          return {
+            ...child,
+            position: { x: newX, y: newY },
+          };
+        });
+
+        const maxChildX = Math.max(
+          ...arrangedChildren.map(
+            c => c.position.x - node.position.x + c.size.width,
+          ),
+        );
+        const maxChildY = Math.max(
+          ...arrangedChildren.map(
+            c => c.position.y - node.position.y + c.size.height,
+          ),
+        );
+
+        const calculatedParentWidth = Math.max(
+          node.size.width,
+          maxChildX + PADDING,
+        );
+        const calculatedParentHeight = Math.max(
+          node.size.height,
+          maxChildY + PADDING,
+        );
+
+        node.size = {
+          width: calculatedParentWidth,
+          height: calculatedParentHeight,
+        };
+        node.isSeeThroughParent = true;
+        node.zIndex = 1;
+        childrenByParent.set(node.id, arrangedChildren);
+      } else {
+        node.isSeeThroughParent = false;
+        node.zIndex = 1;
+      }
+      topLevelNodes.push(node);
+    });
+
+    let changed = true;
+    const MAX_ITERATIONS = 100;
+    let iterations = 0;
+
+    while (changed && iterations < MAX_ITERATIONS) {
+      changed = false;
+      iterations++;
+
+      for (let i = 0; i < topLevelNodes.length; i++) {
+        for (let j = i + 1; j < topLevelNodes.length; j++) {
+          const nodeA = topLevelNodes[i];
+          const nodeB = topLevelNodes[j];
+
+          if (doRectsOverlap(getRect(nodeA), getRect(nodeB))) {
+            changed = true;
+
+            const overlapX =
+              Math.min(
+                nodeA.position.x + nodeA.size.width,
+                nodeB.position.x + nodeB.size.width,
+              ) - Math.max(nodeA.position.x, nodeB.position.x);
+            const overlapY =
+              Math.min(
+                nodeA.position.y + nodeA.size.height,
+                nodeB.position.y + nodeB.size.height,
+              ) - Math.max(nodeA.position.y, nodeB.position.y);
+
+            const initialCenterA = initialCenters.get(nodeA.id);
+            const initialCenterB = initialCenters.get(nodeB.id);
+
+            const initialDx = initialCenterB.x - initialCenterA.x;
+            const initialDy = initialCenterB.y - initialCenterA.y;
+
+            if (overlapX < overlapY) {
+              const move = (overlapX + CARD_SPACING) / 2;
+              if (initialDx > 0) {
+                nodeA.position.x -= move;
+                nodeB.position.x += move;
+              } else {
+                nodeA.position.x += move;
+                nodeB.position.x -= move;
+              }
+            } else {
+              const move = (overlapY + CARD_SPACING) / 2;
+              if (initialDy > 0) {
+                nodeA.position.y -= move;
+                nodeB.position.y += move;
+              } else {
+                nodeA.position.y += move;
+                nodeB.position.y -= move;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    const finalNodes = [...topLevelNodes];
+
+    topLevelNodes.forEach(adjustedParent => {
+      if (childrenByParent.has(adjustedParent.id)) {
+        const originalParent = originalNodesMap.get(adjustedParent.id);
+        const children = childrenByParent.get(adjustedParent.id);
+
+        const dx = adjustedParent.position.x - originalParent.position.x;
+        const dy = adjustedParent.position.y - originalParent.position.y;
+
+        const adjustedChildren = children.map(child => ({
+          ...child,
+          position: {
+            x: child.position.x + dx,
+            y: child.position.y + dy,
+          },
+          zIndex: 10,
+        }));
+        finalNodes.push(...adjustedChildren);
+      }
+    });
+
+    return Array.isArray(finalNodes) ? finalNodes : [];
+  }, [allNodes, currentParentId, isSeeThrough, edges]);
 
   // --- 1. worklet関数を通常関数に変更し、内部でPromise処理に統一 ---
   // --- 2. runOnJSで呼ぶように修正（runOnJSはPromiseを返さないように） ---
@@ -524,6 +709,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
   // 例：handleSectionUp
   const handleSectionUp = async () => {
+    if (isSeeThrough || linkingState.active) return;
     if (parentIdHistory.length > 0) {
       const newHistory = [...parentIdHistory];
       const lastParentId = newHistory.pop();
@@ -937,7 +1123,59 @@ const FlowEditorScreen = ({ route, navigation }) => {
     }
   };
 
-  const fabDisabled = linkingState.active || !!editingNode;
+  const fabDisabled = isSeeThrough || linkingState.active || !!editingNode;
+
+  const resetScale = () => {
+    'worklet';
+    const newScale = 1;
+    const newTranslateX = width / 2 - (width / 2 - translateX.value);
+    const newTranslateY = height / 2 - (height / 2 - translateY.value);
+
+    scale.value = withTiming(newScale, { duration: 300 });
+    translateX.value = withTiming(newTranslateX, { duration: 300 });
+    translateY.value = withTiming(newTranslateY, { duration: 300 });
+    savedScale.value = newScale;
+    savedTranslateX.value = newTranslateX;
+    savedTranslateY.value = newTranslateY;
+  };
+
+  const scaleText = useDerivedValue(() => {
+    return `${Math.round(scale.value)}`;
+  });
+
+  const moveToNearestCard = () => {
+    'worklet';
+    if (displayNodes.length === 0) return;
+
+    const screenCenterX = (width / 2 - translateX.value) / scale.value;
+    const screenCenterY = (height / 2 - translateY.value) / scale.value;
+
+    let closestNode = null;
+    let minDistance = Infinity;
+
+    displayNodes.forEach(node => {
+      const nodeCenter = getCenter(node);
+      const distance = Math.sqrt(
+        Math.pow(nodeCenter.x - screenCenterX, 2) +
+          Math.pow(nodeCenter.y - screenCenterY, 2),
+      );
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestNode = node;
+      }
+    });
+
+    if (closestNode) {
+      const nodeCenter = getCenter(closestNode);
+      const newTranslateX = width / 2 - nodeCenter.x * scale.value;
+      const newTranslateY = height / 2 - nodeCenter.y * scale.value;
+
+      translateX.value = withTiming(newTranslateX, { duration: 300 });
+      translateY.value = withTiming(newTranslateY, { duration: 300 });
+      savedTranslateX.value = newTranslateX;
+      savedTranslateY.value = newTranslateY;
+    }
+  };
 
   return (
     <PaperProvider theme={OriginalTheme}>
@@ -947,7 +1185,21 @@ const FlowEditorScreen = ({ route, navigation }) => {
       >
         <View pointerEvents="box-none" style={styles.fabContainer} zIndex={100}>
           <FAB
-            icon={isSeeThrough ? 'eye-off' : 'eye'}
+            icon="magnify"
+            style={[styles.fab, styles.fabScale]}
+            small
+            onPress={() => runOnJS(resetScale)()}
+          />
+          <FAB
+            icon="target"
+            style={[styles.fab, styles.fabMove]}
+            onPress={() => runOnJS(moveToNearestCard)()}
+            small
+            visible={true}
+          />
+          <Divider style={{ height: 32, marginHorizontal: 4 }} />
+          <FAB
+            icon={isSeeThrough ? 'eye' : 'eye-off'}
             style={[styles.fab, styles.fabEye]}
             onPress={() => setIsSeeThrough(s => !s)}
             disabled={linkingState.active}
@@ -997,6 +1249,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
                     isLinkingMode={linkingState.active}
                     isLinkSource={linkingState.sourceNodeId === node.id}
                     isEditing={editingNode && editingNode.id === node.id}
+                    isSeeThroughParent={node.isSeeThroughParent}
                   />
                 ))}
               </Group>
@@ -1062,7 +1315,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 4,
   },
   fabEye: {
-    backgroundColor: OriginalTheme.colors.secondary,
+    backgroundColor: OriginalTheme.colors.primary,
   },
   fabTop: {
     backgroundColor: OriginalTheme.colors.primary,
@@ -1095,6 +1348,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-around',
     marginTop: 10,
+  },
+  bottomLeftControls: {
+    position: 'absolute',
+    bottom: 16,
+    left: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  scaleIndicatorText: {
+    color: 'black',
+    fontSize: 12,
+    backgroundColor: 'rgba(255,255,255,0.8)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 5,
+  },
+  fabMove: {
+    backgroundColor: OriginalTheme.colors.primary,
+  },
+  fabScale: {
+    backgroundColor: OriginalTheme.colors.primary,
   },
 });
 
