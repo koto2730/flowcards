@@ -812,7 +812,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
   // --- イベント管理用のstate ---
   const [pendingEvent, setPendingEvent] = useState(null);
-  // pendingEvent: { type: 'tap'|'doubleTap'|'dragEnd'|'longPress'|'delete', nodeId, extra }
+  // pendingEvent: { type: 'tap'|'doubleTap'|'dragEnd'|'longPress'|'delete'|'edgeTap', nodeId, extra }
 
   useEffect(() => {
     if (!pendingEvent) return;
@@ -828,6 +828,8 @@ const FlowEditorScreen = ({ route, navigation }) => {
         await onDragEnd(nodeId, extra?.newPosition);
       } else if (type === 'delete') {
         await handleDeleteNode(nodeId);
+      } else if (type === 'edgeTap') {
+        await handleDeleteEdge(nodeId); // nodeId here is edgeId
       }
     };
 
@@ -916,6 +918,53 @@ const FlowEditorScreen = ({ route, navigation }) => {
     })
     .enabled(!linkingState.active);
 
+  const checkForEdgeTap = point => {
+    'worklet';
+    const TAP_THRESHOLD = 15;
+
+    const displayNodeIds = new Set(displayNodes.map(n => n.id));
+    const relevantEdges = edges.filter(
+      edge =>
+        displayNodeIds.has(edge.source) && displayNodeIds.has(edge.target),
+    );
+
+    for (const edge of relevantEdges) {
+      const sourceNode = displayNodes.find(n => n.id === edge.source);
+      const targetNode = displayNodes.find(n => n.id === edge.target);
+      if (!sourceNode || !targetNode) continue;
+
+      const p1 = getHandlePosition(sourceNode, edge.sourceHandle);
+      const p2 = getHandlePosition(targetNode, edge.targetHandle);
+
+      const dx = p2.x - p1.x;
+      const dy = p2.y - p1.y;
+      const l2 = dx * dx + dy * dy;
+
+      if (l2 === 0) {
+        const dist = Math.sqrt(
+          Math.pow(point.x - p1.x, 2) + Math.pow(point.y - p1.y, 2),
+        );
+        if (dist < TAP_THRESHOLD) {
+          return edge.id;
+        }
+      } else {
+        let t = ((point.x - p1.x) * dx + (point.y - p1.y) * dy) / l2;
+        t = Math.max(0, Math.min(1, t));
+        const closestPoint = {
+          x: p1.x + t * dx,
+          y: p1.y + t * dy,
+        };
+        const dist = Math.sqrt(
+          Math.pow(point.x - closestPoint.x, 2) +
+            Math.pow(point.y - closestPoint.y, 2),
+        );
+        if (dist < TAP_THRESHOLD) {
+          return edge.id;
+        }
+      }
+    }
+  };
+
   const tapGesture = Gesture.Tap().onEnd((event, success) => {
     if (isSeeThrough) return;
     if (success) {
@@ -947,7 +996,13 @@ const FlowEditorScreen = ({ route, navigation }) => {
       } else {
         // エッジタップ（必要なら追加）
         if (linkingState.active) {
-          runOnJS(checkForEdgeTap)({ x: worldX, y: worldY });
+          const edgeId = checkForEdgeTap({ x: worldX, y: worldY });
+          if (edgeId) {
+            runOnJS(setPendingEvent)({
+              type: 'edgeTap',
+              nodeId: edgeId,
+            });
+          }
         }
       }
     }
@@ -1028,54 +1083,6 @@ const FlowEditorScreen = ({ route, navigation }) => {
       fetchData();
     } catch (error) {
       console.error('Failed to add node:', error);
-    }
-  };
-
-  const checkForEdgeTap = point => {
-    const TAP_THRESHOLD = 15;
-
-    const displayNodeIds = new Set(displayNodes.map(n => n.id));
-    const relevantEdges = edges.filter(
-      edge =>
-        displayNodeIds.has(edge.source) && displayNodeIds.has(edge.target),
-    );
-
-    for (const edge of relevantEdges) {
-      const sourceNode = displayNodes.find(n => n.id === edge.source);
-      const targetNode = displayNodes.find(n => n.id === edge.target);
-      if (!sourceNode || !targetNode) continue;
-
-      const p1 = getHandlePosition(sourceNode, edge.sourceHandle);
-      const p2 = getHandlePosition(targetNode, edge.targetHandle);
-
-      const dx = p2.x - p1.x;
-      const dy = p2.y - p1.y;
-      const l2 = dx * dx + dy * dy;
-
-      if (l2 === 0) {
-        const dist = Math.sqrt(
-          Math.pow(point.x - p1.x, 2) + Math.pow(point.y - p1.y, 2),
-        );
-        if (dist < TAP_THRESHOLD) {
-          handleDeleteEdge(edge.id);
-          return;
-        }
-      } else {
-        let t = ((point.x - p1.x) * dx + (point.y - p1.y) * dy) / l2;
-        t = Math.max(0, Math.min(1, t));
-        const closestPoint = {
-          x: p1.x + t * dx,
-          y: p1.y + t * dy,
-        };
-        const dist = Math.sqrt(
-          Math.pow(point.x - closestPoint.x, 2) +
-            Math.pow(point.y - closestPoint.y, 2),
-        );
-        if (dist < TAP_THRESHOLD) {
-          handleDeleteEdge(edge.id);
-          return;
-        }
-      }
     }
   };
 
@@ -1200,7 +1207,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
           />
           <Divider style={{ height: 32, marginHorizontal: 4 }} />
           <FAB
-            icon={isSeeThrough ? 'eye' : 'eye-off'}
+            icon={isSeeThrough ? 'eye-off' : 'eye'}
             style={[styles.fab, styles.fabEye]}
             onPress={() => setIsSeeThrough(s => !s)}
             disabled={linkingState.active}
