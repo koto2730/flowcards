@@ -42,6 +42,7 @@ import {
   deleteEdge,
   updateFlow,
   getFlows,
+  updateEdge,
 } from '../db';
 import { Divider, FAB, Provider as PaperProvider } from 'react-native-paper';
 import OriginalTheme from './OriginalTheme'; // 既存のテーマをインポート
@@ -151,6 +152,18 @@ const CalcSkiaEdgeStroke = ({ edge, sourceNode, targetNode }) => {
   const y2 = endY - arrowSize * Math.sin(angle + arrowAngle);
   skPath.moveTo(endX, endY);
   skPath.lineTo(x2, y2);
+
+  if (edge.type === 'bidirectional') {
+    const startAngle = Math.atan2(c1y - startY, c1x - startX);
+    const sx1 = startX + arrowSize * Math.cos(startAngle - arrowAngle);
+    const sy1 = startY + arrowSize * Math.sin(startAngle - arrowAngle);
+    skPath.moveTo(startX, startY);
+    skPath.lineTo(sx1, sy1);
+    const sx2 = startX + arrowSize * Math.cos(startAngle + arrowAngle);
+    const sy2 = startY + arrowSize * Math.sin(startAngle + arrowAngle);
+    skPath.moveTo(startX, startY);
+    skPath.lineTo(sx2, sy2);
+  }
 
   return skPath;
 };
@@ -773,15 +786,39 @@ const FlowEditorScreen = ({ route, navigation }) => {
       const targetNode = allNodes.find(n => n.id === nodeId);
 
       if (sourceNode && targetNode) {
-        const existingEdge = edges.find(
+        // Check for an existing edge from source to target
+        const forwardEdge = edges.find(
           edge =>
-            (edge.source === linkingState.sourceNodeId &&
-              edge.target === nodeId) ||
-            (edge.source === nodeId &&
-              edge.target === linkingState.sourceNodeId),
+            edge.source === linkingState.sourceNodeId && edge.target === nodeId,
         );
 
-        if (!existingEdge) {
+        if (forwardEdge) {
+          // Edge already exists, do nothing.
+          setLinkingState({ active: true, sourceNodeId: null });
+          return;
+        }
+
+        // Check for an existing edge from target to source (reverse edge)
+        const reverseEdge = edges.find(
+          edge =>
+            edge.source === nodeId && edge.target === linkingState.sourceNodeId,
+        );
+
+        if (reverseEdge) {
+          // Reverse edge exists, update it to be bidirectional
+          try {
+            await updateEdge(reverseEdge.id, { type: 'bidirectional' });
+            // Update local state to reflect the change
+            setEdges(eds =>
+              eds.map(e =>
+                e.id === reverseEdge.id ? { ...e, type: 'bidirectional' } : e,
+              ),
+            );
+          } catch (error) {
+            console.error('Failed to update edge to bidirectional:', error);
+          }
+        } else {
+          // No existing edge in either direction, create a new one
           const sourceHandle = getClosestHandle(sourceNode, targetNode);
           const targetHandle = getClosestHandle(targetNode, sourceNode);
 
