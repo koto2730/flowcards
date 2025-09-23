@@ -908,8 +908,6 @@ const FlowEditorScreen = ({ route, navigation }) => {
         return;
       }
       scale.value = newScale;
-      translateX.value = context.value.focalX - origin_x.value * newScale;
-      translateY.value = context.value.focalY - origin_y.value * newScale;
     })
     .onEnd(() => {
       savedScale.value = scale.value;
@@ -919,6 +917,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
     .enabled(!linkingState.active);
 
   const tapGesture = Gesture.Tap().onEnd((event, success) => {
+    if (isSeeThrough) return;
     if (success) {
       const worldX = (event.x - translateX.value) / scale.value;
       const worldY = (event.y - translateY.value) / scale.value;
@@ -957,6 +956,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
   const longPressGesture = Gesture.LongPress()
     .minDuration(800)
     .onStart(event => {
+      if (isSeeThrough || linkingState.active) return;
       const worldX = (event.x - translateX.value) / scale.value;
       const worldY = (event.y - translateY.value) / scale.value;
       if (!Array.isArray(displayNodes)) return;
@@ -976,6 +976,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
   const doubleTapGesture = Gesture.Tap()
     .numberOfTaps(2)
     .onEnd((event, success) => {
+      if (isSeeThrough || linkingState.active) return;
       if (success) {
         const worldX = (event.x - translateX.value) / scale.value;
         const worldY = (event.y - translateY.value) / scale.value;
@@ -1236,7 +1237,6 @@ const FlowEditorScreen = ({ route, navigation }) => {
           <View style={styles.flowArea}>
             <Canvas style={StyleSheet.absoluteFill}>
               <Group transform={skiaTransform} origin={skiaOrigin}>
-                {renderEdges()}
                 {displayNodes.map(node => (
                   <SkiaCard
                     key={node.id}
@@ -1252,6 +1252,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
                     isSeeThroughParent={node.isSeeThroughParent}
                   />
                 ))}
+                {renderEdges()}
               </Group>
             </Canvas>
           </View>
