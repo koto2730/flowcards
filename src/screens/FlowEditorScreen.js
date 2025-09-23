@@ -2,21 +2,33 @@ import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   View,
   StyleSheet,
-  Button,
-  TouchableOpacity,
-  Text,
   Dimensions,
   Alert,
+  TextInput,
+  Button,
+  KeyboardAvoidingView,
+  Platform,
+  TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Svg, { Line, Path, Defs, Marker } from 'react-native-svg';
-import Card from '../components/Card';
+import {
+  Canvas,
+  Path,
+  Skia,
+  Group,
+  Text,
+  Rect,
+  useFont,
+  Circle,
+  DashPathEffect,
+} from '@shopify/react-native-skia';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   runOnJS,
-  useAnimatedProps,
+  useDerivedValue,
+  withTiming,
 } from 'react-native-reanimated';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
@@ -31,13 +43,11 @@ import {
   updateFlow,
   getFlows,
 } from '../db';
-import { FAB, IconButton, Provider as PaperProvider } from 'react-native-paper';
+import { Divider, FAB, Provider as PaperProvider } from 'react-native-paper';
 import OriginalTheme from './OriginalTheme'; // 既存のテーマをインポート
 
 const CARD_MIN_SIZE = { width: 150, height: 70 };
 const { width, height } = Dimensions.get('window');
-
-const AnimatedPath = Animated.createAnimatedComponent(Path);
 
 const getRect = node => ({
   x: node.position.x,
@@ -59,105 +69,292 @@ const doRectsOverlap = (rect1, rect2) => {
     rect1.y + rect1.height > rect2.y
   );
 };
-const HANDLE_NAMES = ['handleTop', 'handleRight', 'handleBottom', 'handleLeft'];
 
-const AnimatedEdge = ({
-  edge,
-  sourceNode,
-  targetNode,
-  translateX,
-  translateY,
-  getHandlePosition,
-}) => {
-  const p1 = getHandlePosition(sourceNode, edge.sourceHandle);
-  const p2 = getHandlePosition(targetNode, edge.targetHandle);
+const getHandlePosition = (node, handleName) => {
+  'worklet';
+  const { x, y } = node.position;
+  const { width, height } = node.size;
+  if (!node || !node.position || !node.size) {
+    return { x: 0, y: 0 }; // ← 防御的にデフォルト値
+  }
+  switch (handleName) {
+    case 'handleTop':
+      return { x: x + width / 2, y: y };
+    case 'handleBottom':
+      return { x: x + width / 2, y: y + height };
+    case 'handleLeft':
+      return { x: x, y: y + height / 2 };
+    case 'handleRight':
+      return { x: x + width, y: y + height / 2 };
+    default:
+      return { x, y };
+  }
+};
 
-  const animatedProps = useAnimatedProps(() => {
-    const startX = p1.x + translateX.value;
-    const startY = p1.y + translateY.value;
-    const endX = p2.x + translateX.value;
-    const endY = p2.y + translateY.value;
+const CalcSkiaEdgeStroke = ({ edge, sourceNode, targetNode }) => {
+  const sourcePos = getHandlePosition(sourceNode, edge.sourceHandle);
+  const targetPos = getHandlePosition(targetNode, edge.targetHandle);
 
-    const dx = endX - startX;
-    const dy = endY - startY;
-    const curvature = 0.5;
-    let c1x, c1y, c2x, c2y;
+  const startX = sourcePos.x;
+  const startY = sourcePos.y;
+  const endX = targetPos.x;
+  const endY = targetPos.y;
 
-    if (edge.sourceHandle === 'handleRight') {
-      c1x = startX + Math.abs(dx) * curvature;
-      c1y = startY;
-    } else if (edge.sourceHandle === 'handleLeft') {
-      c1x = startX - Math.abs(dx) * curvature;
-      c1y = startY;
-    } else if (edge.sourceHandle === 'handleTop') {
-      c1x = startX;
-      c1y = startY - Math.abs(dy) * curvature;
-    } else {
-      // handleBottom
-      c1x = startX;
-      c1y = startY + Math.abs(dy) * curvature;
-    }
+  const dx = endX - startX;
+  const dy = endY - startY;
+  const curvature = 0.5;
+  let c1x, c1y, c2x, c2y;
 
-    if (edge.targetHandle === 'handleRight') {
-      c2x = endX + Math.abs(dx) * curvature;
-      c2y = endY;
-    } else if (edge.targetHandle === 'handleLeft') {
-      c2x = endX - Math.abs(dx) * curvature;
-      c2y = endY;
-    } else if (edge.targetHandle === 'handleTop') {
-      c2x = endX;
-      c2y = endY - Math.abs(dy) * curvature;
-    } else {
-      // handleBottom
-      c2x = endX;
-      c2y = endY + Math.abs(dy) * curvature;
-    }
+  if (edge.sourceHandle === 'handleRight') {
+    c1x = startX + Math.abs(dx) * curvature;
+    c1y = startY;
+  } else if (edge.sourceHandle === 'handleLeft') {
+    c1x = startX - Math.abs(dx) * curvature;
+    c1y = startY;
+  } else if (edge.sourceHandle === 'handleTop') {
+    c1x = startX;
+    c1y = startY - Math.abs(dy) * curvature;
+  } else {
+    c1x = startX;
+    c1y = startY + Math.abs(dy) * curvature;
+  }
 
-    const path = `M ${startX} ${startY} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${endX} ${endY}`;
+  if (edge.targetHandle === 'handleRight') {
+    c2x = endX + Math.abs(dx) * curvature;
+    c2y = endY;
+  } else if (edge.targetHandle === 'handleLeft') {
+    c2x = endX - Math.abs(dx) * curvature;
+    c2y = endY;
+  } else if (edge.targetHandle === 'handleTop') {
+    c2x = endX;
+    c2y = endY - Math.abs(dy) * curvature;
+  } else {
+    c2x = endX;
+    c2y = endY + Math.abs(dy) * curvature;
+  }
 
-    return {
-      d: path,
-    };
-  });
+  const skPath = Skia.Path.Make();
+  skPath.moveTo(startX, startY);
+  skPath.cubicTo(c1x, c1y, c2x, c2y, endX, endY);
 
+  // Arrowhead
+  const angle = Math.atan2(endY - c2y, endX - c2x);
+  const arrowSize = 10;
+  const arrowAngle = Math.PI / 6;
+
+  const x1 = endX - arrowSize * Math.cos(angle - arrowAngle);
+  const y1 = endY - arrowSize * Math.sin(angle - arrowAngle);
+  skPath.moveTo(endX, endY);
+  skPath.lineTo(x1, y1);
+
+  const x2 = endX - arrowSize * Math.cos(angle + arrowAngle);
+  const y2 = endY - arrowSize * Math.sin(angle + arrowAngle);
+  skPath.moveTo(endX, endY);
+  skPath.lineTo(x2, y2);
+
+  return skPath;
+};
+
+const CalcSkiaInteractionEdgeStroke = ({ edge, sourceNode, targetNode }) => {
+  const sourcePos = getHandlePosition(sourceNode, edge.sourceHandle);
+  const targetPos = getHandlePosition(targetNode, edge.targetHandle);
+  const skPath = Skia.Path.Make();
+  skPath.moveTo(sourcePos.x, sourcePos.y);
+  skPath.lineTo(targetPos.x, targetPos.y);
+  return skPath;
+};
+
+// --- カードのヒット判定関数 ---
+const isPointInCard = (node, x, y) => {
+  'worklet';
   return (
-    <React.Fragment>
-      {/* Hit area for tap gesture */}
-      <AnimatedPath
-        animatedProps={animatedProps}
-        stroke="transparent"
-        strokeWidth="15"
-        fill="none"
-      />
-      {/* Visible line */}
-      <AnimatedPath
-        animatedProps={animatedProps}
-        stroke="black"
-        strokeWidth="2"
-        markerEnd="url(#arrow)"
-        pointerEvents="none"
-        fill="none"
-      />
-    </React.Fragment>
+    x >= node.position.x &&
+    x <= node.position.x + node.size.width &&
+    y >= node.position.y &&
+    y <= node.position.y + node.size.height
   );
 };
 
+const isPointInDeleteButton = (node, x, y) => {
+  'worklet';
+  const deleteButtonRadius = 11;
+  const deleteButtonCenterX = node.position.x + node.size.width;
+  const deleteButtonCenterY = node.position.y;
+
+  const dx = x - deleteButtonCenterX;
+  const dy = y - deleteButtonCenterY;
+  return dx * dx + dy * dy <= deleteButtonRadius * deleteButtonRadius;
+};
+
+// --- SkiaCardのイベント実装（Card.jsの内容を参考に） ---
+const SkiaCard = ({
+  node,
+  fontTitleJP,
+  fontDescriptionJP,
+  fontTitleSC,
+  fontDescriptionSC,
+  isSelected,
+  isLinkingMode,
+  isLinkSource,
+  isEditing,
+  isSeeThroughParent,
+}) => {
+  const cardColor = isSelected ? '#E3F2FD' : 'white';
+  const borderColor = isLinkSource ? '#34C759' : '#ddd';
+  const titleColor = 'black';
+  const descriptionColor = '#555';
+  const deleteButtonColor = 'red';
+
+  const deleteButtonRadius = 11;
+  const deleteButtonX = node.position.x + node.size.width;
+  const deleteButtonY = node.position.y;
+
+  const crossPath = Skia.Path.Make();
+  crossPath.moveTo(deleteButtonX - 5, deleteButtonY - 5);
+  crossPath.lineTo(deleteButtonX + 5, deleteButtonY + 5);
+  crossPath.moveTo(deleteButtonX + 5, deleteButtonY - 5);
+  crossPath.lineTo(deleteButtonX - 5, deleteButtonY + 5);
+
+  const borderPath = Skia.Path.Make();
+  borderPath.addRect(
+    Skia.XYWHRect(
+      node.position.x,
+      node.position.y,
+      node.size.width,
+      node.size.height,
+    ),
+  );
+
+  return (
+    <Group opacity={isEditing ? 0.5 : 1.0}>
+      <Rect
+        x={node.position.x}
+        y={node.position.y}
+        width={node.size.width}
+        height={node.size.height}
+        color={cardColor}
+      />
+      {isSeeThroughParent ? (
+        <Path
+          path={borderPath}
+          style="stroke"
+          strokeWidth={2}
+          color={borderColor}
+        >
+          <DashPathEffect intervals={[4, 4]} />
+        </Path>
+      ) : (
+        <Rect
+          x={node.position.x}
+          y={node.position.y}
+          width={node.size.width}
+          height={node.size.height}
+          strokeWidth={2}
+          style="stroke"
+          strokeColor={borderColor}
+        />
+      )}
+      {fontTitleJP && fontDescriptionJP && fontTitleSC && fontDescriptionSC && (
+        <>
+          <Text
+            font={fontTitleJP}
+            x={node.position.x + 10}
+            y={node.position.y + 20}
+            text={node.data.label ?? ''}
+            color={titleColor}
+          />
+          <Text
+            font={fontTitleSC}
+            x={node.position.x + 10}
+            y={node.position.y + 20}
+            text={node.data.label ?? ''}
+            color={titleColor}
+          />
+          {node.data.description && (
+            <>
+              <Text
+                font={fontDescriptionJP}
+                x={node.position.x + 10}
+                y={node.position.y + 40}
+                text={node.data.description}
+                color={descriptionColor}
+                maxWidth={node.size.width - 20}
+              />
+              <Text
+                font={fontDescriptionSC}
+                x={node.position.x + 10}
+                y={node.position.y + 40}
+                text={node.data.description}
+                color={descriptionColor}
+                maxWidth={node.size.width - 20}
+              />
+            </>
+          )}
+        </>
+      )}
+      <Group>
+        <Circle
+          cx={deleteButtonX}
+          cy={deleteButtonY}
+          r={deleteButtonRadius}
+          color={deleteButtonColor}
+        />
+        <Path path={crossPath} style="stroke" strokeWidth={2} color="white" />
+      </Group>
+    </Group>
+  );
+};
+
+const AnimatedTextInput = Animated.createAnimatedComponent(TextInput);
+
 const FlowEditorScreen = ({ route, navigation }) => {
-  const { flowId, flowName } = route.params; // flowNameを受け取る
+  const { flowId, flowName } = route.params;
+  // --- allNodesの防御 ---
   const [allNodes, setAllNodes] = useState([]);
   const [edges, setEdges] = useState([]);
   const [currentParentId, setCurrentParentId] = useState('root');
   const [parentIdHistory, setParentIdHistory] = useState([]);
   const [isSeeThrough, setIsSeeThrough] = useState(false);
-  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
   const [linkingState, setLinkingState] = useState({
     active: false,
     sourceNodeId: null,
   });
+  const [editingNode, setEditingNode] = useState(null);
 
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
+  const scale = useSharedValue(1);
+  const savedScale = useSharedValue(1);
+  const savedTranslateX = useSharedValue(0);
+  const savedTranslateY = useSharedValue(0);
   const context = useSharedValue({ x: 0, y: 0 });
+  const origin_x = useSharedValue(0);
+  const origin_y = useSharedValue(0);
+
+  // --- カード操作用のShared Values ---
+  // アクティブな（操作対象の）カードID
+  const activeNodeId = useSharedValue(null);
+  // カードのドラッグ開始時の相対位置
+  const dragStartOffset = useSharedValue({ x: 0, y: 0 });
+  // カードの現在の位置
+  const nodePosition = useSharedValue({ x: 0, y: 0 });
+
+  const fontTitleJP = useFont(
+    require('../../assets/fonts/Noto_Sans_JP/static/NotoSansJP-Bold.ttf'),
+    16,
+  );
+  const fontDescriptionJP = useFont(
+    require('../../assets/fonts/Noto_Sans_JP/static/NotoSansJP-Regular.ttf'),
+    14,
+  );
+  const fontTitleSC = useFont(
+    require('../../assets/fonts/Noto_Sans_SC/static/NotoSansSC-Bold.ttf'),
+    16,
+  );
+  const fontDescriptionSC = useFont(
+    require('../../assets/fonts/Noto_Sans_SC/static/NotoSansSC-Regular.ttf'),
+    14,
+  );
 
   useEffect(() => {
     const loadPosition = async () => {
@@ -168,14 +365,15 @@ const FlowEditorScreen = ({ route, navigation }) => {
           const position = JSON.parse(currentFlow.lastPosition);
           translateX.value = position.x;
           translateY.value = position.y;
-          runOnJS(setPanOffset)({ x: position.x, y: position.y });
+          savedTranslateX.value = position.x;
+          savedTranslateY.value = position.y;
         }
       } catch (error) {
         console.error('Failed to load last position:', error);
       }
     };
     loadPosition();
-  }, [flowId, translateX, translateY]);
+  }, [flowId, translateX, translateY, savedTranslateX, savedTranslateY]);
 
   useEffect(() => {
     return () => {
@@ -194,21 +392,26 @@ const FlowEditorScreen = ({ route, navigation }) => {
     };
   }, [flowId, translateX, translateY]);
 
+  // fetchDataなどでsetAllNodesする際に必ず配列を渡す
   const fetchData = useCallback(async () => {
     try {
       const nodesData = await getNodes(flowId);
       const edgesData = await getEdges(flowId);
 
-      const formattedNodes = nodesData.map(n => ({
-        id: n.id,
-        parentId: n.parentId,
-        data: { label: n.label, description: n.description },
-        position: { x: n.x, y: n.y },
-        size: { width: n.width, height: n.height },
-      }));
-      setAllNodes(formattedNodes);
-      setEdges(edgesData);
+      const formattedNodes = Array.isArray(nodesData)
+        ? nodesData.map(n => ({
+            id: n.id,
+            parentId: n.parentId,
+            data: { label: n.label ?? '', description: n.description ?? '' },
+            position: { x: n.x, y: n.y },
+            size: { width: n.width, height: n.height },
+          }))
+        : [];
+      setAllNodes(Array.isArray(formattedNodes) ? formattedNodes : []);
+      setEdges(Array.isArray(edgesData) ? edgesData : []);
     } catch (error) {
+      setAllNodes([]); // ← 失敗時も空配列
+      setEdges([]); // ← 失敗時も空配列
       console.error('Failed to fetch data:', error);
       Alert.alert('Error', 'Failed to load flow data.');
     }
@@ -226,32 +429,63 @@ const FlowEditorScreen = ({ route, navigation }) => {
     });
   }, [navigation, flowName]);
 
-  const panGesture = Gesture.Pan()
-    .onStart(() => {
-      context.value = { x: translateX.value, y: translateY.value };
-    })
-    .onUpdate(event => {
-      translateX.value = context.value.x + event.translationX;
-      translateY.value = context.value.y + event.translationY;
-    })
-    .onEnd(() => {
-      runOnJS(setPanOffset)({ x: translateX.value, y: translateY.value });
-    });
+  // setAllNodesを使う全ての箇所で防御
+  const handleUpdateNode = async (nodeId, newData) => {
+    try {
+      await updateNode(nodeId, {
+        label: newData.title,
+        description: newData.description,
+      });
+      setAllNodes(nds =>
+        Array.isArray(nds)
+          ? nds.map(node =>
+              node.id === nodeId
+                ? {
+                    ...node,
+                    data: {
+                      ...node.data,
+                      label: newData.title ?? '',
+                      description: newData.description ?? '',
+                    },
+                  }
+                : node,
+            )
+          : [],
+      );
+    } catch (error) {
+      console.error('Failed to update node data:', error);
+    }
+  };
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: translateX.value },
-      { translateY: translateY.value },
-    ],
-  }));
+  const onDragEnd = async (nodeId, newPosition) => {
+    if (isSeeThrough) return;
+    try {
+      await updateNode(nodeId, { x: newPosition.x, y: newPosition.y });
+      setAllNodes(nds =>
+        Array.isArray(nds)
+          ? nds.map(node =>
+              node.id === nodeId ? { ...node, position: newPosition } : node,
+            )
+          : [],
+      );
+    } catch (error) {
+      console.error('Failed to update node position:', error);
+    }
+  };
 
+  // displayNodesのuseMemoも防御
   const displayNodes = useMemo(() => {
+    // --- allNodesが配列でない場合、クラッシュを避けるために空配列を返す ---
+    if (!Array.isArray(allNodes)) {
+      return [];
+    }
     const baseNodes = allNodes.filter(
       node => node.parentId === currentParentId,
     );
 
     if (!isSeeThrough) {
-      return baseNodes.map(n => ({ ...n, zIndex: 1 }));
+      const newMap = baseNodes.map(n => ({ ...n, zIndex: 1 }));
+      return Array.isArray(newMap) ? newMap : [];
     }
 
     const PADDING = 20;
@@ -403,164 +637,30 @@ const FlowEditorScreen = ({ route, navigation }) => {
       }
     });
 
-    return finalNodes;
+    return Array.isArray(finalNodes) ? finalNodes : [];
   }, [allNodes, currentParentId, isSeeThrough, edges]);
 
-  const addCard = async () => {
-    const newNodeData = {
-      id: uuidv4(),
-      flowId: flowId,
-      parentId: currentParentId,
-      label: '新しいカード',
-      description: '',
-      x: 10 - panOffset.x,
-      y: 10 - panOffset.y,
-      width: CARD_MIN_SIZE.width,
-      height: CARD_MIN_SIZE.height,
+  // --- 1. worklet関数を通常関数に変更し、内部でPromise処理に統一 ---
+  // --- 2. runOnJSで呼ぶように修正（runOnJSはPromiseを返さないように） ---
+
+  // 例：handleDeleteNode
+  const handleDeleteNode = async nodeId => {
+    const nodesToRemove = new Set();
+    const findChildren = id => {
+      nodesToRemove.add(id);
+      allNodes.forEach(n => {
+        if (n.parentId === id) {
+          findChildren(n.id);
+        }
+      });
     };
+    findChildren(nodeId);
+
     try {
-      await insertNode(newNodeData);
+      await Promise.all(Array.from(nodesToRemove).map(id => deleteNode(id)));
       fetchData();
     } catch (error) {
-      console.error('Failed to add node:', error);
-    }
-  };
-
-  const onDragEnd = useCallback(
-    async (nodeId, newPosition) => {
-      if (isSeeThrough) return;
-      try {
-        await updateNode(nodeId, { x: newPosition.x, y: newPosition.y });
-        setAllNodes(nds =>
-          nds.map(node =>
-            node.id === nodeId ? { ...node, position: newPosition } : node,
-          ),
-        );
-      } catch (error) {
-        console.error('Failed to update node position:', error);
-      }
-    },
-    [isSeeThrough],
-  );
-
-  const handleDeleteNode = useCallback(
-    async nodeId => {
-      const nodesToRemove = new Set();
-      const findChildren = id => {
-        nodesToRemove.add(id);
-        allNodes.forEach(n => {
-          if (n.parentId === id) {
-            findChildren(n.id);
-          }
-        });
-      };
-      findChildren(nodeId);
-
-      try {
-        await Promise.all(Array.from(nodesToRemove).map(id => deleteNode(id)));
-        fetchData();
-      } catch (error) {
-        console.error('Failed to delete node(s):', error);
-      }
-    },
-    [allNodes, fetchData],
-  );
-
-  const handleUpdateNode = useCallback(async (nodeId, newData) => {
-    try {
-      await updateNode(nodeId, {
-        label: newData.title,
-        description: newData.description,
-      });
-      setAllNodes(nds =>
-        nds.map(node =>
-          node.id === nodeId
-            ? {
-                ...node,
-                data: {
-                  ...node.data,
-                  label: newData.title,
-                  description: newData.description,
-                },
-              }
-            : node,
-        ),
-      );
-    } catch (error) {
-      console.error('Failed to update node data:', error);
-    }
-  }, []);
-
-  const handleDoubleClick = useCallback(
-    nodeId => {
-      if (isSeeThrough) return;
-      const node = allNodes.find(n => n.id === nodeId);
-      if (node) {
-        setParentIdHistory(history => [...history, currentParentId]);
-        setCurrentParentId(nodeId);
-      }
-    },
-    [allNodes, currentParentId, isSeeThrough],
-  );
-
-  const handleSectionUp = async () => {
-    if (parentIdHistory.length > 0) {
-      const newHistory = [...parentIdHistory];
-      const lastParentId = newHistory.pop();
-      setParentIdHistory(newHistory);
-      setCurrentParentId(lastParentId);
-    } else {
-      if (displayNodes.length === 0) return;
-
-      const newParentId = uuidv4();
-      const newParentNode = {
-        id: newParentId,
-        flowId: flowId,
-        parentId: 'root',
-        label: '新しいセクション',
-        description: 'グループ化されました',
-        x: 100,
-        y: 100,
-        width: CARD_MIN_SIZE.width,
-        height: CARD_MIN_SIZE.height,
-      };
-
-      try {
-        await insertNode(newParentNode);
-        const childrenIds = displayNodes.map(n => n.id);
-        await Promise.all(
-          childrenIds.map(id => updateNode(id, { parentId: newParentId })),
-        );
-        fetchData();
-      } catch (error) {
-        console.error('Failed to create section:', error);
-      }
-    }
-  };
-
-  const handleDeleteEdge = useCallback(async edgeId => {
-    try {
-      await deleteEdge(edgeId);
-      setEdges(eds => eds.filter(edge => edge.id !== edgeId));
-    } catch (error) {
-      console.error('Failed to delete edge:', error);
-    }
-  }, []);
-
-  const getHandlePosition = (node, handleName) => {
-    const { x, y } = node.position;
-    const { width, height } = node.size;
-    switch (handleName) {
-      case 'handleTop':
-        return { x: x + width / 2, y: y };
-      case 'handleBottom':
-        return { x: x + width / 2, y: y + height };
-      case 'handleLeft':
-        return { x: x, y: y + height / 2 };
-      case 'handleRight':
-        return { x: x + width, y: y + height / 2 };
-      default:
-        return { x, y };
+      console.error('Failed to delete node(s):', error);
     }
   };
 
@@ -597,6 +697,67 @@ const FlowEditorScreen = ({ route, navigation }) => {
     return closestHandle;
   };
 
+  // 例：handleDoubleClick
+  const handleDoubleClick = nodeId => {
+    if (isSeeThrough || linkingState.active) return;
+    const node = allNodes.find(n => n.id === nodeId);
+    if (node) {
+      setParentIdHistory(history => [...history, currentParentId]);
+      setCurrentParentId(nodeId);
+    }
+  };
+
+  // 例：handleSectionUp
+  const handleSectionUp = async () => {
+    if (isSeeThrough || linkingState.active) return;
+    if (parentIdHistory.length > 0) {
+      const newHistory = [...parentIdHistory];
+      const lastParentId = newHistory.pop();
+      setParentIdHistory(newHistory);
+      setCurrentParentId(lastParentId);
+    } else {
+      if (displayNodes.length === 0) return;
+
+      const newParentId = uuidv4();
+      const screenCenterX = (width / 2 - translateX.value) / scale.value;
+      const screenCenterY = (height / 2 - translateY.value) / scale.value;
+
+      const newParentNode = {
+        id: newParentId,
+        flowId: flowId,
+        parentId: 'root',
+        label: '新しいセクション',
+        description: 'グループ化されました',
+        x: screenCenterX - CARD_MIN_SIZE.width / 2,
+        y: screenCenterY - CARD_MIN_SIZE.height / 2,
+        width: CARD_MIN_SIZE.width,
+        height: CARD_MIN_SIZE.height,
+      };
+
+      try {
+        await insertNode(newParentNode);
+        const childrenIds = displayNodes.map(n => n.id);
+        await Promise.all(
+          childrenIds.map(id => updateNode(id, { parentId: newParentId })),
+        );
+        fetchData();
+      } catch (error) {
+        console.error('Failed to create section:', error);
+      }
+    }
+  };
+
+  // 例：handleDeleteEdge
+  const handleDeleteEdge = async edgeId => {
+    try {
+      await deleteEdge(edgeId);
+      setEdges(eds => eds.filter(edge => edge.id !== edgeId));
+    } catch (error) {
+      console.error('Failed to delete edge:', error);
+    }
+  };
+
+  // 例：handleCardTap
   const handleCardTap = async nodeId => {
     if (!linkingState.active) return;
 
@@ -649,68 +810,284 @@ const FlowEditorScreen = ({ route, navigation }) => {
     setLinkingState(prev => ({ active: !prev.active, sourceNodeId: null }));
   };
 
-  const checkForEdgeTap = useCallback(
-    point => {
-      const TAP_THRESHOLD = 15;
+  // --- イベント管理用のstate ---
+  const [pendingEvent, setPendingEvent] = useState(null);
+  // pendingEvent: { type: 'tap'|'doubleTap'|'dragEnd'|'longPress'|'delete'|'edgeTap', nodeId, extra }
 
-      const displayNodeIds = new Set(displayNodes.map(n => n.id));
-      const relevantEdges = edges.filter(
-        edge =>
-          displayNodeIds.has(edge.source) && displayNodeIds.has(edge.target),
-      );
+  useEffect(() => {
+    if (!pendingEvent) return;
 
-      for (const edge of relevantEdges) {
-        const sourceNode = displayNodes.find(n => n.id === edge.source);
-        const targetNode = displayNodes.find(n => n.id === edge.target);
-        if (!sourceNode || !targetNode) continue;
+    const { type, nodeId, extra } = pendingEvent;
 
-        const p1 = getHandlePosition(sourceNode, edge.sourceHandle);
-        const p2 = getHandlePosition(targetNode, edge.targetHandle);
+    const run = async () => {
+      if (type === 'tap') {
+        await handleCardTap(nodeId);
+      } else if (type === 'doubleTap') {
+        handleDoubleClick(nodeId);
+      } else if (type === 'dragEnd') {
+        await onDragEnd(nodeId, extra?.newPosition);
+      } else if (type === 'delete') {
+        await handleDeleteNode(nodeId);
+      } else if (type === 'edgeTap') {
+        await handleDeleteEdge(nodeId); // nodeId here is edgeId
+      }
+    };
 
-        const dx = p2.x - p1.x;
-        const dy = p2.y - p1.y;
-        const l2 = dx * dx + dy * dy;
+    run();
+    setPendingEvent(null);
+  }, [pendingEvent]);
 
-        if (l2 === 0) {
-          const dist = Math.sqrt(
-            Math.pow(point.x - p1.x, 2) + Math.pow(point.y - p1.y, 2),
-          );
-          if (dist < TAP_THRESHOLD) {
-            runOnJS(handleDeleteEdge)(edge.id);
-            return;
-          }
-        } else {
-          let t = ((point.x - p1.x) * dx + (point.y - p1.y) * dy) / l2;
-          t = Math.max(0, Math.min(1, t));
-          const closestPoint = {
-            x: p1.x + t * dx,
-            y: p1.y + t * dy,
-          };
-          const dist = Math.sqrt(
-            Math.pow(point.x - closestPoint.x, 2) +
-              Math.pow(point.y - closestPoint.y, 2),
-          );
-          if (dist < TAP_THRESHOLD) {
-            runOnJS(handleDeleteEdge)(edge.id);
-            return;
+  const panGesture = Gesture.Pan()
+    .onStart(event => {
+      const worldX = Number.isFinite(event.x - translateX.value)
+        ? (event.x - translateX.value) / scale.value
+        : 0;
+      const worldY = Number.isFinite(event.y - translateY.value)
+        ? (event.y - translateY.value) / scale.value
+        : 0;
+      if (!Array.isArray(displayNodes)) return;
+      const hitNode = [...displayNodes]
+        .reverse()
+        .find(node => isPointInCard(node, worldX, worldY));
+      if (hitNode && !isSeeThrough) {
+        activeNodeId.value = hitNode.id;
+        dragStartOffset.value = {
+          x: worldX - hitNode.position.x,
+          y: worldY - hitNode.position.y,
+        };
+        nodePosition.value = hitNode.position;
+      } else {
+        activeNodeId.value = null;
+      }
+    })
+    .onUpdate(event => {
+      if (event.numberOfPointers > 1) {
+        return;
+      }
+      if (activeNodeId.value) {
+        const worldX = (event.x - translateX.value) / scale.value;
+        const worldY = (event.y - translateY.value) / scale.value;
+        const newPosition = {
+          x: worldX - dragStartOffset.value.x,
+          y: worldY - dragStartOffset.value.y,
+        };
+        nodePosition.value = newPosition;
+        const newAllNodes = allNodes.map(n =>
+          n.id === activeNodeId.value ? { ...n, position: newPosition } : n,
+        );
+        runOnJS(setAllNodes)(newAllNodes);
+      } else {
+        translateX.value = savedTranslateX.value + event.translationX;
+        translateY.value = savedTranslateY.value + event.translationY;
+      }
+    })
+    .onEnd(() => {
+      if (activeNodeId.value) {
+        // ドラッグ終了イベントをキック
+        runOnJS(setPendingEvent)({
+          type: 'dragEnd',
+          nodeId: activeNodeId.value,
+          extra: { newPosition: nodePosition.value },
+        });
+        activeNodeId.value = null;
+      } else {
+        savedTranslateX.value = translateX.value;
+        savedTranslateY.value = translateY.value;
+      }
+    })
+    .enabled(!linkingState.active);
+
+  const pinchGesture = Gesture.Pinch()
+    .onStart(event => {
+      savedScale.value = scale.value;
+      context.value = { focalX: event.focalX, focalY: event.focalY };
+      origin_x.value = (event.focalX - translateX.value) / scale.value;
+      origin_y.value = (event.focalY - translateY.value) / scale.value;
+    })
+    .onUpdate(event => {
+      const newScale = savedScale.value * event.scale;
+      if (newScale < 0.1) {
+        return;
+      }
+      scale.value = newScale;
+    })
+    .onEnd(() => {
+      savedScale.value = scale.value;
+      savedTranslateX.value = translateX.value;
+      savedTranslateY.value = translateY.value;
+    })
+    .enabled(!linkingState.active);
+
+  const checkForEdgeTap = point => {
+    'worklet';
+    const TAP_THRESHOLD = 15;
+
+    const displayNodeIds = new Set(displayNodes.map(n => n.id));
+    const relevantEdges = edges.filter(
+      edge =>
+        displayNodeIds.has(edge.source) && displayNodeIds.has(edge.target),
+    );
+
+    for (const edge of relevantEdges) {
+      const sourceNode = displayNodes.find(n => n.id === edge.source);
+      const targetNode = displayNodes.find(n => n.id === edge.target);
+      if (!sourceNode || !targetNode) continue;
+
+      const p1 = getHandlePosition(sourceNode, edge.sourceHandle);
+      const p2 = getHandlePosition(targetNode, edge.targetHandle);
+
+      const dx = p2.x - p1.x;
+      const dy = p2.y - p1.y;
+      const l2 = dx * dx + dy * dy;
+
+      if (l2 === 0) {
+        const dist = Math.sqrt(
+          Math.pow(point.x - p1.x, 2) + Math.pow(point.y - p1.y, 2),
+        );
+        if (dist < TAP_THRESHOLD) {
+          return edge.id;
+        }
+      } else {
+        let t = ((point.x - p1.x) * dx + (point.y - p1.y) * dy) / l2;
+        t = Math.max(0, Math.min(1, t));
+        const closestPoint = {
+          x: p1.x + t * dx,
+          y: p1.y + t * dy,
+        };
+        const dist = Math.sqrt(
+          Math.pow(point.x - closestPoint.x, 2) +
+            Math.pow(point.y - closestPoint.y, 2),
+        );
+        if (dist < TAP_THRESHOLD) {
+          return edge.id;
+        }
+      }
+    }
+  };
+
+  const tapGesture = Gesture.Tap().onEnd((event, success) => {
+    if (isSeeThrough) return;
+    if (success) {
+      const worldX = (event.x - translateX.value) / scale.value;
+      const worldY = (event.y - translateY.value) / scale.value;
+      if (!Array.isArray(displayNodes)) return;
+
+      // 削除ボタン
+      const nodeToDelete = [...displayNodes]
+        .reverse()
+        .find(node => isPointInDeleteButton(node, worldX, worldY));
+      if (nodeToDelete) {
+        runOnJS(setPendingEvent)({
+          type: 'delete',
+          nodeId: nodeToDelete.id,
+        });
+        return;
+      }
+
+      // カードタップ
+      const hitNode = [...displayNodes]
+        .reverse()
+        .find(node => isPointInCard(node, worldX, worldY));
+      if (hitNode) {
+        runOnJS(setPendingEvent)({
+          type: 'tap',
+          nodeId: hitNode.id,
+        });
+      } else {
+        // エッジタップ（必要なら追加）
+        if (linkingState.active) {
+          const edgeId = checkForEdgeTap({ x: worldX, y: worldY });
+          if (edgeId) {
+            runOnJS(setPendingEvent)({
+              type: 'edgeTap',
+              nodeId: edgeId,
+            });
           }
         }
       }
-    },
-    [displayNodes, edges, handleDeleteEdge],
-  );
-
-  const tapGesture = Gesture.Tap().onEnd((event, success) => {
-    if (success) {
-      const pannedTapX = event.x - translateX.value;
-      const pannedTapY = event.y - translateY.value;
-      runOnJS(checkForEdgeTap)({ x: pannedTapX, y: pannedTapY });
     }
   });
 
+  const longPressGesture = Gesture.LongPress()
+    .minDuration(800)
+    .onStart(event => {
+      if (isSeeThrough || linkingState.active) return;
+      const worldX = (event.x - translateX.value) / scale.value;
+      const worldY = (event.y - translateY.value) / scale.value;
+      if (!Array.isArray(displayNodes)) return;
+      const hitNode = [...displayNodes]
+        .reverse()
+        .find(node => isPointInCard(node, worldX, worldY));
+      if (hitNode) {
+        runOnJS(setEditingNode)({
+          id: hitNode.id,
+          title: hitNode.data.label,
+          description: hitNode.data.description,
+        });
+      }
+    });
+
+  // ダブルタップ（GestureHandlerでDoubleTapは独立して扱う必要あり）
+  const doubleTapGesture = Gesture.Tap()
+    .numberOfTaps(2)
+    .onEnd((event, success) => {
+      if (isSeeThrough || linkingState.active) return;
+      if (success) {
+        const worldX = (event.x - translateX.value) / scale.value;
+        const worldY = (event.y - translateY.value) / scale.value;
+        if (!Array.isArray(displayNodes)) return;
+        const hitNode = [...displayNodes]
+          .reverse()
+          .find(node => isPointInCard(node, worldX, worldY));
+        if (hitNode) {
+          runOnJS(setPendingEvent)({
+            type: 'doubleTap',
+            nodeId: hitNode.id,
+          });
+        }
+      }
+    });
+
+  const skiaTransform = useDerivedValue(() => [
+    { translateX: Number.isFinite(translateX.value) ? translateX.value : 0 },
+    { translateY: Number.isFinite(translateY.value) ? translateY.value : 0 },
+    { scale: Number.isFinite(scale.value) ? scale.value : 1 },
+  ]);
+
+  const skiaOrigin = useDerivedValue(() => ({
+    x: Number.isFinite(origin_x.value) ? origin_x.value : 0,
+    y: Number.isFinite(origin_y.value) ? origin_y.value : 0,
+  }));
+
+  const composedGesture = Gesture.Exclusive(
+    Gesture.Simultaneous(panGesture, pinchGesture),
+    doubleTapGesture,
+    longPressGesture,
+    tapGesture,
+  );
+
+  const addCard = async () => {
+    const newNodeData = {
+      id: uuidv4(),
+      flowId: flowId,
+      parentId: currentParentId,
+      label: '新しいカード',
+      description: '',
+      x: (10 - translateX.value) / scale.value,
+      y: (10 - translateY.value) / scale.value,
+      width: CARD_MIN_SIZE.width,
+      height: CARD_MIN_SIZE.height,
+    };
+    try {
+      await insertNode(newNodeData);
+      fetchData();
+    } catch (error) {
+      console.error('Failed to add node:', error);
+    }
+  };
+
   const renderEdges = () => {
     const displayNodeIds = new Set(displayNodes.map(n => n.id));
-
     const relevantEdges = edges.filter(
       edge =>
         displayNodeIds.has(edge.source) && displayNodeIds.has(edge.target),
@@ -721,22 +1098,92 @@ const FlowEditorScreen = ({ route, navigation }) => {
       const targetNode = displayNodes.find(n => n.id === edge.target);
       if (!sourceNode || !targetNode) return null;
 
+      const interactionPath = CalcSkiaInteractionEdgeStroke({
+        edge,
+        sourceNode,
+        targetNode,
+      });
+      const path = CalcSkiaEdgeStroke({ edge, sourceNode, targetNode });
+
       return (
-        <AnimatedEdge
-          key={edge.id}
-          edge={edge}
-          sourceNode={sourceNode}
-          targetNode={targetNode}
-          translateX={translateX}
-          translateY={translateY}
-          getHandlePosition={getHandlePosition}
-        />
+        <Group key={edge.id + '_group'}>
+          {/* Path for interaction (wider, transparent) */}
+          <Path
+            path={interactionPath}
+            style="stroke"
+            strokeWidth={15}
+            color="transparent"
+          />
+          {/* Visible path */}
+          <Path path={path} style="stroke" strokeWidth={2} color="black" />
+        </Group>
       );
     });
   };
 
-  // FABの表示制御
-  const fabDisabled = linkingState.active;
+  const handleSaveEditingNode = () => {
+    if (editingNode) {
+      handleUpdateNode(editingNode.id, {
+        title: editingNode.title,
+        description: editingNode.description,
+      });
+      setEditingNode(null);
+    }
+  };
+
+  const fabDisabled = isSeeThrough || linkingState.active || !!editingNode;
+
+  const resetScale = () => {
+    'worklet';
+    const newScale = 1;
+    const newTranslateX = width / 2 - (width / 2 - translateX.value);
+    const newTranslateY = height / 2 - (height / 2 - translateY.value);
+
+    scale.value = withTiming(newScale, { duration: 300 });
+    translateX.value = withTiming(newTranslateX, { duration: 300 });
+    translateY.value = withTiming(newTranslateY, { duration: 300 });
+    savedScale.value = newScale;
+    savedTranslateX.value = newTranslateX;
+    savedTranslateY.value = newTranslateY;
+  };
+
+  const scaleText = useDerivedValue(() => {
+    return `${Math.round(scale.value)}`;
+  });
+
+  const moveToNearestCard = () => {
+    'worklet';
+    if (displayNodes.length === 0) return;
+
+    const screenCenterX = (width / 2 - translateX.value) / scale.value;
+    const screenCenterY = (height / 2 - translateY.value) / scale.value;
+
+    let closestNode = null;
+    let minDistance = Infinity;
+
+    displayNodes.forEach(node => {
+      const nodeCenter = getCenter(node);
+      const distance = Math.sqrt(
+        Math.pow(nodeCenter.x - screenCenterX, 2) +
+          Math.pow(nodeCenter.y - screenCenterY, 2),
+      );
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestNode = node;
+      }
+    });
+
+    if (closestNode) {
+      const nodeCenter = getCenter(closestNode);
+      const newTranslateX = width / 2 - nodeCenter.x * scale.value;
+      const newTranslateY = height / 2 - nodeCenter.y * scale.value;
+
+      translateX.value = withTiming(newTranslateX, { duration: 300 });
+      translateY.value = withTiming(newTranslateY, { duration: 300 });
+      savedTranslateX.value = newTranslateX;
+      savedTranslateY.value = newTranslateY;
+    }
+  };
 
   return (
     <PaperProvider theme={OriginalTheme}>
@@ -745,6 +1192,20 @@ const FlowEditorScreen = ({ route, navigation }) => {
         edges={['bottom', 'left', 'right']}
       >
         <View pointerEvents="box-none" style={styles.fabContainer} zIndex={100}>
+          <FAB
+            icon="magnify"
+            style={[styles.fab, styles.fabScale]}
+            small
+            onPress={() => runOnJS(resetScale)()}
+          />
+          <FAB
+            icon="target"
+            style={[styles.fab, styles.fabMove]}
+            onPress={() => runOnJS(moveToNearestCard)()}
+            small
+            visible={true}
+          />
+          <Divider style={{ height: 32, marginHorizontal: 4 }} />
           <FAB
             icon={isSeeThrough ? 'eye-off' : 'eye'}
             style={[styles.fab, styles.fabEye]}
@@ -779,58 +1240,65 @@ const FlowEditorScreen = ({ route, navigation }) => {
             visible={true}
           />
         </View>
-        <GestureDetector
-          gesture={linkingState.active ? tapGesture : panGesture}
-        >
-          <Animated.View style={[styles.flowArea, { overflow: 'hidden' }]}>
-            <Svg
-              style={{
-                position: 'absolute',
-                width: width,
-                height: height,
-              }}
-              pointerEvents="box-none"
-            >
-              <Defs>
-                <Marker
-                  id="arrow"
-                  viewBox="0 0 10 10"
-                  refX="8"
-                  refY="5"
-                  markerWidth="6"
-                  markerHeight="6"
-                  orient="auto"
-                >
-                  <Path d="M 0 0 L 10 5 L 0 10 z" fill="black" />
-                </Marker>
-              </Defs>
-              {renderEdges()}
-            </Svg>
-
-            <Animated.View style={animatedStyle}>
-              {displayNodes.map(node => (
-                <Card
-                  key={node.id}
-                  node_id={node.id}
-                  title={node.data.label}
-                  description={node.data.description}
-                  position={node.position}
-                  size={node.size}
-                  onDragEnd={onDragEnd}
-                  onDelete={handleDeleteNode}
-                  onUpdate={handleUpdateNode}
-                  onCardTap={handleCardTap}
-                  onDoubleClick={handleDoubleClick}
-                  isSeeThroughParent={node.isSeeThroughParent}
-                  isSeeThroughActive={isSeeThrough}
-                  isLinkingMode={linkingState.active}
-                  isLinkSource={linkingState.sourceNodeId === node.id}
-                  zIndex={node.zIndex}
-                />
-              ))}
-            </Animated.View>
-          </Animated.View>
+        <GestureDetector gesture={composedGesture}>
+          <View style={styles.flowArea}>
+            <Canvas style={StyleSheet.absoluteFill}>
+              <Group transform={skiaTransform} origin={skiaOrigin}>
+                {displayNodes.map(node => (
+                  <SkiaCard
+                    key={node.id}
+                    node={node}
+                    fontTitleJP={fontTitleJP}
+                    fontDescriptionJP={fontDescriptionJP}
+                    fontTitleSC={fontTitleSC}
+                    fontDescriptionSC={fontDescriptionSC}
+                    isSelected={linkingState.sourceNodeId === node.id}
+                    isLinkingMode={linkingState.active}
+                    isLinkSource={linkingState.sourceNodeId === node.id}
+                    isEditing={editingNode && editingNode.id === node.id}
+                    isSeeThroughParent={node.isSeeThroughParent}
+                  />
+                ))}
+                {renderEdges()}
+              </Group>
+            </Canvas>
+          </View>
         </GestureDetector>
+        {editingNode && (
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={styles.editingOverlay}
+          >
+            <View style={styles.editingContainer}>
+              <TextInput
+                value={editingNode.title}
+                onChangeText={text =>
+                  setEditingNode(prev => ({ ...prev, title: text }))
+                }
+                style={styles.input}
+                placeholder="Title"
+                autoFocus
+              />
+              <TextInput
+                value={editingNode.description}
+                onChangeText={text =>
+                  setEditingNode(prev => ({ ...prev, description: text }))
+                }
+                style={styles.input}
+                placeholder="Description"
+                multiline
+              />
+              <View style={styles.buttonContainer}>
+                <Button title="保存" onPress={handleSaveEditingNode} />
+                <Button
+                  title="キャンセル"
+                  onPress={() => setEditingNode(null)}
+                  color="gray"
+                />
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        )}
       </SafeAreaView>
     </PaperProvider>
   );
@@ -840,51 +1308,75 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  // header部分は不要なので削除
   flowArea: {
     flex: 1,
-    backgroundColor: '#f0f0f0',
   },
   fabContainer: {
     position: 'absolute',
-    right: 16,
     bottom: 16,
-    alignItems: 'flex-end',
+    right: 16,
+    flexDirection: 'row',
     justifyContent: 'flex-end',
-    width: 70,
-    height: 280, // 高さを少し広げる
+    alignItems: 'center',
   },
   fab: {
-    position: 'absolute',
-    right: 0,
+    marginHorizontal: 4,
   },
   fabEye: {
-    bottom: 208, // 一番上
+    backgroundColor: OriginalTheme.colors.primary,
   },
   fabTop: {
-    bottom: 144,
+    backgroundColor: OriginalTheme.colors.primary,
   },
   fabMiddle: {
-    bottom: 80,
+    backgroundColor: OriginalTheme.colors.primary,
   },
   fabBottom: {
+    backgroundColor: OriginalTheme.colors.primary,
+  },
+  editingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  editingContainer: {
+    backgroundColor: 'white',
+    padding: 20,
+    borderRadius: 10,
+    width: '80%',
+  },
+  input: {
+    borderBottomWidth: 1,
+    borderColor: '#ccc',
+    padding: 8,
+    marginBottom: 10,
+  },
+  buttonContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginTop: 10,
+  },
+  bottomLeftControls: {
+    position: 'absolute',
     bottom: 16,
+    left: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  button: {
-    backgroundColor: '#007AFF',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 6,
+  scaleIndicatorText: {
+    color: 'black',
+    fontSize: 12,
+    backgroundColor: 'rgba(255,255,255,0.8)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 5,
   },
-  buttonActive: {
-    backgroundColor: '#34C759',
+  fabMove: {
+    backgroundColor: OriginalTheme.colors.primary,
   },
-  buttonDisabled: {
-    backgroundColor: '#ccc',
-  },
-  buttonText: {
-    color: 'white',
-    fontWeight: 'bold',
+  fabScale: {
+    backgroundColor: OriginalTheme.colors.primary,
   },
 });
 
