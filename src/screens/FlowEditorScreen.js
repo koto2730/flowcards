@@ -1,66 +1,36 @@
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   StyleSheet,
   Dimensions,
-  Alert,
   TextInput,
   Button,
   KeyboardAvoidingView,
   Platform,
-  TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import {
-  Canvas,
-  Path,
-  Skia,
-  Group,
-  Text,
-  Rect,
-  useFont,
-  Circle,
-  DashPathEffect,
-} from '@shopify/react-native-skia';
+import { Canvas, Path, Group, useFont } from '@shopify/react-native-skia';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   useSharedValue,
-  useAnimatedStyle,
   runOnJS,
   useDerivedValue,
   withTiming,
 } from 'react-native-reanimated';
-import 'react-native-get-random-values';
-import { v4 as uuidv4 } from 'uuid';
-import {
-  getNodes,
-  getEdges,
-  insertNode,
-  updateNode,
-  deleteNode,
-  insertEdge,
-  deleteEdge,
-  updateFlow,
-  getFlows,
-  updateEdge,
-} from '../db';
+import { updateFlow, getFlows } from '../db';
 import { Divider, FAB, Provider as PaperProvider } from 'react-native-paper';
-import OriginalTheme from './OriginalTheme'; // 既存のテーマをインポート
+import OriginalTheme from './OriginalTheme';
 import SkiaCard from '../components/Card';
 import {
-  getRect,
   getCenter,
-  doRectsOverlap,
   getHandlePosition,
   CalcSkiaEdgeStroke,
   CalcSkiaInteractionEdgeStroke,
   isPointInCard,
   isPointInDeleteButton,
-  getClosestHandle,
 } from '../utils/flowUtils';
 import { useFlowData } from '../hooks/useFlowData';
 
-const CARD_MIN_SIZE = { width: 150, height: 70 };
 const { width, height } = Dimensions.get('window');
 
 const FlowEditorScreen = ({ route, navigation }) => {
@@ -70,19 +40,19 @@ const FlowEditorScreen = ({ route, navigation }) => {
     allNodes,
     setAllNodes,
     edges,
-    setEdges,
-    currentParentId,
-    setCurrentParentId,
-    parentIdHistory,
-    setParentIdHistory,
-    fetchData,
     displayNodes,
-    handleUpdateNode,
+    handleUpdateNodeData,
+    handleUpdateNodePosition,
+    addNode,
+    handleDeleteNode,
+    handleDoubleClick,
+    handleSectionUp,
+    linkingState,
+    toggleLinkingMode,
+    handleCardTap,
+    handleDeleteEdge,
   } = useFlowData(flowId, isSeeThrough);
-  const [linkingState, setLinkingState] = useState({
-    active: false,
-    sourceNodeId: null,
-  });
+
   const [editingNode, setEditingNode] = useState(null);
 
   const translateX = useSharedValue(0);
@@ -95,12 +65,8 @@ const FlowEditorScreen = ({ route, navigation }) => {
   const origin_x = useSharedValue(0);
   const origin_y = useSharedValue(0);
 
-  // --- カード操作用のShared Values ---
-  // アクティブな（操作対象の）カードID
   const activeNodeId = useSharedValue(null);
-  // カードのドラッグ開始時の相対位置
   const dragStartOffset = useSharedValue({ x: 0, y: 0 });
-  // カードの現在の位置
   const nodePosition = useSharedValue({ x: 0, y: 0 });
 
   const fontTitleJP = useFont(
@@ -164,190 +130,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
     });
   }, [navigation, flowName]);
 
-
-
-  const onDragEnd = async (nodeId, newPosition) => {
-    if (isSeeThrough) return;
-    try {
-      await updateNode(nodeId, { x: newPosition.x, y: newPosition.y });
-      setAllNodes(nds =>
-        Array.isArray(nds)
-          ? nds.map(node =>
-              node.id === nodeId ? { ...node, position: newPosition } : node,
-            )
-          : [],
-      );
-    } catch (error) {
-      console.error('Failed to update node position:', error);
-    }
-  };
-
-
-
-  // --- 1. worklet関数を通常関数に変更し、内部でPromise処理に統一 ---
-  // --- 2. runOnJSで呼ぶように修正（runOnJSはPromiseを返さないように） ---
-
-  // 例：handleDeleteNode
-  const handleDeleteNode = async nodeId => {
-    const nodesToRemove = new Set();
-    const findChildren = id => {
-      nodesToRemove.add(id);
-      allNodes.forEach(n => {
-        if (n.parentId === id) {
-          findChildren(n.id);
-        }
-      });
-    };
-    findChildren(nodeId);
-
-    try {
-      await Promise.all(Array.from(nodesToRemove).map(id => deleteNode(id)));
-      fetchData();
-    } catch (error) {
-      console.error('Failed to delete node(s):', error);
-    }
-  };
-
-  // 例：handleDoubleClick
-  const handleDoubleClick = nodeId => {
-    if (isSeeThrough || linkingState.active) return;
-    const node = allNodes.find(n => n.id === nodeId);
-    if (node) {
-      setParentIdHistory(history => [...history, currentParentId]);
-      setCurrentParentId(nodeId);
-    }
-  };
-
-  // 例：handleSectionUp
-  const handleSectionUp = async () => {
-    if (isSeeThrough || linkingState.active) return;
-    if (parentIdHistory.length > 0) {
-      const newHistory = [...parentIdHistory];
-      const lastParentId = newHistory.pop();
-      setParentIdHistory(newHistory);
-      setCurrentParentId(lastParentId);
-    } else {
-      if (displayNodes.length === 0) return;
-
-      const newParentId = uuidv4();
-      const screenCenterX = (width / 2 - translateX.value) / scale.value;
-      const screenCenterY = (height / 2 - translateY.value) / scale.value;
-
-      const newParentNode = {
-        id: newParentId,
-        flowId: flowId,
-        parentId: 'root',
-        label: '新しいセクション',
-        description: 'グループ化されました',
-        x: screenCenterX - CARD_MIN_SIZE.width / 2,
-        y: screenCenterY - CARD_MIN_SIZE.height / 2,
-        width: CARD_MIN_SIZE.width,
-        height: CARD_MIN_SIZE.height,
-      };
-
-      try {
-        await insertNode(newParentNode);
-        const childrenIds = displayNodes.map(n => n.id);
-        await Promise.all(
-          childrenIds.map(id => updateNode(id, { parentId: newParentId })),
-        );
-        fetchData();
-      } catch (error) {
-        console.error('Failed to create section:', error);
-      }
-    }
-  };
-
-  // 例：handleDeleteEdge
-  const handleDeleteEdge = async edgeId => {
-    try {
-      await deleteEdge(edgeId);
-      setEdges(eds => eds.filter(edge => edge.id !== edgeId));
-    } catch (error) {
-      console.error('Failed to delete edge:', error);
-    }
-  };
-
-  // 例：handleCardTap
-  const handleCardTap = async nodeId => {
-    if (!linkingState.active) return;
-
-    if (!linkingState.sourceNodeId) {
-      setLinkingState({ active: true, sourceNodeId: nodeId });
-    } else {
-      if (linkingState.sourceNodeId === nodeId) {
-        setLinkingState({ active: true, sourceNodeId: null });
-        return;
-      }
-
-      const sourceNode = allNodes.find(n => n.id === linkingState.sourceNodeId);
-      const targetNode = allNodes.find(n => n.id === nodeId);
-
-      if (sourceNode && targetNode) {
-        // Check for an existing edge from source to target
-        const forwardEdge = edges.find(
-          edge =>
-            edge.source === linkingState.sourceNodeId && edge.target === nodeId,
-        );
-
-        if (forwardEdge) {
-          // Edge already exists, do nothing.
-          setLinkingState({ active: true, sourceNodeId: null });
-          return;
-        }
-
-        // Check for an existing edge from target to source (reverse edge)
-        const reverseEdge = edges.find(
-          edge =>
-            edge.source === nodeId && edge.target === linkingState.sourceNodeId,
-        );
-
-        if (reverseEdge) {
-          // Reverse edge exists, update it to be bidirectional
-          try {
-            await updateEdge(reverseEdge.id, { type: 'bidirectional' });
-            // Update local state to reflect the change
-            setEdges(eds =>
-              eds.map(e =>
-                e.id === reverseEdge.id ? { ...e, type: 'bidirectional' } : e,
-              ),
-            );
-          } catch (error) {
-            console.error('Failed to update edge to bidirectional:', error);
-          }
-        } else {
-          // No existing edge in either direction, create a new one
-          const sourceHandle = getClosestHandle(sourceNode, targetNode);
-          const targetHandle = getClosestHandle(targetNode, sourceNode);
-
-          const newEdge = {
-            id: uuidv4(),
-            flowId: flowId,
-            source: linkingState.sourceNodeId,
-            target: nodeId,
-            sourceHandle: sourceHandle,
-            targetHandle: targetHandle,
-            type: 'default',
-          };
-          try {
-            await insertEdge(newEdge);
-            setEdges(eds => [...eds, newEdge]);
-          } catch (error) {
-            console.error('Failed to add edge:', error);
-          }
-        }
-        setLinkingState({ active: true, sourceNodeId: null });
-      }
-    }
-  };
-
-  const toggleLinkingMode = () => {
-    setLinkingState(prev => ({ active: !prev.active, sourceNodeId: null }));
-  };
-
-  // --- イベント管理用のstate ---
   const [pendingEvent, setPendingEvent] = useState(null);
-  // pendingEvent: { type: 'tap'|'doubleTap'|'dragEnd'|'longPress'|'delete'|'edgeTap', nodeId, extra }
 
   useEffect(() => {
     if (!pendingEvent) return;
@@ -360,26 +143,29 @@ const FlowEditorScreen = ({ route, navigation }) => {
       } else if (type === 'doubleTap') {
         handleDoubleClick(nodeId);
       } else if (type === 'dragEnd') {
-        await onDragEnd(nodeId, extra?.newPosition);
+        await handleUpdateNodePosition(nodeId, extra?.newPosition);
       } else if (type === 'delete') {
         await handleDeleteNode(nodeId);
       } else if (type === 'edgeTap') {
-        await handleDeleteEdge(nodeId); // nodeId here is edgeId
+        await handleDeleteEdge(nodeId);
       }
     };
 
     run();
     setPendingEvent(null);
-  }, [pendingEvent]);
+  }, [
+    pendingEvent,
+    handleCardTap,
+    handleDoubleClick,
+    handleUpdateNodePosition,
+    handleDeleteNode,
+    handleDeleteEdge,
+  ]);
 
   const panGesture = Gesture.Pan()
     .onStart(event => {
-      const worldX = Number.isFinite(event.x - translateX.value)
-        ? (event.x - translateX.value) / scale.value
-        : 0;
-      const worldY = Number.isFinite(event.y - translateY.value)
-        ? (event.y - translateY.value) / scale.value
-        : 0;
+      const worldX = (event.x - translateX.value) / scale.value;
+      const worldY = (event.y - translateY.value) / scale.value;
       if (!Array.isArray(displayNodes)) return;
       const hitNode = [...displayNodes]
         .reverse()
@@ -418,7 +204,6 @@ const FlowEditorScreen = ({ route, navigation }) => {
     })
     .onEnd(() => {
       if (activeNodeId.value) {
-        // ドラッグ終了イベントをキック
         runOnJS(setPendingEvent)({
           type: 'dragEnd',
           nodeId: activeNodeId.value,
@@ -507,7 +292,6 @@ const FlowEditorScreen = ({ route, navigation }) => {
       const worldY = (event.y - translateY.value) / scale.value;
       if (!Array.isArray(displayNodes)) return;
 
-      // 削除ボタン
       const nodeToDelete = [...displayNodes]
         .reverse()
         .find(node => isPointInDeleteButton(node, worldX, worldY));
@@ -519,7 +303,6 @@ const FlowEditorScreen = ({ route, navigation }) => {
         return;
       }
 
-      // カードタップ
       const hitNode = [...displayNodes]
         .reverse()
         .find(node => isPointInCard(node, worldX, worldY));
@@ -529,7 +312,6 @@ const FlowEditorScreen = ({ route, navigation }) => {
           nodeId: hitNode.id,
         });
       } else {
-        // エッジタップ（必要なら追加）
         if (linkingState.active) {
           const edgeId = checkForEdgeTap({ x: worldX, y: worldY });
           if (edgeId) {
@@ -562,7 +344,6 @@ const FlowEditorScreen = ({ route, navigation }) => {
       }
     });
 
-  // ダブルタップ（GestureHandlerでDoubleTapは独立して扱う必要あり）
   const doubleTapGesture = Gesture.Tap()
     .numberOfTaps(2)
     .onEnd((event, success) => {
@@ -584,14 +365,14 @@ const FlowEditorScreen = ({ route, navigation }) => {
     });
 
   const skiaTransform = useDerivedValue(() => [
-    { translateX: Number.isFinite(translateX.value) ? translateX.value : 0 },
-    { translateY: Number.isFinite(translateY.value) ? translateY.value : 0 },
-    { scale: Number.isFinite(scale.value) ? scale.value : 1 },
+    { translateX: translateX.value },
+    { translateY: translateY.value },
+    { scale: scale.value },
   ]);
 
   const skiaOrigin = useDerivedValue(() => ({
-    x: Number.isFinite(origin_x.value) ? origin_x.value : 0,
-    y: Number.isFinite(origin_y.value) ? origin_y.value : 0,
+    x: origin_x.value,
+    y: origin_y.value,
   }));
 
   const composedGesture = Gesture.Exclusive(
@@ -601,24 +382,20 @@ const FlowEditorScreen = ({ route, navigation }) => {
     tapGesture,
   );
 
-  const addCard = async () => {
-    const newNodeData = {
-      id: uuidv4(),
-      flowId: flowId,
-      parentId: currentParentId,
-      label: '新しいカード',
-      description: '',
+  const handleAddNode = () => {
+    const position = {
       x: (10 - translateX.value) / scale.value,
       y: (10 - translateY.value) / scale.value,
-      width: CARD_MIN_SIZE.width,
-      height: CARD_MIN_SIZE.height,
     };
-    try {
-      await insertNode(newNodeData);
-      fetchData();
-    } catch (error) {
-      console.error('Failed to add node:', error);
-    }
+    addNode(position);
+  };
+
+  const handlePressSectionUp = () => {
+    const screenCenter = {
+      x: (width / 2 - translateX.value) / scale.value,
+      y: (height / 2 - translateY.value) / scale.value,
+    };
+    handleSectionUp(screenCenter);
   };
 
   const renderEdges = () => {
@@ -642,14 +419,12 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
       return (
         <Group key={edge.id + '_group'}>
-          {/* Path for interaction (wider, transparent) */}
           <Path
             path={interactionPath}
             style="stroke"
             strokeWidth={15}
             color="transparent"
           />
-          {/* Visible path */}
           <Path path={path} style="stroke" strokeWidth={2} color="black" />
         </Group>
       );
@@ -658,7 +433,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
   const handleSaveEditingNode = () => {
     if (editingNode) {
-      handleUpdateNode(editingNode.id, {
+      handleUpdateNodeData(editingNode.id, {
         title: editingNode.title,
         description: editingNode.description,
       });
@@ -670,21 +445,13 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
   const resetScale = () => {
     'worklet';
-    const newScale = 1;
-    const newTranslateX = width / 2 - (width / 2 - translateX.value);
-    const newTranslateY = height / 2 - (height / 2 - translateY.value);
-
-    scale.value = withTiming(newScale, { duration: 300 });
-    translateX.value = withTiming(newTranslateX, { duration: 300 });
-    translateY.value = withTiming(newTranslateY, { duration: 300 });
-    savedScale.value = newScale;
-    savedTranslateX.value = newTranslateX;
-    savedTranslateY.value = newTranslateY;
+    scale.value = withTiming(1, { duration: 300 });
+    translateX.value = withTiming(0, { duration: 300 });
+    translateY.value = withTiming(0, { duration: 300 });
+    savedScale.value = 1;
+    savedTranslateX.value = 0;
+    savedTranslateY.value = 0;
   };
-
-  const scaleText = useDerivedValue(() => {
-    return `${Math.round(scale.value)}`;
-  });
 
   const moveToNearestCard = () => {
     'worklet';
@@ -752,7 +519,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
           <FAB
             icon="arrow-up-bold"
             style={[styles.fab, styles.fabTop]}
-            onPress={handleSectionUp}
+            onPress={handlePressSectionUp}
             disabled={fabDisabled}
             small
             visible={true}
@@ -769,7 +536,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
           <FAB
             icon="plus"
             style={[styles.fab, styles.fabBottom]}
-            onPress={addCard}
+            onPress={handleAddNode}
             disabled={fabDisabled}
             small
             visible={true}

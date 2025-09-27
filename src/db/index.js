@@ -8,6 +8,19 @@ const db = SQLite.openDatabase({
 
 // SQLite.enablePromise(true); // Promiseベースの操作を有効にする場合
 
+const executeSql = (sql, params = []) => {
+  return new Promise((resolve, reject) => {
+    db.transaction(tx => {
+      tx.executeSql(
+        sql,
+        params,
+        (_, result) => resolve(result),
+        (_, err) => reject(err),
+      );
+    });
+  });
+};
+
 const getSampleDataByLang = () => {
   const locales = RNLocalize.getLocales();
   const lang = Array.isArray(locales) ? locales[0].languageCode : 'en';
@@ -301,156 +314,53 @@ export const initDB = () => {
 
 // --- flows CRUD ---
 export const getFlows = () =>
-  new Promise((resolve, reject) => {
-    db.transaction(tx => {
-      tx.executeSql(
-        'SELECT * FROM flows;',
-        [],
-        (_, { rows }) => {
-          resolve(rows.raw());
-        },
-        (_, err) => {
-          reject(err);
-        },
-      );
-    });
-  });
+  executeSql('SELECT * FROM flows;').then(( { rows } ) => rows.raw());
 
-export const updateFlow = (id, data) =>
-  new Promise((resolve, reject) => {
+export const updateFlow = (id, data) => {
     const fields = Object.keys(data)
       .map(key => `${key} = ?`)
       .join(', ');
     const values = Object.values(data);
-    db.transaction(tx => {
-      tx.executeSql(
-        `UPDATE flows SET ${fields} WHERE id = ?;`,
-        [...values, id],
-        resolve,
-        (_, err) => reject(err),
-      );
-    });
-  });
+    return executeSql(`UPDATE flows SET ${fields} WHERE id = ?;`, [...values, id]);
+}
 
-export const deleteFlow = id =>
-  new Promise((resolve, reject) => {
-    db.transaction(tx => {
-      tx.executeSql(
-        'DELETE FROM flows WHERE id = ?;',
-        [id],
-        resolve,
-        (_, err) => reject(err),
-      );
-    });
-  });
+export const deleteFlow = id => executeSql('DELETE FROM flows WHERE id = ?;', [id]);
 
 // --- nodes CRUD ---
 export const getNodes = flowId =>
-  new Promise((resolve, reject) => {
-    db.transaction(tx => {
-      tx.executeSql(
-        'SELECT * FROM nodes WHERE flowId = ?;',
-        [flowId],
-        (_, { rows }) => resolve(rows.raw()),
-        (_, err) => reject(err),
-      );
-    });
-  });
+  executeSql('SELECT * FROM nodes WHERE flowId = ?;', [flowId]).then(({ rows }) => rows.raw());
 
-export const updateNode = (id, data) =>
-  new Promise((resolve, reject) => {
+export const updateNode = (id, data) => {
     const fields = Object.keys(data)
       .map(key => `${key} = ?`)
       .join(', ');
     const values = Object.values(data);
-    db.transaction(tx => {
-      tx.executeSql(
-        `UPDATE nodes SET ${fields} WHERE id = ?;`,
-        [...values, id],
-        resolve,
-        (_, err) => reject(err),
-      );
-    });
-  });
+    return executeSql(`UPDATE nodes SET ${fields} WHERE id = ?;`, [...values, id]);
+}
 
-export const deleteNode = id =>
-  new Promise((resolve, reject) => {
-    db.transaction(tx => {
-      tx.executeSql(
-        'DELETE FROM nodes WHERE id = ?;',
-        [id],
-        resolve,
-        (_, err) => reject(err),
-      );
-    });
-  });
+export const deleteNode = id => executeSql('DELETE FROM nodes WHERE id = ?;', [id]);
 
 // nodesをflowId単位で全削除
 export const deleteNodesByFlowId = flowId =>
-  new Promise((resolve, reject) => {
-    db.transaction(tx => {
-      tx.executeSql(
-        'DELETE FROM nodes WHERE flowId = ?;',
-        [flowId],
-        resolve,
-        (_, err) => reject(err),
-      );
-    });
-  });
+  executeSql('DELETE FROM nodes WHERE flowId = ?;', [flowId]);
 
 // --- edges CRUD ---
 export const getEdges = flowId =>
-  new Promise((resolve, reject) => {
-    db.transaction(tx => {
-      tx.executeSql(
-        'SELECT * FROM edges WHERE flowId = ?;',
-        [flowId],
-        (_, { rows }) => resolve(rows.raw()),
-        (_, err) => reject(err),
-      );
-    });
-  });
+  executeSql('SELECT * FROM edges WHERE flowId = ?;', [flowId]).then(({ rows }) => rows.raw());
 
-export const updateEdge = (id, data) =>
-  new Promise((resolve, reject) => {
+export const updateEdge = (id, data) => {
     const fields = Object.keys(data)
       .map(key => `${key} = ?`)
       .join(', ');
     const values = Object.values(data);
-    db.transaction(tx => {
-      tx.executeSql(
-        `UPDATE edges SET ${fields} WHERE id = ?;`,
-        [...values, id],
-        resolve,
-        (_, err) => reject(err),
-      );
-    });
-  });
+    return executeSql(`UPDATE edges SET ${fields} WHERE id = ?;`, [...values, id]);
+}
 
-export const deleteEdge = id =>
-  new Promise((resolve, reject) => {
-    db.transaction(tx => {
-      tx.executeSql(
-        'DELETE FROM edges WHERE id = ?;',
-        [id],
-        resolve,
-        (_, err) => reject(err),
-      );
-    });
-  });
+export const deleteEdge = id => executeSql('DELETE FROM edges WHERE id = ?;', [id]);
 
 // edgesをflowId単位で全削除
 export const deleteEdgesByFlowId = flowId =>
-  new Promise((resolve, reject) => {
-    db.transaction(tx => {
-      tx.executeSql(
-        'DELETE FROM edges WHERE flowId = ?;',
-        [flowId],
-        resolve,
-        (_, err) => reject(err),
-      );
-    });
-  });
+  executeSql('DELETE FROM edges WHERE flowId = ?;', [flowId]);
 
 // DB初期化（全テーブル削除＆再作成）
 export const resetDB = () => {
@@ -485,49 +395,25 @@ export const resetDB = () => {
 };
 
 // --- flows INSERT ---
-export const insertFlow = data =>
-  new Promise((resolve, reject) => {
+export const insertFlow = data => {
     const keys = Object.keys(data);
     const values = Object.values(data);
     const placeholders = keys.map(() => '?').join(', ');
-    db.transaction(tx => {
-      tx.executeSql(
-        `INSERT INTO flows (${keys.join(', ')}) VALUES (${placeholders});`,
-        values,
-        (_, result) => resolve(result),
-        (_, err) => reject(err),
-      );
-    });
-  });
+    return executeSql(`INSERT INTO flows (${keys.join(', ')}) VALUES (${placeholders});`, values);
+}
 
 // --- nodes INSERT ---
-export const insertNode = data =>
-  new Promise((resolve, reject) => {
+export const insertNode = data => {
     const keys = Object.keys(data);
     const values = Object.values(data);
     const placeholders = keys.map(() => '?').join(', ');
-    db.transaction(tx => {
-      tx.executeSql(
-        `INSERT INTO nodes (${keys.join(', ')}) VALUES (${placeholders});`,
-        values,
-        (_, result) => resolve(result),
-        (_, err) => reject(err),
-      );
-    });
-  });
+    return executeSql(`INSERT INTO nodes (${keys.join(', ')}) VALUES (${placeholders});`, values);
+}
 
 // --- edges INSERT ---
-export const insertEdge = data =>
-  new Promise((resolve, reject) => {
+export const insertEdge = data => {
     const keys = Object.keys(data);
     const values = Object.values(data);
     const placeholders = keys.map(() => '?').join(', ');
-    db.transaction(tx => {
-      tx.executeSql(
-        `INSERT INTO edges (${keys.join(', ')}) VALUES (${placeholders});`,
-        values,
-        (_, result) => resolve(result),
-        (_, err) => reject(err),
-      );
-    });
-  });
+    return executeSql(`INSERT INTO edges (${keys.join(', ')}) VALUES (${placeholders});`, values);
+}

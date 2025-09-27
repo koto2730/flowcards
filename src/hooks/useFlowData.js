@@ -1,13 +1,30 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { Alert } from 'react-native';
-import { getNodes, getEdges, updateNode } from '../db';
-import { doRectsOverlap, getRect } from '../utils/flowUtils';
+import 'react-native-get-random-values';
+import { v4 as uuidv4 } from 'uuid';
+import {
+  getNodes,
+  getEdges,
+  updateNode,
+  insertEdge,
+  deleteEdge,
+  updateEdge,
+  insertNode,
+  deleteNode,
+} from '../db';
+import { doRectsOverlap, getRect, getClosestHandle } from '../utils/flowUtils';
+
+const CARD_MIN_SIZE = { width: 150, height: 70 };
 
 export const useFlowData = (flowId, isSeeThrough) => {
   const [allNodes, setAllNodes] = useState([]);
   const [edges, setEdges] = useState([]);
   const [currentParentId, setCurrentParentId] = useState('root');
   const [parentIdHistory, setParentIdHistory] = useState([]);
+  const [linkingState, setLinkingState] = useState({
+    active: false,
+    sourceNodeId: null,
+  });
 
   const fetchData = useCallback(async () => {
     try {
@@ -202,7 +219,7 @@ export const useFlowData = (flowId, isSeeThrough) => {
     return Array.isArray(finalNodes) ? finalNodes : [];
   }, [allNodes, currentParentId, isSeeThrough, edges]);
 
-  const handleUpdateNode = async (nodeId, newData) => {
+  const handleUpdateNodeData = async (nodeId, newData) => {
     try {
       await updateNode(nodeId, {
         label: newData.title,
@@ -229,17 +246,204 @@ export const useFlowData = (flowId, isSeeThrough) => {
     }
   };
 
+  const handleUpdateNodePosition = async (nodeId, newPosition) => {
+    if (isSeeThrough) return;
+    try {
+      await updateNode(nodeId, { x: newPosition.x, y: newPosition.y });
+      setAllNodes(nds =>
+        Array.isArray(nds)
+          ? nds.map(node =>
+              node.id === nodeId ? { ...node, position: newPosition } : node,
+            )
+          : [],
+      );
+    } catch (error) {
+      console.error('Failed to update node position:', error);
+    }
+  };
+
+  const addNode = async position => {
+    const newNodeData = {
+      id: uuidv4(),
+      flowId: flowId,
+      parentId: currentParentId,
+      label: '新しいカード',
+      description: '',
+      x: position.x,
+      y: position.y,
+      width: CARD_MIN_SIZE.width,
+      height: CARD_MIN_SIZE.height,
+    };
+    try {
+      await insertNode(newNodeData);
+      fetchData(); // Re-fetch to get the new node
+    } catch (error) {
+      console.error('Failed to add node:', error);
+    }
+  };
+
+  const handleDeleteNode = async nodeId => {
+    const nodesToRemove = new Set();
+    const findChildren = id => {
+      nodesToRemove.add(id);
+      allNodes.forEach(n => {
+        if (n.parentId === id) {
+          findChildren(n.id);
+        }
+      });
+    };
+    findChildren(nodeId);
+
+    try {
+      await Promise.all(Array.from(nodesToRemove).map(id => deleteNode(id)));
+      fetchData();
+    } catch (error) {
+      console.error('Failed to delete node(s):', error);
+    }
+  };
+
+  const handleDoubleClick = nodeId => {
+    if (isSeeThrough || linkingState.active) return;
+    const node = allNodes.find(n => n.id === nodeId);
+    if (node) {
+      setParentIdHistory(history => [...history, currentParentId]);
+      setCurrentParentId(nodeId);
+    }
+  };
+
+  const handleSectionUp = async screenCenter => {
+    if (isSeeThrough || linkingState.active) return;
+    if (parentIdHistory.length > 0) {
+      const newHistory = [...parentIdHistory];
+      const lastParentId = newHistory.pop();
+      setParentIdHistory(newHistory);
+      setCurrentParentId(lastParentId);
+    } else {
+      if (displayNodes.length === 0) return;
+
+      const newParentId = uuidv4();
+      const newParentNode = {
+        id: newParentId,
+        flowId: flowId,
+        parentId: 'root',
+        label: '新しいセクション',
+        description: 'グループ化されました',
+        x: screenCenter.x - CARD_MIN_SIZE.width / 2,
+        y: screenCenter.y - CARD_MIN_SIZE.height / 2,
+        width: CARD_MIN_SIZE.width,
+        height: CARD_MIN_SIZE.height,
+      };
+
+      try {
+        await insertNode(newParentNode);
+        const childrenIds = displayNodes.map(n => n.id);
+        await Promise.all(
+          childrenIds.map(id => updateNode(id, { parentId: newParentId })),
+        );
+        fetchData();
+      } catch (error) {
+        console.error('Failed to create section:', error);
+      }
+    }
+  };
+
+  const toggleLinkingMode = () => {
+    setLinkingState(prev => ({ active: !prev.active, sourceNodeId: null }));
+  };
+
+  const handleDeleteEdge = async edgeId => {
+    try {
+      await deleteEdge(edgeId);
+      setEdges(eds => eds.filter(edge => edge.id !== edgeId));
+    } catch (error) {
+      console.error('Failed to delete edge:', error);
+    }
+  };
+
+  const handleCardTap = async nodeId => {
+    if (!linkingState.active) return;
+
+    if (!linkingState.sourceNodeId) {
+      setLinkingState({ active: true, sourceNodeId: nodeId });
+    } else {
+      if (linkingState.sourceNodeId === nodeId) {
+        setLinkingState({ active: true, sourceNodeId: null });
+        return;
+      }
+
+      const sourceNode = allNodes.find(n => n.id === linkingState.sourceNodeId);
+      const targetNode = allNodes.find(n => n.id === nodeId);
+
+      if (sourceNode && targetNode) {
+        const forwardEdge = edges.find(
+          edge =>
+            edge.source === linkingState.sourceNodeId && edge.target === nodeId,
+        );
+
+        if (forwardEdge) {
+          setLinkingState({ active: true, sourceNodeId: null });
+          return;
+        }
+
+        const reverseEdge = edges.find(
+          edge =>
+            edge.source === nodeId && edge.target === linkingState.sourceNodeId,
+        );
+
+        if (reverseEdge) {
+          try {
+            await updateEdge(reverseEdge.id, { type: 'bidirectional' });
+            setEdges(eds =>
+              eds.map(e =>
+                e.id === reverseEdge.id ? { ...e, type: 'bidirectional' } : e,
+              ),
+            );
+          } catch (error) {
+            console.error('Failed to update edge to bidirectional:', error);
+          }
+        } else {
+          const sourceHandle = getClosestHandle(sourceNode, targetNode);
+          const targetHandle = getClosestHandle(targetNode, sourceNode);
+
+          const newEdge = {
+            id: uuidv4(),
+            flowId: flowId,
+            source: linkingState.sourceNodeId,
+            target: nodeId,
+            sourceHandle: sourceHandle,
+            targetHandle: targetHandle,
+            type: 'default',
+          };
+          try {
+            await insertEdge(newEdge);
+            setEdges(eds => [...eds, newEdge]);
+          } catch (error) {
+            console.error('Failed to add edge:', error);
+          }
+        }
+        setLinkingState({ active: true, sourceNodeId: null });
+      }
+    }
+  };
+
   return {
     allNodes,
     setAllNodes,
     edges,
     setEdges,
     currentParentId,
-    setCurrentParentId,
     parentIdHistory,
-    setParentIdHistory,
     fetchData,
     displayNodes,
-    handleUpdateNode,
+    handleUpdateNodeData,
+    handleUpdateNodePosition,
+    addNode,
+    handleDeleteNode,
+    handleDoubleClick,
+    handleSectionUp,
+    linkingState,
+    toggleLinkingMode,
+    handleCardTap,
+    handleDeleteEdge,
   };
 };
