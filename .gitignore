@@ -89,3 +89,4 @@ google-services.json
 GoogleService-Info.plist
 *.log
 *.p12
+cert

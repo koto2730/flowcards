@@ -1,237 +1,130 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import {
-  View,
+  Skia,
+  Group,
   Text,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  Button,
-} from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  runOnJS,
-} from 'react-native-reanimated';
+  Rect,
+  Path,
+  Circle,
+  DashPathEffect,
+} from '@shopify/react-native-skia';
 
-const Card = ({
-  title,
-  description,
-  position = { x: 0, y: 0 },
-  size,
-  onDragEnd,
-  onDelete,
-  onUpdate,
-  onCardTap,
-  onDoubleClick,
-  isSeeThroughParent,
-  isSeeThroughActive,
+const SkiaCard = ({
+  node,
+  fontTitleJP,
+  fontDescriptionJP,
+  fontTitleSC,
+  fontDescriptionSC,
+  isSelected,
   isLinkingMode,
   isLinkSource,
-  zIndex,
-  node_id,
+  isEditing,
+  isSeeThroughParent,
 }) => {
-  const translateX = useSharedValue(position.x);
-  const translateY = useSharedValue(position.y);
-  const context = useSharedValue({ x: 0, y: 0 });
+  const cardColor = isSelected ? '#E3F2FD' : 'white';
+  const borderColor = isLinkSource ? '#34C759' : '#ddd';
+  const titleColor = 'black';
+  const descriptionColor = '#555';
+  const deleteButtonColor = 'red';
 
-  const [isEditing, setIsEditing] = useState(false);
-  const [editedTitle, setEditedTitle] = useState(title);
-  const [editedDescription, setEditedDescription] = useState(description);
+  const deleteButtonRadius = 11;
+  const deleteButtonX = node.position.x + node.size.width;
+  const deleteButtonY = node.position.y;
 
-  useEffect(() => {
-    translateX.value = position.x;
-    translateY.value = position.y;
-  }, [position]);
+  const crossPath = Skia.Path.Make();
+  crossPath.moveTo(deleteButtonX - 5, deleteButtonY - 5);
+  crossPath.lineTo(deleteButtonX + 5, deleteButtonY + 5);
+  crossPath.moveTo(deleteButtonX + 5, deleteButtonY - 5);
+  crossPath.lineTo(deleteButtonX - 5, deleteButtonY + 5);
 
-  useEffect(() => {
-    setEditedTitle(title);
-    setEditedDescription(description);
-  }, [title, description]);
-
-  const handleLongPress = () => {
-    if (!isEditing) {
-      runOnJS(setIsEditing)(true);
-    }
-  };
-
-  const singleTapGesture = Gesture.Tap().onEnd(() => {
-    if (onCardTap) {
-      runOnJS(onCardTap)(node_id);
-    }
-  });
-
-  const doubleTapGesture = Gesture.Tap()
-    .numberOfTaps(2)
-    .onEnd(() => {
-      if (onDoubleClick) {
-        runOnJS(onDoubleClick)(node_id);
-      }
-    })
-    .enabled(!isSeeThroughActive && !isLinkingMode);
-
-  const longPressGesture = Gesture.LongPress()
-    .onStart(handleLongPress)
-    .enabled(!isSeeThroughParent && !isLinkingMode);
-
-  const panGestureCard = Gesture.Pan()
-    .onStart(() => {
-      context.value = { x: translateX.value, y: translateY.value };
-    })
-    .onUpdate(event => {
-      translateX.value = context.value.x + event.translationX;
-      translateY.value = context.value.y + event.translationY;
-    })
-    .onEnd(() => {
-      if (onDragEnd) {
-        runOnJS(onDragEnd)(node_id, {
-          x: translateX.value,
-          y: translateY.value,
-        });
-      }
-    })
-    .enabled(!isEditing && !isSeeThroughActive && !isLinkingMode);
-
-  const composedGesture = Gesture.Exclusive(
-    panGestureCard,
-    doubleTapGesture,
-    singleTapGesture,
-    longPressGesture,
+  const borderPath = Skia.Path.Make();
+  borderPath.addRect(
+    Skia.XYWHRect(
+      node.position.x,
+      node.position.y,
+      node.size.width,
+      node.size.height,
+    ),
   );
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: translateX.value },
-      { translateY: translateY.value },
-    ],
-  }));
-
-  const handleDelete = () => onDelete && onDelete(node_id);
-  const handleUpdate = () => {
-    setIsEditing(false);
-    onUpdate &&
-      onUpdate(node_id, { title: editedTitle, description: editedDescription });
-  };
-
-  const containerStyles = [
-    styles.cardContainer,
-    { zIndex },
-    animatedStyle,
-    isSeeThroughParent && styles.seeThroughParent,
-    isLinkSource && styles.linkSource,
-    size && { width: size.width, height: size.height },
-  ];
-
   return (
-    <GestureDetector gesture={composedGesture}>
-      <Animated.View style={containerStyles}>
-        {isSeeThroughParent ? (
-          <View style={styles.seeThroughTitleContainer}>
-            <Text style={styles.title}>{title}</Text>
-          </View>
-        ) : isEditing ? (
-          <View>
-            <TextInput
-              value={editedTitle}
-              onChangeText={setEditedTitle}
-              style={[styles.title, styles.input]}
-              autoFocus
-            />
-            <TextInput
-              value={editedDescription}
-              onChangeText={setEditedDescription}
-              style={[styles.description, styles.input]}
-              multiline
-            />
-            <Button title="保存" onPress={handleUpdate} />
-          </View>
-        ) : (
-          <View style={styles.touchableArea}>
-            <Text style={styles.title}>{title}</Text>
-            {description && (
-              <Text style={styles.description}>{description}</Text>
-            )}
-          </View>
-        )}
-        {!isSeeThroughParent && (
-          <>
-            <TouchableOpacity
-              onPress={handleDelete}
-              style={styles.deleteButton}
-            >
-              <Text style={styles.deleteButtonText}>X</Text>
-            </TouchableOpacity>
-          </>
-        )}
-      </Animated.View>
-    </GestureDetector>
+    <Group opacity={isEditing ? 0.5 : 1.0}>
+      <Rect
+        x={node.position.x}
+        y={node.position.y}
+        width={node.size.width}
+        height={node.size.height}
+        color={cardColor}
+      />
+      {isSeeThroughParent ? (
+        <Path
+          path={borderPath}
+          style="stroke"
+          strokeWidth={2}
+          color={borderColor}
+        >
+          <DashPathEffect intervals={[4, 4]} />
+        </Path>
+      ) : (
+        <Rect
+          x={node.position.x}
+          y={node.position.y}
+          width={node.size.width}
+          height={node.size.height}
+          strokeWidth={2}
+          style="stroke"
+          color={borderColor}
+        />
+      )}
+      {fontTitleJP && fontDescriptionJP && fontTitleSC && fontDescriptionSC && (
+        <>
+          <Text
+            font={fontTitleJP}
+            x={node.position.x + 10}
+            y={node.position.y + 20}
+            text={node.data.label ?? ''}
+            color={titleColor}
+          />
+          <Text
+            font={fontTitleSC}
+            x={node.position.x + 10}
+            y={node.position.y + 20}
+            text={node.data.label ?? ''}
+            color={titleColor}
+          />
+          {node.data.description && (
+            <>
+              <Text
+                font={fontDescriptionJP}
+                x={node.position.x + 10}
+                y={node.position.y + 40}
+                text={node.data.description}
+                color={descriptionColor}
+                maxWidth={node.size.width - 20}
+              />
+              <Text
+                font={fontDescriptionSC}
+                x={node.position.x + 10}
+                y={node.position.y + 40}
+                text={node.data.description}
+                color={descriptionColor}
+                maxWidth={node.size.width - 20}
+              />
+            </>
+          )}
+        </>
+      )}
+      <Group>
+        <Circle
+          cx={deleteButtonX}
+          cy={deleteButtonY}
+          r={deleteButtonRadius}
+          color={deleteButtonColor}
+        />
+        <Path path={crossPath} style="stroke" strokeWidth={2} color="white" />
+      </Group>
+    </Group>
   );
 };
 
-const styles = StyleSheet.create({
-  cardContainer: {
-    position: 'absolute',
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 5,
-    backgroundColor: 'white',
-    minWidth: 150,
-    minHeight: 70,
-    padding: 10,
-  },
-  linkSource: {
-    borderColor: '#007AFF',
-    borderWidth: 2,
-  },
-  seeThroughParent: {
-    backgroundColor: 'rgba(200, 200, 200, 0.2)',
-    borderColor: '#999',
-    borderStyle: 'dashed',
-    padding: 0,
-  },
-  seeThroughTitleContainer: {
-    position: 'absolute',
-    top: -30,
-    left: 10,
-    backgroundColor: 'rgba(255, 255, 255, 0.8)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
-  },
-  touchableArea: {
-    flex: 1,
-  },
-  deleteButton: {
-    position: 'absolute',
-    top: -10,
-    right: -10,
-    backgroundColor: 'red',
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  deleteButtonText: {
-    color: 'white',
-    fontWeight: 'bold',
-    fontSize: 12,
-  },
-  title: {
-    fontWeight: 'bold',
-    marginBottom: 5,
-  },
-  description: {
-    fontSize: 12,
-    color: '#555',
-    marginTop: 5,
-  },
-  input: {
-    borderBottomWidth: 1,
-    borderColor: '#ccc',
-    paddingVertical: 2,
-  },
-});
-
-export default Card;
+export default SkiaCard;
