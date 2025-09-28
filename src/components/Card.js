@@ -1,20 +1,21 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   Skia,
   Group,
-  Text,
   Rect,
   Path,
   Circle,
   DashPathEffect,
+  Paragraph,
+  TextAlign,
+  FontWeight,
 } from '@shopify/react-native-skia';
+
+const CARD_MIN_WIDTH = 150;
 
 const SkiaCard = ({
   node,
-  fontTitleJP,
-  fontDescriptionJP,
-  fontTitleSC,
-  fontDescriptionSC,
+  fontMgr,
   isSelected,
   isLinkingMode,
   isLinkSource,
@@ -23,8 +24,8 @@ const SkiaCard = ({
 }) => {
   const cardColor = isSelected ? '#E3F2FD' : 'white';
   const borderColor = isLinkSource ? '#34C759' : '#ddd';
-  const titleColor = 'black';
-  const descriptionColor = '#555';
+  const titleColor = Skia.Color('black');
+  const descriptionColor = Skia.Color('#555');
   const deleteButtonColor = 'red';
 
   const deleteButtonRadius = 11;
@@ -46,6 +47,53 @@ const SkiaCard = ({
       node.size.height,
     ),
   );
+
+  const titleParagraph = useMemo(() => {
+    if (!fontMgr) {
+      return null;
+    }
+    const paragraphStyle = {
+      textAlign: TextAlign.Left,
+    };
+    const textStyle = {
+      color: titleColor,
+      fontFamilies: ['NotoSansJP', 'NotoSansSC'],
+      fontSize: 16,
+      fontStyle: { weight: FontWeight.Bold },
+    };
+    const builder = Skia.ParagraphBuilder.Make(paragraphStyle, fontMgr)
+      .pushStyle(textStyle)
+      .addText(node.data.label ?? '');
+    const paragraph = builder.build();
+    const layoutWidth = (node.size.width || CARD_MIN_WIDTH) - 20;
+    paragraph.layout(layoutWidth);
+    return paragraph;
+  }, [fontMgr, node.data.label, node.size.width, titleColor]);
+
+  const descriptionParagraph = useMemo(() => {
+    if (!fontMgr || !node.data.description) {
+      return null;
+    }
+    const paragraphStyle = {
+      textAlign: TextAlign.Left,
+    };
+    const textStyle = {
+      color: descriptionColor,
+      fontFamilies: ['NotoSansJP', 'NotoSansSC'],
+      fontSize: 14,
+    };
+    const builder = Skia.ParagraphBuilder.Make(paragraphStyle, fontMgr)
+      .pushStyle(textStyle)
+      .addText(node.data.description);
+    const paragraph = builder.build();
+    const layoutWidth = (node.size.width || CARD_MIN_WIDTH) - 20;
+    paragraph.layout(layoutWidth);
+    return paragraph;
+  }, [fontMgr, node.data.description, node.size.width, descriptionColor]);
+
+  const titleY = node.position.y + 10;
+  const descriptionY =
+    titleY + (titleParagraph ? titleParagraph.getHeight() : 0) + 5;
 
   return (
     <Group opacity={isEditing ? 0.5 : 1.0}>
@@ -76,43 +124,21 @@ const SkiaCard = ({
           color={borderColor}
         />
       )}
-      {fontTitleJP && fontDescriptionJP && fontTitleSC && fontDescriptionSC && (
-        <>
-          <Text
-            font={fontTitleJP}
-            x={node.position.x + 10}
-            y={node.position.y + 20}
-            text={node.data.label ?? ''}
-            color={titleColor}
-          />
-          <Text
-            font={fontTitleSC}
-            x={node.position.x + 10}
-            y={node.position.y + 20}
-            text={node.data.label ?? ''}
-            color={titleColor}
-          />
-          {node.data.description && (
-            <>
-              <Text
-                font={fontDescriptionJP}
-                x={node.position.x + 10}
-                y={node.position.y + 40}
-                text={node.data.description}
-                color={descriptionColor}
-                maxWidth={node.size.width - 20}
-              />
-              <Text
-                font={fontDescriptionSC}
-                x={node.position.x + 10}
-                y={node.position.y + 40}
-                text={node.data.description}
-                color={descriptionColor}
-                maxWidth={node.size.width - 20}
-              />
-            </>
-          )}
-        </>
+      {titleParagraph && (
+        <Paragraph
+          paragraph={titleParagraph}
+          x={node.position.x + 10}
+          y={titleY}
+          width={node.size.width}
+        />
+      )}
+      {descriptionParagraph && (
+        <Paragraph
+          paragraph={descriptionParagraph}
+          x={node.position.x + 10}
+          y={descriptionY}
+          width={node.size.width}
+        />
       )}
       <Group>
         <Circle
