@@ -9,7 +9,7 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Canvas, Path, Group, useFont } from '@shopify/react-native-skia';
+import { Canvas, Path, Group, useFonts } from '@shopify/react-native-skia';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   useSharedValue,
@@ -69,22 +69,16 @@ const FlowEditorScreen = ({ route, navigation }) => {
   const dragStartOffset = useSharedValue({ x: 0, y: 0 });
   const nodePosition = useSharedValue({ x: 0, y: 0 });
 
-  const fontTitleJP = useFont(
-    require('../../assets/fonts/Noto_Sans_JP/static/NotoSansJP-Bold.ttf'),
-    16,
-  );
-  const fontDescriptionJP = useFont(
-    require('../../assets/fonts/Noto_Sans_JP/static/NotoSansJP-Regular.ttf'),
-    14,
-  );
-  const fontTitleSC = useFont(
-    require('../../assets/fonts/Noto_Sans_SC/static/NotoSansSC-Bold.ttf'),
-    16,
-  );
-  const fontDescriptionSC = useFont(
-    require('../../assets/fonts/Noto_Sans_SC/static/NotoSansSC-Regular.ttf'),
-    14,
-  );
+  const fontMgr = useFonts({
+    NotoSansJP: [
+      require('../../assets/fonts/Noto_Sans_JP/static/NotoSansJP-Regular.ttf'),
+      require('../../assets/fonts/Noto_Sans_JP/static/NotoSansJP-Bold.ttf'),
+    ],
+    NotoSansSC: [
+      require('../../assets/fonts/Noto_Sans_SC/static/NotoSansSC-Regular.ttf'),
+      require('../../assets/fonts/Noto_Sans_SC/static/NotoSansSC-Bold.ttf'),
+    ],
+  });
 
   useEffect(() => {
     const loadPosition = async () => {
@@ -550,10 +544,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
                   <SkiaCard
                     key={node.id}
                     node={node}
-                    fontTitleJP={fontTitleJP}
-                    fontDescriptionJP={fontDescriptionJP}
-                    fontTitleSC={fontTitleSC}
-                    fontDescriptionSC={fontDescriptionSC}
+                    fontMgr={fontMgr}
                     isSelected={linkingState.sourceNodeId === node.id}
                     isLinkingMode={linkingState.active}
                     isLinkSource={linkingState.sourceNodeId === node.id}
