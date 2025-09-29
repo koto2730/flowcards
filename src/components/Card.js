@@ -28,6 +28,9 @@ const SkiaCard = ({
   const descriptionColor = Skia.Color('#555');
   const deleteButtonColor = 'red';
 
+  const marginRow = 10;
+  const marginColumn = 5;
+
   const deleteButtonRadius = 11;
   const deleteButtonX = node.position.x + node.size.width;
   const deleteButtonY = node.position.y;
@@ -48,6 +51,8 @@ const SkiaCard = ({
     ),
   );
 
+  const cardSize = node.data.size || 'medium';
+
   const titleParagraph = useMemo(() => {
     if (!fontMgr) {
       return null;
@@ -65,18 +70,24 @@ const SkiaCard = ({
       .pushStyle(textStyle)
       .addText(node.data.label ?? '');
     const paragraph = builder.build();
-    const layoutWidth = (node.size.width || CARD_MIN_WIDTH) - 20;
+    const layoutWidth = (node.size.width || CARD_MIN_WIDTH) - marginRow * 2;
     paragraph.layout(layoutWidth);
     return paragraph;
   }, [fontMgr, node.data.label, node.size.width, titleColor]);
 
   const descriptionParagraph = useMemo(() => {
-    if (!fontMgr || !node.data.description) {
+    if (!fontMgr || !node.data.description || cardSize === 'small') {
       return null;
     }
     const paragraphStyle = {
       textAlign: TextAlign.Left,
     };
+
+    if (cardSize === 'medium') {
+      paragraphStyle.maxLines = 1;
+      paragraphStyle.ellipsis = '...';
+    }
+
     const textStyle = {
       color: descriptionColor,
       fontFamilies: ['NotoSansJP', 'NotoSansSC'],
@@ -86,14 +97,25 @@ const SkiaCard = ({
       .pushStyle(textStyle)
       .addText(node.data.description);
     const paragraph = builder.build();
-    const layoutWidth = (node.size.width || CARD_MIN_WIDTH) - 20;
+    const layoutWidth = (node.size.width || CARD_MIN_WIDTH) - marginRow * 2;
     paragraph.layout(layoutWidth);
     return paragraph;
-  }, [fontMgr, node.data.description, node.size.width, descriptionColor]);
+  }, [
+    fontMgr,
+    node.data.description,
+    node.size.width,
+    descriptionColor,
+    cardSize,
+  ]);
 
-  const titleY = node.position.y + 10;
+  const maxParagraphWidth = Math.max(
+    titleParagraph ? titleParagraph.getLongestLine() : 0,
+    descriptionParagraph ? descriptionParagraph.getLongestLine() : 0,
+  );
+
+  const titleY = node.position.y + marginRow;
   const descriptionY =
-    titleY + (titleParagraph ? titleParagraph.getHeight() : 0) + 5;
+    titleY + (titleParagraph ? titleParagraph.getHeight() : 0) + marginColumn;
 
   return (
     <Group opacity={isEditing ? 0.5 : 1.0}>
@@ -101,7 +123,7 @@ const SkiaCard = ({
         x={node.position.x}
         y={node.position.y}
         width={node.size.width}
-        height={node.size.height}
+        height={node.size.height + marginColumn}
         color={cardColor}
       />
       {isSeeThroughParent ? (
@@ -118,7 +140,7 @@ const SkiaCard = ({
           x={node.position.x}
           y={node.position.y}
           width={node.size.width}
-          height={node.size.height}
+          height={node.size.height + marginColumn}
           strokeWidth={2}
           style="stroke"
           color={borderColor}
@@ -127,17 +149,17 @@ const SkiaCard = ({
       {titleParagraph && (
         <Paragraph
           paragraph={titleParagraph}
-          x={node.position.x + 10}
+          x={node.position.x + marginRow}
           y={titleY}
-          width={node.size.width}
+          width={maxParagraphWidth}
         />
       )}
       {descriptionParagraph && (
         <Paragraph
           paragraph={descriptionParagraph}
-          x={node.position.x + 10}
+          x={node.position.x + marginRow}
           y={descriptionY}
-          width={node.size.width}
+          width={maxParagraphWidth}
         />
       )}
       <Group>

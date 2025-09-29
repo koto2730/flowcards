@@ -18,7 +18,12 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { updateFlow, getFlows } from '../db';
-import { Divider, FAB, Provider as PaperProvider } from 'react-native-paper';
+import {
+  Divider,
+  FAB,
+  Provider as PaperProvider,
+  SegmentedButtons,
+} from 'react-native-paper';
 import OriginalTheme from './OriginalTheme';
 import SkiaCard from '../components/Card';
 import {
@@ -204,7 +209,8 @@ const FlowEditorScreen = ({ route, navigation }) => {
           extra: { newPosition: nodePosition.value },
         });
         activeNodeId.value = null;
-      } else {
+      }
+      else {
         savedTranslateX.value = translateX.value;
         savedTranslateY.value = translateY.value;
       }
@@ -334,6 +340,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
           id: hitNode.id,
           title: hitNode.data.label,
           description: hitNode.data.description,
+          size: hitNode.data.size || 'medium',
         });
       }
     });
@@ -427,10 +434,12 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
   const handleSaveEditingNode = () => {
     if (editingNode) {
-      handleUpdateNodeData(editingNode.id, {
+      const dataToUpdate = {
         title: editingNode.title,
         description: editingNode.description,
-      });
+        size: editingNode.size,
+      };
+      handleUpdateNodeData(editingNode.id, dataToUpdate, fontMgr);
       setEditingNode(null);
     }
   };
@@ -571,6 +580,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
                 style={styles.input}
                 placeholder="Title"
                 autoFocus
+                maxLength={16}
               />
               <TextInput
                 value={editingNode.description}
@@ -580,6 +590,20 @@ const FlowEditorScreen = ({ route, navigation }) => {
                 style={styles.input}
                 placeholder="Description"
                 multiline
+                maxLength={100}
+                editable={editingNode.size !== 'small'}
+              />
+              <SegmentedButtons
+                value={editingNode.size}
+                onValueChange={value =>
+                  setEditingNode(prev => ({ ...prev, size: value }))
+                }
+                buttons={[
+                  { value: 'small', label: '小' },
+                  { value: 'medium', label: '中' },
+                  { value: 'large', label: '大' },
+                ]}
+                style={styles.sizeSelectionContainer}
               />
               <View style={styles.buttonContainer}>
                 <Button title="保存" onPress={handleSaveEditingNode} />
@@ -649,6 +673,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-around',
     marginTop: 10,
+  },
+  sizeSelectionContainer: {
+    marginBottom: 10,
   },
   bottomLeftControls: {
     position: 'absolute',

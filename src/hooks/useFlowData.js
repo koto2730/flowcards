@@ -14,7 +14,12 @@ import {
 } from '../db';
 import { doRectsOverlap, getRect, getClosestHandle } from '../utils/flowUtils';
 
-const CARD_MIN_SIZE = { width: 150, height: 70 };
+// 3つの固定サイズを定義
+const CARD_SIZES = {
+  small: { width: 150, height: 60 },
+  medium: { width: 150, height: 85 },
+  large: { width: 180, height: 254 },
+};
 
 export const useFlowData = (flowId, isSeeThrough) => {
   const [allNodes, setAllNodes] = useState([]);
@@ -32,13 +37,32 @@ export const useFlowData = (flowId, isSeeThrough) => {
       const edgesData = await getEdges(flowId);
 
       const formattedNodes = Array.isArray(nodesData)
-        ? nodesData.map(n => ({
-            id: n.id,
-            parentId: n.parentId,
-            data: { label: n.label ?? '', description: n.description ?? '' },
-            position: { x: n.x, y: n.y },
-            size: { width: n.width, height: n.height },
-          }))
+        ? nodesData.map(n => {
+            let size = 'medium'; // デフォルト
+            if (
+              n.width === CARD_SIZES.small.width &&
+              n.height === CARD_SIZES.small.height
+            ) {
+              size = 'small';
+            } else if (
+              n.width === CARD_SIZES.large.width &&
+              n.height === CARD_SIZES.large.height
+            ) {
+              size = 'large';
+            }
+
+            return {
+              id: n.id,
+              parentId: n.parentId,
+              data: {
+                label: n.label ?? '',
+                description: n.description ?? '',
+                size: size,
+              },
+              position: { x: n.x, y: n.y },
+              size: { width: n.width, height: n.height },
+            };
+          })
         : [];
       setAllNodes(Array.isArray(formattedNodes) ? formattedNodes : []);
       setEdges(Array.isArray(edgesData) ? edgesData : []);
@@ -221,10 +245,17 @@ export const useFlowData = (flowId, isSeeThrough) => {
 
   const handleUpdateNodeData = async (nodeId, newData) => {
     try {
-      await updateNode(nodeId, {
+      const newDimensions = CARD_SIZES[newData.size] || CARD_SIZES.medium;
+
+      const dbUpdateData = {
         label: newData.title,
         description: newData.description,
-      });
+        width: newDimensions.width,
+        height: newDimensions.height + 10, // Add bottom margin
+      };
+
+      await updateNode(nodeId, dbUpdateData);
+
       setAllNodes(nds =>
         Array.isArray(nds)
           ? nds.map(node =>
@@ -235,7 +266,9 @@ export const useFlowData = (flowId, isSeeThrough) => {
                       ...node.data,
                       label: newData.title ?? '',
                       description: newData.description ?? '',
+                      size: newData.size,
                     },
+                    size: dbUpdateData, // Use the same object
                   }
                 : node,
             )
@@ -243,6 +276,7 @@ export const useFlowData = (flowId, isSeeThrough) => {
       );
     } catch (error) {
       console.error('Failed to update node data:', error);
+      Alert.alert('Error', 'Failed to update node data.');
     }
   };
 
@@ -271,8 +305,8 @@ export const useFlowData = (flowId, isSeeThrough) => {
       description: '',
       x: position.x,
       y: position.y,
-      width: CARD_MIN_SIZE.width,
-      height: CARD_MIN_SIZE.height,
+      width: CARD_SIZES.medium.width,
+      height: CARD_SIZES.medium.height,
     };
     try {
       await insertNode(newNodeData);
@@ -328,10 +362,10 @@ export const useFlowData = (flowId, isSeeThrough) => {
         parentId: 'root',
         label: '新しいセクション',
         description: 'グループ化されました',
-        x: screenCenter.x - CARD_MIN_SIZE.width / 2,
-        y: screenCenter.y - CARD_MIN_SIZE.height / 2,
-        width: CARD_MIN_SIZE.width,
-        height: CARD_MIN_SIZE.height,
+        x: screenCenter.x - CARD_SIZES.medium.width / 2,
+        y: screenCenter.y - CARD_SIZES.medium.height / 2,
+        width: CARD_SIZES.medium.width,
+        height: CARD_SIZES.medium.height,
       };
 
       try {
