@@ -37,7 +37,8 @@ const getSampleDataByLang = () => {
           x: 250,
           y: 50,
           width: 150,
-          height: 70,
+          height: 85,
+          color: '#FFFFFF',
         },
         {
           id: '2',
@@ -47,7 +48,8 @@ const getSampleDataByLang = () => {
           x: 100,
           y: 200,
           width: 150,
-          height: 70,
+          height: 85,
+          color: '#FFFFFF',
         },
         {
           id: '3',
@@ -57,7 +59,8 @@ const getSampleDataByLang = () => {
           x: 50,
           y: 50,
           width: 150,
-          height: 70,
+          height: 85,
+          color: '#FFFFFF',
         },
         {
           id: '4',
@@ -67,17 +70,19 @@ const getSampleDataByLang = () => {
           x: 100,
           y: 300,
           width: 150,
-          height: 70,
+          height: 85,
+          color: '#FFFFFF',
         },
         {
           id: '5',
           parentId: 'root',
-          label: 'ダブルタップ',
+          label: 'ダブルタップ（大）',
           description: 'カードの中に入る',
           x: 100,
           y: 400,
-          width: 150,
-          height: 70,
+          width: 180,
+          height: 254,
+          color: '#FFFFFF',
         },
       ],
     };
@@ -93,7 +98,8 @@ const getSampleDataByLang = () => {
           x: 250,
           y: 50,
           width: 150,
-          height: 70,
+          height: 85,
+          color: '#FFFFFF',
         },
         {
           id: '2',
@@ -103,7 +109,8 @@ const getSampleDataByLang = () => {
           x: 100,
           y: 200,
           width: 150,
-          height: 70,
+          height: 85,
+          color: '#FFFFFF',
         },
         {
           id: '3',
@@ -113,7 +120,8 @@ const getSampleDataByLang = () => {
           x: 50,
           y: 50,
           width: 150,
-          height: 70,
+          height: 85,
+          color: '#FFFFFF',
         },
         {
           id: '4',
@@ -123,17 +131,19 @@ const getSampleDataByLang = () => {
           x: 100,
           y: 300,
           width: 150,
-          height: 70,
+          height: 85,
+          color: '#FFFFFF',
         },
         {
           id: '5',
           parentId: 'root',
-          label: '双击卡片',
+          label: '双击卡片（大）',
           description: '可以进入卡片内部',
           x: 100,
           y: 4000,
-          width: 150,
-          height: 70,
+          width: 180,
+          height: 254,
+          color: '#FFFFFF',
         },
       ],
     };
@@ -149,7 +159,8 @@ const getSampleDataByLang = () => {
           x: 250,
           y: 50,
           width: 150,
-          height: 70,
+          height: 85,
+          color: '#FFFFFF',
         },
         {
           id: '2',
@@ -159,7 +170,8 @@ const getSampleDataByLang = () => {
           x: 100,
           y: 200,
           width: 150,
-          height: 70,
+          height: 85,
+          color: '#FFFFFF',
         },
         {
           id: '3',
@@ -169,7 +181,8 @@ const getSampleDataByLang = () => {
           x: 50,
           y: 50,
           width: 150,
-          height: 70,
+          height: 85,
+          color: '#FFFFFF',
         },
         {
           id: '4',
@@ -179,17 +192,19 @@ const getSampleDataByLang = () => {
           x: 100,
           y: 300,
           width: 150,
-          height: 70,
+          height: 85,
+          color: '#FFFFFF',
         },
         {
           id: '5',
           parentId: 'root',
-          label: 'Double Tap card',
+          label: 'Double Tap card (Large)',
           description: 'Enter inside the card',
           x: 100,
           y: 400,
-          width: 150,
-          height: 70,
+          width: 180,
+          height: 254,
+          color: '#FFFFFF',
         },
       ],
     };
@@ -206,7 +221,7 @@ const insertSampleData = tx => {
         const promises = sample.nodes.map(node => {
           return new Promise((resolveNode, rejectNode) => {
             tx.executeSql(
-              'INSERT INTO nodes (id, flowId, parentId, label, description, x, y, width, height) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);',
+              'INSERT INTO nodes (id, flowId, parentId, label, description, x, y, width, height, color) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);',
               [
                 node.id,
                 insertId,
@@ -217,6 +232,7 @@ const insertSampleData = tx => {
                 node.y,
                 node.width,
                 node.height,
+                node.color,
               ],
               () => {
                 resolveNode();

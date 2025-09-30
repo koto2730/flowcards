@@ -13,7 +13,7 @@ import {
 
 const CARD_MIN_WIDTH = 150;
 
-const SkiaCard = ({
+const SkiaCard = ({ 
   node,
   fontMgr,
   isSelected,
@@ -22,7 +22,7 @@ const SkiaCard = ({
   isEditing,
   isSeeThroughParent,
 }) => {
-  const cardColor = isSelected ? '#E3F2FD' : 'white';
+  const cardColor = isSelected ? '#E3F2FD' : node.color || 'white';
   const borderColor = isLinkSource ? '#34C759' : '#ddd';
   const titleColor = Skia.Color('black');
   const descriptionColor = Skia.Color('#555');
@@ -52,74 +52,64 @@ const SkiaCard = ({
   );
 
   const cardSize = node.data.size || 'medium';
+  const layoutWidth = (node.size.width || CARD_MIN_WIDTH) - marginRow * 2;
 
-  const titleParagraph = useMemo(() => {
+  const cardParagraph = useMemo(() => {
     if (!fontMgr) {
       return null;
     }
+
     const paragraphStyle = {
       textAlign: TextAlign.Left,
     };
-    const textStyle = {
+
+    const titleStyle = {
       color: titleColor,
       fontFamilies: ['NotoSansJP', 'NotoSansSC'],
       fontSize: 16,
       fontStyle: { weight: FontWeight.Bold },
     };
-    const builder = Skia.ParagraphBuilder.Make(paragraphStyle, fontMgr)
-      .pushStyle(textStyle)
-      .addText(node.data.label ?? '');
-    const paragraph = builder.build();
-    const layoutWidth = (node.size.width || CARD_MIN_WIDTH) - marginRow * 2;
-    paragraph.layout(layoutWidth);
-    return paragraph;
-  }, [fontMgr, node.data.label, node.size.width, titleColor]);
 
-  const descriptionParagraph = useMemo(() => {
-    if (!fontMgr || !node.data.description || cardSize === 'small') {
-      return null;
-    }
-    const paragraphStyle = {
-      textAlign: TextAlign.Left,
-    };
-
-    if (cardSize === 'medium') {
-      paragraphStyle.maxLines = 1;
-      paragraphStyle.ellipsis = '...';
-    }
-
-    const textStyle = {
+    const descriptionStyle = {
       color: descriptionColor,
       fontFamilies: ['NotoSansJP', 'NotoSansSC'],
       fontSize: 14,
     };
-    const builder = Skia.ParagraphBuilder.Make(paragraphStyle, fontMgr)
-      .pushStyle(textStyle)
-      .addText(node.data.description);
+
+    const builder = Skia.ParagraphBuilder.Make(paragraphStyle, fontMgr).pushStyle(
+      titleStyle,
+    );
+    builder.addText(node.data.label ?? '');
+    builder.pop();
+
+    if (node.data.description && cardSize !== 'small') {
+      let descriptionText = node.data.description;
+      if (cardSize === 'medium' && descriptionText.length > 8) {
+        descriptionText = descriptionText.substring(0, 8) + '...';
+      }
+      builder.pushStyle(descriptionStyle);
+      builder.addText(`\n${descriptionText}`);
+      builder.pop();
+    }
+
     const paragraph = builder.build();
-    const layoutWidth = (node.size.width || CARD_MIN_WIDTH) - marginRow * 2;
     paragraph.layout(layoutWidth);
     return paragraph;
   }, [
     fontMgr,
+    node.data.label,
     node.data.description,
-    node.size.width,
+    layoutWidth,
+    titleColor,
     descriptionColor,
     cardSize,
   ]);
 
-  const maxParagraphWidth = Math.max(
-    titleParagraph ? titleParagraph.getLongestLine() : 0,
-    descriptionParagraph ? descriptionParagraph.getLongestLine() : 0,
-  );
-
   const titleY = node.position.y + marginRow;
-  const descriptionY =
-    titleY + (titleParagraph ? titleParagraph.getHeight() : 0) + marginColumn;
 
   return (
-    <Group opacity={isEditing ? 0.5 : 1.0}>
-      <Rect
+    <Group opacity={isEditing ? 0.5 : 1.0}> 
+      <Rect 
         x={node.position.x}
         y={node.position.y}
         width={node.size.width}
@@ -127,7 +117,7 @@ const SkiaCard = ({
         color={cardColor}
       />
       {isSeeThroughParent ? (
-        <Path
+        <Path 
           path={borderPath}
           style="stroke"
           strokeWidth={2}
@@ -136,7 +126,7 @@ const SkiaCard = ({
           <DashPathEffect intervals={[4, 4]} />
         </Path>
       ) : (
-        <Rect
+        <Rect 
           x={node.position.x}
           y={node.position.y}
           width={node.size.width}
@@ -146,24 +136,16 @@ const SkiaCard = ({
           color={borderColor}
         />
       )}
-      {titleParagraph && (
-        <Paragraph
-          paragraph={titleParagraph}
+      {cardParagraph && (
+        <Paragraph 
+          paragraph={cardParagraph}
           x={node.position.x + marginRow}
           y={titleY}
-          width={maxParagraphWidth}
-        />
-      )}
-      {descriptionParagraph && (
-        <Paragraph
-          paragraph={descriptionParagraph}
-          x={node.position.x + marginRow}
-          y={descriptionY}
-          width={maxParagraphWidth}
+          width={layoutWidth}
         />
       )}
       <Group>
-        <Circle
+        <Circle 
           cx={deleteButtonX}
           cy={deleteButtonY}
           r={deleteButtonRadius}
