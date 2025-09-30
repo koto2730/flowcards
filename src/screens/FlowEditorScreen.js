@@ -7,6 +7,9 @@ import {
   Button,
   KeyboardAvoidingView,
   Platform,
+  Modal,
+  TouchableOpacity,
+  Text,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Canvas, Path, Group, useFonts } from '@shopify/react-native-skia';
@@ -35,8 +38,19 @@ import {
   isPointInDeleteButton,
 } from '../utils/flowUtils';
 import { useFlowData } from '../hooks/useFlowData';
+import ColorPalette from 'react-native-color-palette';
 
 const { width, height } = Dimensions.get('window');
+
+const getTextColorForBackground = hexColor => {
+  if (!hexColor) return 'black';
+  const color = hexColor.startsWith('#') ? hexColor.substring(1) : hexColor;
+  const r = parseInt(color.substring(0, 2), 16);
+  const g = parseInt(color.substring(2, 4), 16);
+  const b = parseInt(color.substring(4, 6), 16);
+  const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+  return luminance > 186 ? 'black' : 'white';
+};
 
 const FlowEditorScreen = ({ route, navigation }) => {
   const { flowId, flowName } = route.params;
@@ -59,6 +73,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
   } = useFlowData(flowId, isSeeThrough);
 
   const [editingNode, setEditingNode] = useState(null);
+  const [colorPickerVisible, setColorPickerVisible] = useState(false);
 
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
@@ -341,6 +356,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
           title: hitNode.data.label,
           description: hitNode.data.description,
           size: hitNode.data.size || 'medium',
+          color: hitNode.data.color || '#FFFFFF',
         });
       }
     });
@@ -438,6 +454,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
         title: editingNode.title,
         description: editingNode.description,
         size: editingNode.size,
+        color: editingNode.color,
       };
       handleUpdateNodeData(editingNode.id, dataToUpdate, fontMgr);
       setEditingNode(null);
@@ -605,6 +622,22 @@ const FlowEditorScreen = ({ route, navigation }) => {
                 ]}
                 style={styles.sizeSelectionContainer}
               />
+              <TouchableOpacity
+                style={[
+                  styles.colorButton,
+                  { backgroundColor: editingNode.color },
+                ]}
+                onPress={() => setColorPickerVisible(true)}
+              >
+                <Text
+                  style={[
+                    styles.colorButtonText,
+                    { color: getTextColorForBackground(editingNode.color) },
+                  ]}
+                >
+                  色を選択
+                </Text>
+              </TouchableOpacity>
               <View style={styles.buttonContainer}>
                 <Button title="保存" onPress={handleSaveEditingNode} />
                 <Button
@@ -615,6 +648,50 @@ const FlowEditorScreen = ({ route, navigation }) => {
               </View>
             </View>
           </KeyboardAvoidingView>
+        )}
+        {colorPickerVisible && (
+          <Modal
+            transparent={true}
+            animationType="fade"
+            visible={colorPickerVisible}
+            onRequestClose={() => setColorPickerVisible(false)}
+          >
+            <View style={styles.colorPickerOverlay}>
+              <View style={styles.colorPickerContainer}>
+                <ColorPalette
+                  onChange={color => {
+                    setEditingNode(prev => ({ ...prev, color: color }));
+                    setColorPickerVisible(false);
+                  }}
+                  value={editingNode.color}
+                  colors={[
+                    '#FCA5A5',
+                    '#F87171',
+                    '#FDBA74',
+                    '#FB923C',
+                    '#FDE047',
+                    '#FACC15',
+                    '#86EFAC',
+                    '#4ADE80',
+                    '#5EEAD4',
+                    '#2DD4BF',
+                    '#93C5FD',
+                    '#60A5FA',
+                    '#A5B4FC',
+                    '#818CF8',
+                    '#C4B5FD',
+                    '#A78BFA',
+                    '#D1D5DB',
+                    '#9CA3AF',
+                    '#6B7280',
+                    '#FFFFFF',
+                  ]}
+                  title={"カードの色を選択"}
+                  icon={<Text>✔</Text>}
+                />
+              </View>
+            </View>
+          </Modal>
         )}
       </SafeAreaView>
     </PaperProvider>
@@ -676,6 +753,29 @@ const styles = StyleSheet.create({
   },
   sizeSelectionContainer: {
     marginBottom: 10,
+  },
+  colorButton: {
+    padding: 10,
+    borderRadius: 5,
+    alignItems: 'center',
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#ccc',
+  },
+  colorButtonText: {
+    fontWeight: 'bold',
+  },
+  colorPickerOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  colorPickerContainer: {
+    width: '80%',
+    backgroundColor: 'white',
+    borderRadius: 10,
+    padding: 20,
   },
   bottomLeftControls: {
     position: 'absolute',

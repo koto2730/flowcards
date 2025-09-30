@@ -58,9 +58,11 @@ export const useFlowData = (flowId, isSeeThrough) => {
                 label: n.label ?? '',
                 description: n.description ?? '',
                 size: size,
+                color: n.color ?? '#FFFFFF',
               },
               position: { x: n.x, y: n.y },
               size: { width: n.width, height: n.height },
+              color: n.color ?? '#FFFFFF',
             };
           })
         : [];
@@ -251,7 +253,8 @@ export const useFlowData = (flowId, isSeeThrough) => {
         label: newData.title,
         description: newData.description,
         width: newDimensions.width,
-        height: newDimensions.height + 10, // Add bottom margin
+        height: newDimensions.height, // Add bottom margin
+        color: newData.color,
       };
 
       await updateNode(nodeId, dbUpdateData);
@@ -267,8 +270,13 @@ export const useFlowData = (flowId, isSeeThrough) => {
                       label: newData.title ?? '',
                       description: newData.description ?? '',
                       size: newData.size,
+                      color: newData.color,
                     },
-                    size: dbUpdateData, // Use the same object
+                    size: {
+                      width: dbUpdateData.width,
+                      height: dbUpdateData.height,
+                    },
+                    color: newData.color,
                   }
                 : node,
             )
@@ -307,6 +315,7 @@ export const useFlowData = (flowId, isSeeThrough) => {
       y: position.y,
       width: CARD_SIZES.medium.width,
       height: CARD_SIZES.medium.height,
+      color: '#FFFFFF',
     };
     try {
       await insertNode(newNodeData);
