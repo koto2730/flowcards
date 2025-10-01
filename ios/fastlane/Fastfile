@@ -16,6 +16,12 @@ platform :ios do
         timeout: 3600
       )
 
+      # Explicitly unlock the keychain to prevent UI prompts in CI
+      unlock_keychain(
+        name: keychain_name,
+        password: keychain_password
+      )
+
       # Import certificate into the default keychain
       import_certificate(
         keychain_name: keychain_name,
