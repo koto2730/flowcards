@@ -3,39 +3,31 @@ default_platform(:ios)
 platform :ios do
   desc "Build the iOS application for App Store distribution"
   lane :build_release do
-    begin
-      # 1. Use setup_ci to reliably prepare a keychain for CI
-      setup_ci(force: true)
+    # Use setup_ci to create a keychain and install the .p12 certificate
+    setup_ci(
+      force: true,
+      certificate_path: ENV["CERTIFICATE_FILE_PATH"],
+      certificate_password: ENV["APPLE_CERTIFICATE_PASSWORD"]
+    )
 
-      # 2. Import the certificate into the keychain created by setup_ci
-      import_certificate(
-        keychain_name: "fastlane_tmp_keychain", # Default name used by setup_ci
-        certificate_path: ENV["CERTIFICATE_FILE_PATH"],
-        certificate_password: ENV["APPLE_CERTIFICATE_PASSWORD"]
-      )
+    # Authenticate with App Store Connect to allow automatic profile management
+    app_store_connect_api_key(
+      key_id: ENV["APP_STORE_KEY_ID"],
+      issuer_id: ENV["APP_STORE_ISSUER_ID"],
+      key_content: ENV["APP_STORE_API_KEY"],
+      is_key_content_base64: true
+    )
 
-      # Install provisioning profile
-      install_provisioning_profile(path: ENV["PROVISIONING_PROFILE_PATH"])
+    # Set build number
+    increment_build_number(build_number: ENV['CI_BUILD_NUMBER']) if ENV['CI_BUILD_NUMBER']
 
-      # Set build number
-      increment_build_number(build_number: ENV['CI_BUILD_NUMBER']) if ENV['CI_BUILD_NUMBER']
-
-      # Build the app
-      gym(
-        scheme: "FlowCards",
-        export_method: "app-store",
-        output_directory: "./build",
-        output_name: "FlowCards.ipa",
-        export_options: {
-          method: "app-store",
-          provisioningProfiles: {
-            "com.mugime.flowcards" => ENV['sigh_PROFILE_NAME']
-          }
-        }
-      )
-    ensure
-      # Clean up the temporary keychain
-      delete_keychain(name: "fastlane_tmp_keychain")
-    end
+    # Build the app, letting gym handle the provisioning profile automatically
+    gym(
+      scheme: "FlowCards",
+      export_method: "app-store",
+      output_directory: "./build",
+      output_name: "FlowCards.ipa",
+      xcargs: "-allowProvisioningUpdates" # Crucial for automatic signing
+    )
   end
 end
