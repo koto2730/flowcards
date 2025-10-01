@@ -44,11 +44,12 @@ jobs:
           keyStorePassword: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           keyPassword: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
-      - name: Upload AAB
-        uses: actions/upload-artifact@v3
+      - name: Create Draft Release and Upload Android Asset
+        uses: softprops/action-gh-release@v1
         with:
-          name: app-release.aab
-          path: android/app/build/outputs/bundle/release/app-release-signed.aab
+          draft: true
+          tag_name: build-${{ github.run_number }}
+          files: android/app/build/outputs/bundle/release/*-signed.aab
 
   build-ios:
     name: Build iOS App
@@ -88,8 +89,9 @@ jobs:
           PROVISIONING_PROFILE_PATH: "../FlowCards_AppStore.mobileprovision"
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
 
-      - name: Upload IPA
-        uses: actions/upload-artifact@v3
+      - name: Upload iOS Asset to Draft Release
+        uses: softprops/action-gh-release@v1
         with:
-          name: FlowCards.ipa
-          path: ios/build/FlowCards.ipa # Path where gym outputs the IPA
+          draft: true
+          tag_name: build-${{ github.run_number }}
+          files: ios/build/FlowCards.ipa
