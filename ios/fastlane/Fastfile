@@ -4,15 +4,17 @@ platform :ios do
   desc "Build the iOS application for App Store distribution"
   lane :build_release do
     begin
-      # 1. Prepare the keychain and import the certificate
+      # 1. Setup CI environment and keychain
       setup_ci(force: true)
+      
+      # 2. Import the distribution certificate
       import_certificate(
         keychain_name: "fastlane_tmp_keychain",
         certificate_path: ENV["CERTIFICATE_FILE_PATH"],
         certificate_password: ENV["APPLE_CERTIFICATE_PASSWORD"]
       )
 
-      # 2. Authenticate with App Store Connect
+      # 3. Authenticate with App Store Connect
       app_store_connect_api_key(
         key_id: ENV["APP_STORE_KEY_ID"],
         issuer_id: ENV["APP_STORE_ISSUER_ID"],
@@ -20,20 +22,36 @@ platform :ios do
         is_key_content_base64: true
       )
 
-      # 3. Set build number
-      increment_build_number(build_number: ENV['CI_BUILD_NUMBER']) if ENV['CI_BUILD_NUMBER']
+      # 4. Set build number
+      if ENV['CI_BUILD_NUMBER']
+        increment_build_number(
+          build_number: ENV['CI_BUILD_NUMBER'],
+          xcodeproj: "FlowCards.xcodeproj"
+        )
+      end
 
-      # 4. Build the app (gym will automatically use the API key context)
+      # 5. Build the app
       gym(
         scheme: "FlowCards",
+        workspace: "FlowCards.xcworkspace",
         export_method: "app-store",
         output_directory: "./build",
         output_name: "FlowCards.ipa",
+        clean: true,
         xcargs: "-allowProvisioningUpdates"
       )
+      
+      UI.success("Successfully built iOS app!")
+      
+    rescue => e
+      UI.error("Build failed: #{e.message}")
+      UI.error("Backtrace: #{e.backtrace.join("\n")}")
+      raise e
     ensure
-      # Clean up
-      delete_keychain(name: "fastlane_tmp_keychain")
+      # Clean up keychain
+      if File.exist?(File.expand_path("~/Library/Keychains/fastlane_tmp_keychain-db"))
+        delete_keychain(name: "fastlane_tmp_keychain")
+      end
     end
   end
 end
