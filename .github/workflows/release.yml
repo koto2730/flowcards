@@ -35,6 +35,9 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Make gradlew executable
+        run: chmod +x android/gradlew
+
       - name: Build Android App Bundle (AAB)
         run: cd android && ./gradlew bundleRelease -PversionCode=$((${{ env.BUILD_NUMBER_OFFSET }} + ${{ github.run_number }}))
 
