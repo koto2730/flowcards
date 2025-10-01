@@ -74,14 +74,19 @@ jobs:
       - name: Install CocoaPods
         run: cd ios && pod install
 
+      - name: Decode Certificate and Provisioning Profile
+        run: |
+          echo -n "${{ secrets.APPLE_CERTIFICATE_BASE64 }}" | base64 --decode -o "distribution.p12"
+          echo -n "${{ secrets.PROVISIONING_PROFILE_BASE64 }}" | base64 --decode -o "FlowCards_AppStore.mobileprovision"
+
       - name: Build iOS App with fastlane
-        # This step requires Apple certificates and provisioning profiles to be set up in secrets.
         run: cd ios && bundle exec fastlane build_release
         env:
           CI_BUILD_NUMBER: ${{ env.BUILD_NUMBER_OFFSET + github.run_number }}
-          # Secrets like APPLE_CERTIFICATE_BASE64, PROVISIONING_PROFILE_BASE64, etc.
-          # need to be configured in GitHub repository settings for this to succeed.
           FASTLANE_APPLE_APPLICATION_SPECIFIC_PASSWORD: ${{ secrets.FASTLANE_APPLE_APPLICATION_SPECIFIC_PASSWORD }}
+          CERTIFICATE_FILE_PATH: "../distribution.p12"
+          PROVISIONING_PROFILE_PATH: "../FlowCards_AppStore.mobileprovision"
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
 
       - name: Upload IPA
         uses: actions/upload-artifact@v3
