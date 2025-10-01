@@ -3,27 +3,33 @@ default_platform(:ios)
 platform :ios do
   desc "Build the iOS application for App Store distribution"
   lane :build_release do
-    # This action is specifically designed for CI.
-    # It creates a keychain, imports the cert, and handles access.
-    setup_ci(
-      force: true, # Overwrite a keychain if it exists
-      certificate_path: ENV["CERTIFICATE_FILE_PATH"],
-      certificate_password: ENV["APPLE_CERTIFICATE_PASSWORD"]
-    )
+    begin
+      # 1. Use setup_ci to reliably prepare a keychain for CI
+      setup_ci(force: true)
 
-    # Install provisioning profile
-    install_provisioning_profile(path: ENV["PROVISIONING_PROFILE_PATH"])
+      # 2. Import the certificate into the keychain created by setup_ci
+      import_certificate(
+        keychain_name: "fastlane_tmp_keychain", # Default name used by setup_ci
+        certificate_path: ENV["CERTIFICATE_FILE_PATH"],
+        certificate_password: ENV["APPLE_CERTIFICATE_PASSWORD"]
+      )
 
-    # Set build number
-    increment_build_number(build_number: ENV['CI_BUILD_NUMBER']) if ENV['CI_BUILD_NUMBER']
+      # Install provisioning profile
+      install_provisioning_profile(path: ENV["PROVISIONING_PROFILE_PATH"])
 
-    # Build the app
-    gym(
-      scheme: "FlowCards",
-      export_method: "app-store",
-      output_directory: "./build",
-      output_name: "FlowCards.ipa"
-    )
-    # Cleanup of the keychain is handled by the CI environment itself.
+      # Set build number
+      increment_build_number(build_number: ENV['CI_BUILD_NUMBER']) if ENV['CI_BUILD_NUMBER']
+
+      # Build the app
+      gym(
+        scheme: "FlowCards",
+        export_method: "app-store",
+        output_directory: "./build",
+        output_name: "FlowCards.ipa"
+      )
+    ensure
+      # Clean up the temporary keychain
+      delete_keychain(name: "fastlane_tmp_keychain")
+    end
   end
 end
