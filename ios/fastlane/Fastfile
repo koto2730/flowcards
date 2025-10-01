@@ -12,6 +12,12 @@ platform :ios do
         certificate_password: ENV["APPLE_CERTIFICATE_PASSWORD"]
       )
 
+      # 自動署名設定
+      automatic_code_signing(
+        use_automatic_signing: true,   # 自動署名を有効にする
+        team_id: ENV['APPLE_TEAM_ID']        # 環境変数から取得したチームIDを使用
+      )
+
       # 2. Authenticate with App Store Connect and store the API key object
       api_key = app_store_connect_api_key(
         key_id: ENV["APP_STORE_KEY_ID"],
@@ -26,11 +32,11 @@ platform :ios do
       # 4. Build the app, passing the API key directly to gym
       gym(
         scheme: "FlowCards",
-        api_key: api_key, # Pass the authentication context to gym
         export_method: "app-store",
         output_directory: "./build",
         output_name: "FlowCards.ipa",
-        xcargs: "-allowProvisioningUpdates"
+        #xcargs: "-allowProvisioningUpdates",
+        export_xcargs: "-allowProvisioningUpdates" # プロビジョニングプロファイルを自動的に更新を許可
       )
     ensure
       # Clean up
