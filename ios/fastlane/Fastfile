@@ -1,0 +1,30 @@
+default_platform(:ios)
+
+platform :ios do
+  desc "Build the iOS application for App Store distribution"
+  lane :build_release do
+    # Get build number from environment variable passed by CI
+    build_number = ENV['CI_BUILD_NUMBER']
+    if build_number
+      increment_build_number(build_number: build_number)
+    end
+
+    # Note: This lane assumes you have set up codesigning secrets in your CI environment.
+    # Common secrets include:
+    # - MATCH_PASSWORD
+    # - APPLE_CERTIFICATE_BASE64
+    # - APPLE_CERTIFICATE_PASSWORD
+    # - PROVISIONING_PROFILE_BASE64
+
+    # You can use fastlane's `match` for robust certificate management,
+    # or manually import them from secrets.
+    # e.g., import_from_base64( ... )
+
+    gym(
+      scheme: "FlowCards",
+      export_method: "app-store",
+      output_directory: "./build",
+      output_name: "FlowCards.ipa"
+    )
+  end
+end

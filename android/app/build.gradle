@@ -2,6 +2,8 @@ apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 
+import groovy.json.JsonSlurper
+
 /**
  * This is the configuration block to customize your React Native Android app.
  * By default you don't need to apply any configuration, just uncomment the lines you need.
@@ -82,8 +84,9 @@ android {
         applicationId "com.flowcards"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 3
-        versionName "1.0.1"
+        versionCode project.hasProperty('versionCode') ? project.property('versionCode').toInteger() : 3
+        def packageJson = new JsonSlurper().parse(file('../../package.json'))
+        versionName packageJson.version
     }
     signingConfigs {
         debug {
