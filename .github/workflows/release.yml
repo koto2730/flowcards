@@ -39,7 +39,7 @@ jobs:
         run: chmod +x android/gradlew
 
       - name: Decode Keystore
-        run: echo -n "${{ secrets.ANDROID_SIGNING_KEY }}" | base64 --decode -o "release.keystore"
+        run: echo -n "${{ secrets.ANDROID_SIGNING_KEY }}" | base64 --decode > "release.keystore"
 
       - name: Build and Sign Android App Bundle
         run: cd android && ./gradlew bundleRelease -PversionCode=$((${{ env.BUILD_NUMBER_OFFSET }} + ${{ github.run_number }}))

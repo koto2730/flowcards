@@ -18,6 +18,7 @@ platform :ios do
 
       # Import certificate into the default keychain
       import_certificate(
+        keychain_name: keychain_name,
         certificate_path: ENV["CERTIFICATE_FILE_PATH"],
         certificate_password: ENV["APPLE_CERTIFICATE_PASSWORD"]
       )
