@@ -43,8 +43,8 @@ platform :ios do
         output_name: "FlowCards.ipa"
       )
     ensure
-      # Clean up the temporary keychain using its path
-      delete_keychain(path: keychain_path) if keychain_path
+      # Clean up the temporary keychain using its name
+      delete_keychain(name: keychain_name) if keychain_name
     end
   end
 end
