@@ -14,7 +14,7 @@ platform :ios do
         default_keychain: true,
         unlock: true,
         timeout: 3600
-      )
+      ).first
 
       # Explicitly unlock the keychain to prevent UI prompts in CI
       unlock_keychain(
