@@ -329,8 +329,49 @@ export const initDB = () => {
 };
 
 // --- flows CRUD ---
-export const getFlows = () =>
-  executeSql('SELECT * FROM flows;').then(( { rows } ) => rows.raw());
+export const getFlows = (options = {}) => {
+  const {limit, offset, searchQuery, sortBy, sortOrder = 'DESC'} = options;
+
+  let query = 'SELECT * FROM flows';
+  const params = [];
+
+  if (searchQuery) {
+    query += ' WHERE name LIKE ?';
+    params.push(`%${searchQuery}%`);
+  }
+
+  // Whitelist of sortable columns to prevent SQL injection
+  const sortableColumns = ['name', 'createdAt'];
+  const orderBy = sortableColumns.includes(sortBy) ? sortBy : 'createdAt';
+  const orderDirection = sortOrder === 'ASC' ? 'ASC' : 'DESC';
+
+  query += ` ORDER BY ${orderBy} ${orderDirection}`;
+
+  if (limit) {
+    query += ' LIMIT ?';
+    params.push(limit);
+  }
+
+  if (offset) {
+    query += ' OFFSET ?';
+    params.push(offset);
+  }
+
+  return executeSql(query, params).then(({rows}) => rows.raw());
+};
+
+export const getFlowsCount = (options = {}) => {
+  const {searchQuery} = options;
+  let query = 'SELECT COUNT(*) as count FROM flows';
+  const params = [];
+
+  if (searchQuery) {
+    query += ' WHERE name LIKE ?';
+    params.push(`%${searchQuery}%`);
+  }
+
+  return executeSql(query, params).then(({rows}) => rows.raw()[0].count);
+};
 
 export const updateFlow = (id, data) => {
     const fields = Object.keys(data)

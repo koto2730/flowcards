@@ -4,15 +4,13 @@ import {
   StyleSheet,
   FlatList,
   Alert,
-  TextInput as RNTextInput,
   RefreshControl,
-  TouchableOpacity,
+  ActivityIndicator,
 } from 'react-native';
 import {
   Provider as PaperProvider,
   FAB,
   Portal,
-  Dialog,
   Button,
   List,
   Checkbox,
@@ -20,20 +18,23 @@ import {
   TextInput,
   Card,
   Modal,
+  Searchbar,
+  Menu,
+  Divider,
 } from 'react-native-paper';
 import {
   getFlows,
   insertFlow,
   deleteFlow,
-  insertNode,
   updateFlow,
   deleteNodesByFlowId,
   deleteEdgesByFlowId,
   resetDB,
 } from '../db';
-import { v4 as uuidv4 } from 'uuid';
-import OriginalTheme from './OriginalTheme'; // 既存のテーマをインポート
+import OriginalTheme from './OriginalTheme';
 import { useTranslation } from 'react-i18next';
+
+const PAGE_SIZE = 15;
 
 const FlowListScreen = ({ navigation }) => {
   const [flows, setFlows] = useState([]);
@@ -41,44 +42,104 @@ const FlowListScreen = ({ navigation }) => {
   const [newFlowName, setNewFlowName] = useState('');
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedFlows, setSelectedFlows] = useState([]);
-  const [refreshing, setRefreshing] = useState(false);
   const [editingExistingName, setEditingExistingName] = useState('');
   const [menuVisible, setMenuVisible] = useState(false);
+
+  // Pagination and loading state
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [page, setPage] = useState(1);
+
+  // Search and Sort state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+  const [searchVisible, setSearchVisible] = useState(false);
+  const [sort, setSort] = useState({ sortBy: 'createdAt', sortOrder: 'DESC' });
+  const [sortMenuVisible, setSortMenuVisible] = useState(false);
+
   const { t, i18n } = useTranslation();
 
-  const fetchFlows = useCallback(async () => {
-    try {
-      const flowsData = await getFlows();
-      setFlows(flowsData);
-    } catch (error) {
-      console.error('FlowListScreen: Failed to fetch flows:', error);
-    }
-  }, []);
+  const fetchFlows = useCallback(
+    async (isRefresh = false) => {
+      if (isRefresh) {
+        setRefreshing(true);
+      }
 
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await fetchFlows();
-    setRefreshing(false);
-  }, [fetchFlows]);
+      const offset = isRefresh ? 0 : page * PAGE_SIZE;
+      const options = {
+        limit: PAGE_SIZE,
+        offset,
+        searchQuery: debouncedSearchQuery,
+        sortBy: sort.sortBy,
+        sortOrder: sort.sortOrder,
+      };
 
-  // 初回マウント時にデータを取得
+      try {
+        const flowsData = await getFlows(options);
+        if (flowsData.length < PAGE_SIZE) {
+          setHasMore(false);
+        }
+
+        if (isRefresh) {
+          setFlows(flowsData);
+          setPage(1);
+          if (flowsData.length >= PAGE_SIZE) {
+            setHasMore(true);
+          }
+        } else if (hasMore) {
+          setFlows(prevFlows => [...prevFlows, ...flowsData]);
+          setPage(prevPage => prevPage + 1);
+        }
+      } catch (error) {
+        console.error('FlowListScreen: Failed to fetch flows:', error);
+      } finally {
+        if (isRefresh) {
+          setRefreshing(false);
+        }
+        setLoadingMore(false);
+      }
+    },
+    [page, hasMore, debouncedSearchQuery, sort],
+  );
+
+  // Debounce search query
   useEffect(() => {
-    fetchFlows();
-  }, [fetchFlows]);
+    const handler = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 500);
 
-  // 画面フォーカス時にデータを再取得
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [searchQuery]);
+
+  // Trigger refresh when debounced query or sort changes
+  useEffect(() => {
+    fetchFlows(true);
+  }, [debouncedSearchQuery, sort]);
+
+  const onRefresh = () => fetchFlows(true);
+
+  const loadMoreFlows = () => {
+    if (!refreshing && !loadingMore && hasMore) {
+      setLoadingMore(true);
+      fetchFlows(false);
+    }
+  };
+
+  // Refetch on focus
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
       console.log('FlowListScreen: Screen focused, fetching flows.');
-      fetchFlows();
+      fetchFlows(true);
       setSelectionMode(false);
       setSelectedFlows([]);
     });
     return unsubscribe;
-  }, [navigation, fetchFlows]);
+  }, [navigation]);
 
   const handleAddFlowRow = () => {
-    // 新しい行を追加（仮のIDで一時的に表示）
     const tempId = `temp-${Date.now()}`;
     setFlows([{ id: tempId, name: '', isNew: true }, ...flows]);
     setEditingFlowId(tempId);
@@ -95,22 +156,9 @@ const FlowListScreen = ({ navigation }) => {
       const result = await insertFlow(newFlow);
       const newFlowId = result.insertId;
 
-      // const initialNode = {
-      //   id: uuidv4(),
-      //   flowId: newFlowId,
-      //   parentId: 'root',
-      //   label: 'はじめのカード',
-      //   description: 'ここから始めましょう',
-      //   x: 50,
-      //   y: 50,
-      //   width: 150,
-      //   height: 70,
-      // };
-      // await insertNode(initialNode);
-
       setEditingFlowId(null);
       setNewFlowName('');
-      fetchFlows();
+      fetchFlows(true);
       navigation.navigate('FlowEditor', { flowId: newFlowId });
     } catch (error) {
       console.error('Failed to add flow:', error);
@@ -145,7 +193,7 @@ const FlowListScreen = ({ navigation }) => {
       await updateFlow(id, { name: editingExistingName });
       setEditingFlowId(null);
       setEditingExistingName('');
-      fetchFlows();
+      fetchFlows(true);
     } catch (error) {
       console.error('Failed to update flow:', error);
     }
@@ -169,7 +217,7 @@ const FlowListScreen = ({ navigation }) => {
               await deleteNodesByFlowId(id);
               await deleteEdgesByFlowId(id);
               await deleteFlow(id);
-              fetchFlows();
+              fetchFlows(true);
             } catch (error) {
               Alert.alert(t('deleteFailedTitle'), t('deleteFailed'));
             }
@@ -197,7 +245,7 @@ const FlowListScreen = ({ navigation }) => {
               }
               setSelectedFlows([]);
               setSelectionMode(false);
-              fetchFlows();
+              fetchFlows(true);
             } catch (error) {
               Alert.alert(t('deleteFailedTitle'), t('deleteFailed'));
             }
@@ -219,7 +267,7 @@ const FlowListScreen = ({ navigation }) => {
           onPress: async () => {
             try {
               await resetDB();
-              fetchFlows();
+              fetchFlows(true);
               setMenuVisible(false);
               Alert.alert(t('dbInitDoneTitle'), t('dbInitDone'));
             } catch (error) {
@@ -232,8 +280,12 @@ const FlowListScreen = ({ navigation }) => {
     );
   };
 
+  const renderFooter = () => {
+    if (!loadingMore) return null;
+    return <ActivityIndicator style={{ marginVertical: 20 }} />;
+  };
+
   const renderItem = ({ item }) => {
-    // 新規作成中
     if (item.isNew && item.id === editingFlowId) {
       return (
         <View
@@ -264,7 +316,6 @@ const FlowListScreen = ({ navigation }) => {
         </View>
       );
     }
-    // 既存の名前編集中
     if (item.id === editingFlowId && !item.isNew) {
       return (
         <View
@@ -294,7 +345,6 @@ const FlowListScreen = ({ navigation }) => {
         </View>
       );
     }
-    // 通常表示
     return (
       <Card
         style={{ flex: 1, marginVertical: 4, marginHorizontal: 8 }}
@@ -351,9 +401,73 @@ const FlowListScreen = ({ navigation }) => {
         <Appbar.Header
           style={{ backgroundColor: OriginalTheme.colors.primary }}
         >
-          <Appbar.Action icon="menu" onPress={() => setMenuVisible(true)} />
-          <Appbar.Content title={t('flowCards')} />
-          {selectionMode ? (
+          {searchVisible ? (
+            <Searchbar
+              placeholder={t('search')}
+              onChangeText={setSearchQuery}
+              value={searchQuery}
+              style={{ flex: 1 }}
+              autoFocus
+            />
+          ) : (
+            <>
+              <Appbar.Action
+                icon="menu"
+                onPress={() => setMenuVisible(true)}
+              />
+              <Appbar.Content title={t('flowCards')} />
+              <Menu
+                visible={sortMenuVisible}
+                onDismiss={() => setSortMenuVisible(false)}
+                anchor={
+                  <Appbar.Action
+                    icon="sort"
+                    onPress={() => setSortMenuVisible(true)}
+                  />
+                }
+              >
+                <Menu.Item
+                  onPress={() => {
+                    setSort({ sortBy: 'name', sortOrder: 'ASC' });
+                    setSortMenuVisible(false);
+                  }}
+                  title={t('sortNameAsc')}
+                />
+                <Menu.Item
+                  onPress={() => {
+                    setSort({ sortBy: 'name', sortOrder: 'DESC' });
+                    setSortMenuVisible(false);
+                  }}
+                  title={t('sortNameDesc')}
+                />
+                <Divider />
+                <Menu.Item
+                  onPress={() => {
+                    setSort({ sortBy: 'createdAt', sortOrder: 'DESC' });
+                    setSortMenuVisible(false);
+                  }}
+                  title={t('sortDateDesc')}
+                />
+                <Menu.Item
+                  onPress={() => {
+                    setSort({ sortBy: 'createdAt', sortOrder: 'ASC' });
+                    setSortMenuVisible(false);
+                  }}
+                  title={t('sortDateAsc')}
+                />
+              </Menu>
+            </>
+          )}
+          <Appbar.Action
+            icon={searchVisible ? 'close' : 'magnify'}
+            onPress={() => {
+              if (searchVisible) {
+                setSearchQuery('');
+              }
+              setSearchVisible(!searchVisible);
+            }}
+          />
+          {selectionMode && !searchVisible ? (
             <>
               <Appbar.Action
                 icon="close"
@@ -427,6 +541,9 @@ const FlowListScreen = ({ navigation }) => {
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
           }
+          onEndReached={loadMoreFlows}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={renderFooter}
         />
         <FAB style={styles.fab} icon="plus" onPress={handleAddFlowRow} />
       </View>
@@ -451,7 +568,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     borderRadius: 5,
     color: 'white',
-    backgroundColor: OriginalTheme.colors.surface, // サーフェイス色を背景に指定
+    backgroundColor: OriginalTheme.colors.surface,
   },
   flatListItem: {
     color: 'black',
