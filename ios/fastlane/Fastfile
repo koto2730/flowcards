@@ -4,31 +4,29 @@ platform :ios do
   desc "Build the iOS application for App Store distribution"
   lane :build_release do
     keychain_name = "fastlane_tmp_keychain"
-    keychain_password = "tmp_password"
+    keychain_password = "tmp_password" # A temporary password for the keychain
 
     begin
-      # Create a new temporary keychain for CI
+      # Create and set a temporary keychain as default
       create_keychain(
         name: keychain_name,
         password: keychain_password,
+        default_keychain: true,
         unlock: true,
-        timeout: 3600,
-        lock_when_sleeps: false
+        timeout: 3600
       )
 
-      # Import certificate from file path provided by CI
+      # Import certificate into the default keychain
       import_certificate(
-        keychain_name: keychain_name,
         certificate_path: ENV["CERTIFICATE_FILE_PATH"],
         certificate_password: ENV["APPLE_CERTIFICATE_PASSWORD"]
       )
 
-      # Install provisioning profile from file path provided by CI
+      # Install provisioning profile
       install_provisioning_profile(path: ENV["PROVISIONING_PROFILE_PATH"])
 
       # Set build number
-      build_number = ENV['CI_BUILD_NUMBER']
-      increment_build_number(build_number: build_number) if build_number
+      increment_build_number(build_number: ENV['CI_BUILD_NUMBER']) if ENV['CI_BUILD_NUMBER']
 
       # Build the app
       gym(

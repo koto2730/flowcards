@@ -38,24 +38,23 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x android/gradlew
 
-      - name: Build Android App Bundle (AAB)
-        run: cd android && ./gradlew bundleRelease -PversionCode=$((${{ env.BUILD_NUMBER_OFFSET }} + ${{ github.run_number }}))
+      - name: Decode Keystore
+        run: echo -n "${{ secrets.ANDROID_SIGNING_KEY }}" | base64 --decode -o "release.keystore"
 
-      - name: Sign AAB
-        uses: r0adkll/sign-android-release@v1
-        with:
-          releaseDirectory: android/app/build/outputs/bundle/release
-          signingKeyBase64: ${{ secrets.ANDROID_SIGNING_KEY }}
-          alias: ${{ secrets.ANDROID_ALIAS }}
-          keyStorePassword: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          keyPassword: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      - name: Build and Sign Android App Bundle
+        run: cd android && ./gradlew bundleRelease -PversionCode=$((${{ env.BUILD_NUMBER_OFFSET }} + ${{ github.run_number }}))
+        env:
+          MYAPP_UPLOAD_STORE_FILE: ../release.keystore
+          MYAPP_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          MYAPP_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_ALIAS }}
+          MYAPP_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
       - name: Create Draft Release and Upload Android Asset
         uses: softprops/action-gh-release@v1
         with:
           draft: true
           tag_name: build-${{ github.run_number }}
-          files: android/app/build/outputs/bundle/release/*-signed.aab
+          files: android/app/build/outputs/bundle/release/app-release.aab
 
   build-ios:
     name: Build iOS App
