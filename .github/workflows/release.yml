@@ -81,7 +81,7 @@ jobs:
         run: cd ios && pod install
 
       - name: Decode Certificate
-        run: echo -n "${{ secrets.APPLE_CERTIFICATE_BASE64 }}" | base64 --decode -o "distribution.p12"
+        run: echo -n "${{ secrets.APPLE_CERTIFICATE_BASE64 }}" | base64 --decode > "distribution.p12"
 
       - name: Calculate Build Number
         run: echo "CI_BUILD_NUMBER=$((${{ env.BUILD_NUMBER_OFFSET }} + ${{ github.run_number }}))" >> $GITHUB_ENV
