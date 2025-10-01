@@ -7,8 +7,8 @@ platform :ios do
     keychain_password = "tmp_password" # A temporary password for the keychain
 
     begin
-      # Create and set a temporary keychain as default
-      create_keychain(
+      # Create and set a temporary keychain as default, capturing its path
+      keychain_path = create_keychain(
         name: keychain_name,
         password: keychain_password,
         default_keychain: true,
@@ -18,7 +18,7 @@ platform :ios do
 
       # Explicitly unlock the keychain to prevent UI prompts in CI
       unlock_keychain(
-        name: keychain_name,
+        path: keychain_path,
         password: keychain_password
       )
 
@@ -43,8 +43,8 @@ platform :ios do
         output_name: "FlowCards.ipa"
       )
     ensure
-      # Clean up the temporary keychain
-      delete_keychain(name: keychain_name) if keychain_name
+      # Clean up the temporary keychain using its path
+      delete_keychain(path: keychain_path) if keychain_path
     end
   end
 end

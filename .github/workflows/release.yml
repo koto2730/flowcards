@@ -39,12 +39,12 @@ jobs:
         run: chmod +x android/gradlew
 
       - name: Decode Keystore
-        run: echo -n "${{ secrets.ANDROID_SIGNING_KEY }}" | base64 --decode > "release.keystore"
+        run: echo -n "${{ secrets.ANDROID_SIGNING_KEY }}" | base64 --decode > "${{ github.workspace }}/release.keystore"
 
       - name: Build and Sign Android App Bundle
         run: cd android && ./gradlew bundleRelease -PversionCode=$((${{ env.BUILD_NUMBER_OFFSET }} + ${{ github.run_number }}))
         env:
-          MYAPP_UPLOAD_STORE_FILE: ../release.keystore
+          MYAPP_UPLOAD_STORE_FILE: ${{ github.workspace }}/release.keystore
           MYAPP_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           MYAPP_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_ALIAS }}
           MYAPP_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
