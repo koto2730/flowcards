@@ -25,7 +25,13 @@ platform :ios do
         scheme: "FlowCards",
         export_method: "app-store",
         output_directory: "./build",
-        output_name: "FlowCards.ipa"
+        output_name: "FlowCards.ipa",
+        export_options: {
+          method: "app-store",
+          provisioningProfiles: {
+            "com.mugime.flowcards" => ENV['sigh_PROFILE_NAME']
+          }
+        }
       )
     ensure
       # Clean up the temporary keychain
