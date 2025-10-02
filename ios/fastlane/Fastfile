@@ -12,7 +12,7 @@ platform :ios do
       end
       create_keychain(
         name: cert_file_path,
-        password: ENV['APPLE_CERTIFICATE_PASSWORD'],
+        password: ENV['APPLE_CERTIFICATE_PASSWORDgi'],
         timeout: 1800
       )      
 
