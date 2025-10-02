@@ -5,40 +5,38 @@ platform :ios do
   lane :build_release do
     begin
       # 1. Setup CI environment and keychain
-      setup_ci(force: true)
-      
-      # 2. Import the distribution certificate
-      import_certificate(
-        keychain_name: "fastlane_tmp_keychain",
-        certificate_path: ENV["CERTIFICATE_FILE_PATH"],
-        certificate_password: ENV["APPLE_CERTIFICATE_PASSWORD"]
-      )
+      # setup_ci(force: true)
+      cert_file_path = File.expand_path("certificate.p12")
+      File.open(cert_file_path, "wb") do |file|
+        file.write(Base64.decode64(ENV('APPLE_CERTIFICATE_BASE64')))
+      end
+      create_keychain(
+        name: cert_file_path,
+        password: ENV['APPLE_CERTIFICATE_PASSWORD'],
+        timeout: 1800
+      )      
 
-      # 3. Authenticate with App Store Connect
-      app_store_connect_api_key(
-        key_id: ENV["APP_STORE_KEY_ID"],
-        issuer_id: ENV["APP_STORE_ISSUER_ID"],
-        key_content: ENV["APP_STORE_API_KEY"],
-        is_key_content_base64: true
-      )
-
-      # 4. Decode and install provisioning profile
-      prov_profile_path = File.expand_path("fastlane/profile.mobileprovision")
+      # 2. Decode and install provisioning profile
+      prov_profile_path = File.expand_path("profile.mobileprovision")
       File.open(prov_profile_path, "wb") do |file|
         file.write(Base64.decode64(ENV["PROVISIONING_PROFILE_BASE64"]))
       end
       install_provisioning_profile(path: prov_profile_path)
 
-      # 5. Set build number
+      # 3. Set build number
       if ENV['CI_BUILD_NUMBER']
+        build_number = increment_build_number
+        build_number_i = build_number.to_i
         increment_build_number(
-          build_number: ENV['CI_BUILD_NUMBER'],
+          build_number: "#(build_number_i + 1)",
           xcodeproj: "FlowCards.xcodeproj"
         )
       end
 
-      # 6. Build the app
-      profile_uuid = lane_context[SharedValues::SIGH_UUID]
+      # 4. Build the app
+      # profile_uuid = lane_context[SharedValues::SIGH_UUID]
+      profile_data = Plist.parse_xml(`security cms -D -i #{prov_profile_path}`)
+      profile_uuid = profile_data['UUID']
       team_id = ENV["APPLE_TEAM_ID"]
       bundle_identifier = "com.mugime.flowcards"
 
