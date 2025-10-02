@@ -28,8 +28,8 @@ platform :ios do
       
       # 4. Build the app
       # profile_uuid = lane_context[SharedValues::SIGH_UUID]
-      profile_data = Plist.parse_xml(`security cms -D -i #{prov_profile_path}`)
-      profile_uuid = profile_data['UUID']
+      #profile_data = Plist.parse_xml(`security cms -D -i #{prov_profile_path}`)
+      #profile_uuid = profile_data['UUID']
       team_id = ENV["APPLE_TEAM_ID"]
       bundle_identifier = "com.mugime.flowcards"
 
@@ -44,7 +44,7 @@ platform :ios do
           method: "app-store",
           teamID: team_id,
           provisioningProfiles: {
-            bundle_identifier => profile_uuid
+            bundle_identifier => "FlowCards App Store Profile"
           }
         }
       )
