@@ -23,6 +23,14 @@ For _fastlane_ installation instructions, see [Installing _fastlane_](https://do
 
 Build the iOS application for App Store distribution
 
+### ios archive_only
+
+```sh
+[bundle exec] fastlane ios archive_only
+```
+
+Archive the iOS application and ignore export errors
+
 ----
 
 This README.md is auto-generated and will be re-generated every time [_fastlane_](https://fastlane.tools) is run.
