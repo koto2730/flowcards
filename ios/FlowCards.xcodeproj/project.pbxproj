@@ -345,9 +345,10 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGN_IDENTITY = "Apple Distribution: Gon Shibayama (362PH5HAWW)";
-				CODE_SIGN_STYLE = Manual;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 7;
+				DEVELOPMENT_TEAM = 362PH5HAWW;
 				INFOPLIST_FILE = FlowCards/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -362,7 +363,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.mugime.flowcards;
 				PRODUCT_NAME = FlowCards;
-				PROVISIONING_PROFILE_SPECIFIER = "FlowCards App Store Profile";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_VERSION = 5.0;
 				VERSIONING_SYSTEM = "apple-generic";
 			};
@@ -397,7 +398,8 @@
 				CLANG_WARN_SUSPICIOUS_MOVE = YES;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
-				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
+				CODE_SIGN_IDENTITY = "Apple Development: Gon Shibayama (3XYK754S3H)";
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Development: Gon Shibayama (3XYK754S3H)";
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 7;
 				DEVELOPMENT_TEAM = 362PH5HAWW;
@@ -478,7 +480,8 @@
 				CLANG_WARN_SUSPICIOUS_MOVE = YES;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
-				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
+				CODE_SIGN_IDENTITY = "Apple Development: Gon Shibayama (3XYK754S3H)";
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Development: Gon Shibayama (3XYK754S3H)";
 				COPY_PHASE_STRIP = YES;
 				CURRENT_PROJECT_VERSION = 7;
 				DEVELOPMENT_TEAM = 362PH5HAWW;
