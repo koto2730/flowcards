@@ -8,7 +8,7 @@ platform :ios do
       # setup_ci(force: true)
       cert_file_path = File.expand_path("certificate.p12")
       File.open(cert_file_path, "wb") do |file|
-        file.write(Base64.decode64(ENV("APPLE_CERTIFICATE_BASE64")))
+        file.write(Base64.decode64(ENV["APPLE_CERTIFICATE_BASE64"]))
       end
       create_keychain(
         name: cert_file_path,
