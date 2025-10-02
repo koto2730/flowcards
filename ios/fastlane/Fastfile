@@ -47,6 +47,7 @@ platform :ios do
             bundle_identifier => "FlowCards App Store Profile"
           }
         },
+        xcargs: "-allowProvisioningUpdates"
         export_xcargs: "-allowProvisioningUpdates"
       )
       
