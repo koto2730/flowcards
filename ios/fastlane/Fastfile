@@ -24,13 +24,8 @@ platform :ios do
       install_provisioning_profile(path: prov_profile_path)
 
       # 3. Set build number
-      build_number = increment_build_number
-      build_number_i = build_number.to_i
-      increment_build_number(
-        build_number: "#(build_number_i + 1)",
-        xcodeproj: "FlowCards.xcodeproj"
-      )
-
+      increment_build_number
+      
       # 4. Build the app
       # profile_uuid = lane_context[SharedValues::SIGH_UUID]
       profile_data = Plist.parse_xml(`security cms -D -i #{prov_profile_path}`)
