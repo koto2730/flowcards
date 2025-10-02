@@ -24,14 +24,12 @@ platform :ios do
       install_provisioning_profile(path: prov_profile_path)
 
       # 3. Set build number
-      if ENV['CI_BUILD_NUMBER']
-        build_number = increment_build_number
-        build_number_i = build_number.to_i
-        increment_build_number(
-          build_number: "#(build_number_i + 1)",
-          xcodeproj: "FlowCards.xcodeproj"
-        )
-      end
+      build_number = increment_build_number
+      build_number_i = build_number.to_i
+      increment_build_number(
+        build_number: "#(build_number_i + 1)",
+        xcodeproj: "FlowCards.xcodeproj"
+      )
 
       # 4. Build the app
       # profile_uuid = lane_context[SharedValues::SIGH_UUID]

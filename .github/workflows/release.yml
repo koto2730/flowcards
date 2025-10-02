@@ -89,12 +89,9 @@ jobs:
       - name: Build iOS App with fastlane
         run: cd ios && bundle exec fastlane build_release
         env:
-          CI_BUILD_NUMBER: ${{ env.CI_BUILD_NUMBER }}
-          CERTIFICATE_FILE_PATH: "../distribution.p12"
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APP_STORE_KEY_ID: ${{ secrets.APP_STORE_KEY_ID }}
-          APP_STORE_ISSUER_ID: ${{ secrets.APP_STORE_ISSUER_ID }}
-          APP_STORE_API_KEY: ${{ secrets.APP_STORE_API_KEY }}
+          PROVISIONING_PROFILE_BASE64: ${{ secrets.PROVISIONING_PROFILE_BASE64 }}
 
       - name: Upload iOS Asset to Draft Release
         uses: softprops/action-gh-release@v1
