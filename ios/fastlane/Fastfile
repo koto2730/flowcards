@@ -46,7 +46,8 @@ platform :ios do
           provisioningProfiles: {
             bundle_identifier => "FlowCards App Store Profile"
           }
-        }
+        },
+        export_xcargs: "-allowProvisioningUpdates"
       )
       
       UI.success("Successfully built iOS app!")
