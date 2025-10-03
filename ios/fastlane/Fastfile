@@ -61,7 +61,7 @@ platform :ios do
         sh("security import '#{cert_path}' -P '#{ENV['APPLE_CERTIFICATE_PASSWORD']}' -T /usr/bin/codesign -T /usr/bin/xcodebuild")
         UI.success("Certificate imported to default keychain successfully")
       rescue => e
-        UI.warning("Default keychain import failed, trying with specific keychain...")
+        UI.message("Default keychain import failed, trying with specific keychain...")
         
         # Try with -A flag (allow any application to access)
         begin
@@ -79,6 +79,15 @@ platform :ios do
             UI.success("Certificate imported to login keychain successfully")
           rescue => e3
             UI.error("All import methods failed: #{e3.message}")
+            
+            # Try to diagnose the issue
+            UI.message("Diagnostic information:")
+            UI.message("Certificate file exists: #{File.exist?(cert_path)}")
+            UI.message("Certificate file size: #{File.size(cert_path)} bytes")
+            
+            # Check if password is being truncated or has special characters
+            UI.message("Password length: #{ENV['APPLE_CERTIFICATE_PASSWORD'].length}")
+            
             raise e3
           end
         end
