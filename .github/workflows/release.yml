@@ -57,63 +57,63 @@ jobs:
           tag_name: build-${{ github.run_number }}
           files: android/app/build/outputs/bundle/release/app-release.aab
 
-  build-ios:
-    name: Build iOS App
-    runs-on: macos-latest  # Use latest for Xcode 16.1+
-    timeout-minutes: 60  # Extended timeout for React Native + CocoaPods build
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v3
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-
-      - name: Install npm dependencies
-        run: npm install
-
-      - name: Cache CocoaPods dependencies
-        uses: actions/cache@v3
-        with:
-          path: |
-            ios/Pods
-            ~/Library/Caches/CocoaPods
-            ~/.cocoapods
-          key: ${{ runner.os }}-pods-${{ hashFiles('ios/Podfile.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-pods-
-
-      - name: Cache derived data
-        uses: actions/cache@v3
-        with:
-          path: ~/Library/Developer/Xcode/DerivedData
-          key: ${{ runner.os }}-derived-data-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-derived-data-
-
-      - name: Set up Ruby and Bundler
-        uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: '2.6.10' # From Gemfile
-          bundler-cache: true # Runs bundle install
-
-      - name: Install CocoaPods
-        run: cd ios && pod install
-
-      - name: Build iOS App with fastlane
-        run: cd ios && bundle exec fastlane ios build_release
-        env:
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          PROVISIONING_PROFILE_BASE64: ${{ secrets.PROVISIONING_PROFILE_BASE64 }}
-
-      - name: Upload iOS Asset to Draft Release
-        uses: softprops/action-gh-release@v1
-        with:
-          draft: true  # 絶対に公開しない - IPAファイルを保護
-          tag_name: build-${{ github.run_number }}
-          files: |
-            ios/build/FlowCards.ipa
-            ios/build/FlowCards.app.dSYM.zip
+#  build-ios:
+#    name: Build iOS App
+#    runs-on: macos-latest  # Use latest for Xcode 16.1+
+#    timeout-minutes: 60  # Extended timeout for React Native + CocoaPods build
+#    steps:
+#      - name: Check out code
+#        uses: actions/checkout@v3
+#
+#      - name: Set up Node.js
+#        uses: actions/setup-node@v3
+#        with:
+#          node-version: '18'
+#
+#      - name: Install npm dependencies
+#        run: npm install
+#
+#      - name: Cache CocoaPods dependencies
+#        uses: actions/cache@v3
+#        with:
+#          path: |
+#            ios/Pods
+#            ~/Library/Caches/CocoaPods
+#            ~/.cocoapods
+#          key: ${{ runner.os }}-pods-${{ hashFiles('ios/Podfile.lock') }}
+#          restore-keys: |
+#            ${{ runner.os }}-pods-
+#
+#      - name: Cache derived data
+#        uses: actions/cache@v3
+#        with:
+#          path: ~/Library/Developer/Xcode/DerivedData
+#          key: ${{ runner.os }}-derived-data-${{ github.sha }}
+#          restore-keys: |
+#            ${{ runner.os }}-derived-data-
+#
+#      - name: Set up Ruby and Bundler
+#        uses: ruby/setup-ruby@v1
+#        with:
+#          ruby-version: '2.6.10' # From Gemfile
+#          bundler-cache: true # Runs bundle install
+#
+#      - name: Install CocoaPods
+#        run: cd ios && pod install
+#
+#      - name: Build iOS App with fastlane
+#        run: cd ios && bundle exec fastlane ios build_release
+#        env:
+#          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+#          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+#          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+#          PROVISIONING_PROFILE_BASE64: ${{ secrets.PROVISIONING_PROFILE_BASE64 }}
+#
+#      - name: Upload iOS Asset to Draft Release
+#        uses: softprops/action-gh-release@v1
+#        with:
+#          draft: true  # 絶対に公開しない - IPAファイルを保護
+#          tag_name: build-${{ github.run_number }}
+#          files: |
+#            ios/build/FlowCards.ipa
+#            ios/build/FlowCards.app.dSYM.zip
