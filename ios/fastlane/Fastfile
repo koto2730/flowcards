@@ -58,11 +58,10 @@ platform :ios do
       profile_name = profile_plist["Name"]
       UI.message("Using provisioning profile: #{profile_name}")
 
-      # 8. Set build number (use CI build number if available)
-      build_number = ENV['CI_BUILD_NUMBER'] || (get_build_number + 1).to_s
-      increment_build_number(build_number: build_number)
+      # 8. Set build number (increment by 1)
+      increment_build_number
       
-      # 9. Build the app
+      # 9. Build the app (using simple gym settings like build_simple)
       UI.message("Building app with gym...")
       gym(
         scheme: "FlowCards",
@@ -70,14 +69,12 @@ platform :ios do
         output_directory: "./build",
         output_name: "FlowCards.ipa",
         clean: true,
-        export_method: "app-store-connect",  # Use app-store-connect instead of deprecated app-store
+        export_method: "development",
         export_options: {
-          method: "app-store-connect",
-          provisioningProfiles: {
-            # Use the actual profile name from the installed profile
-            "com.mugime.flowcards" => profile_name
-          }
-        }
+          method: "development"
+        },
+        # Allow provisioning updates for CI
+        xcargs: "-allowProvisioningUpdates"
       )
       
       UI.success("Successfully built iOS app!")
@@ -108,7 +105,7 @@ platform :ios do
     # Enable automatic provisioning
     automatic_code_signing(
       use_automatic_signing: true,
-      team_id: "362PH5HAWW",  # Your team ID from the distribution certificate
+      team_id: ENV["APPLE_TEAM_ID"],  # Use team ID from GitHub Secrets
       code_sign_identity: "iPhone Developer"
     )
     

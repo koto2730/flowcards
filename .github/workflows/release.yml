@@ -81,11 +81,13 @@ jobs:
       - name: Install CocoaPods
         run: cd ios && pod install
 
-      - name: Calculate Build Number
-        run: echo "CI_BUILD_NUMBER=$((${{ env.BUILD_NUMBER_OFFSET }} + ${{ github.run_number }}))" >> $GITHUB_ENV
-
       - name: Build iOS App with fastlane
-        run: cd ios && bundle exec fastlane ios build_simple
+        run: cd ios && bundle exec fastlane ios build_release
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          PROVISIONING_PROFILE_BASE64: ${{ secrets.PROVISIONING_PROFILE_BASE64 }}
 
       - name: Upload iOS Asset to Draft Release
         uses: softprops/action-gh-release@v1
