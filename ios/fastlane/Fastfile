@@ -151,11 +151,15 @@ platform :ios do
       # 8. Configure for App Store distribution
       UI.message("Configuring for App Store distribution...")
       
-      # Use the new update_code_signing_settings action
+      # Use xcconfig or direct xcodebuild to force the settings
+      UI.message("Setting manual code signing with xcodebuild...")
+      sh("xcodebuild -workspace FlowCards.xcworkspace -scheme FlowCards -configuration Release CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY='iPhone Distribution' PROVISIONING_PROFILE_SPECIFIER='#{profile_name}' DEVELOPMENT_TEAM='#{team_id}' -showBuildSettings | head -1")
+      
+      # Also try the update_code_signing_settings
       update_code_signing_settings(
         use_automatic_signing: false,
         team_id: team_id,
-        code_sign_identity: "iPhone Distribution",  # Use Distribution for App Store
+        code_sign_identity: "iPhone Distribution",
         profile_name: profile_name,
         path: "FlowCards.xcodeproj"
       )
@@ -163,7 +167,7 @@ platform :ios do
       # 9. Set build number (increment by 1)
       increment_build_number
       
-      # 10. Build the app for App Store
+      # 10. Build the app for App Store with explicit settings
       UI.message("Building app for App Store...")
       gym(
         scheme: "FlowCards",
@@ -178,7 +182,9 @@ platform :ios do
           provisioningProfiles: {
             "com.mugime.flowcards" => profile_name
           }
-        }
+        },
+        # Force manual signing in build
+        xcargs: "CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY='iPhone Distribution' PROVISIONING_PROFILE_SPECIFIER='#{profile_name}' DEVELOPMENT_TEAM='#{team_id}'"
       )
       
       UI.success("Successfully built iOS app!")
