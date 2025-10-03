@@ -57,43 +57,42 @@ jobs:
           tag_name: build-${{ github.run_number }}
           files: android/app/build/outputs/bundle/release/app-release.aab
 
-#  build-ios:
-#    name: Archive iOS App
-#    runs-on: macos-latest
-#    needs: build-android
-#    steps:
-#      - name: Check out code
-#        uses: actions/checkout@v3
-#
-#      - name: Set up Node.js
-#        uses: actions/setup-node@v3
-#        with:
-#          node-version: '18'
-#
-#      - name: Install npm dependencies
-#        run: npm install
-#
-#      - name: Set up Ruby and Bundler
-#        uses: ruby/setup-ruby@v1
-#        with:
-#          ruby-version: '2.6.10' # From Gemfile
-#          bundler-cache: true # Runs bundle install
-#
-#      - name: Install CocoaPods
-#        run: cd ios && pod install
-#
-#      - name: Calculate Build Number
-#        run: echo "CI_BUILD_NUMBER=$((${{ env.BUILD_NUMBER_OFFSET }} + ${{ github.run_number }}))" >> $GITHUB_ENV
-#
-#      - name: Archive iOS App with fastlane
-#        run: cd ios && bundle exec fastlane archive_only
-#
-#      - name: Compress Archive
-#        run: cd ios/build && zip -r FlowCards.xcarchive.zip FlowCards.xcarchive
-#
-#      - name: Upload iOS Asset to Draft Release
-#        uses: softprops/action-gh-release@v1
-#        with:
-#          draft: true
-#          tag_name: ${{ needs.build-android.outputs.tag_name }}
-#          files: ios/build/FlowCards.xcarchive.zip
+  build-ios:
+    name: Build iOS App
+    runs-on: macos-latest
+    needs: build-android
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install npm dependencies
+        run: npm install
+
+      - name: Set up Ruby and Bundler
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '2.6.10' # From Gemfile
+          bundler-cache: true # Runs bundle install
+
+      - name: Install CocoaPods
+        run: cd ios && pod install
+
+      - name: Calculate Build Number
+        run: echo "CI_BUILD_NUMBER=$((${{ env.BUILD_NUMBER_OFFSET }} + ${{ github.run_number }}))" >> $GITHUB_ENV
+
+      - name: Build iOS App with fastlane
+        run: cd ios && bundle exec fastlane ios build_simple
+
+      - name: Upload iOS Asset to Draft Release
+        uses: softprops/action-gh-release@v1
+        with:
+          draft: true  # 絶対に公開しない - IPAファイルを保護
+          tag_name: build-${{ github.run_number }}
+          files: |
+            ios/build/FlowCards.ipa
+            ios/build/FlowCards.app.dSYM.zip

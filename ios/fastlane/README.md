@@ -23,13 +23,13 @@ For _fastlane_ installation instructions, see [Installing _fastlane_](https://do
 
 Build the iOS application for App Store distribution
 
-### ios archive_only
+### ios build_simple
 
 ```sh
-[bundle exec] fastlane ios archive_only
+[bundle exec] fastlane ios build_simple
 ```
 
-Archive the iOS application and ignore export errors
+Simple build for testing
 
 ----
 

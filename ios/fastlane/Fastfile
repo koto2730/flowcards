@@ -4,56 +4,80 @@ platform :ios do
   desc "Build the iOS application for App Store distribution"
   lane :build_release do
     
-    keychain_path = File.expand_path("./fastlane/temp.keychain")
+    # Define paths for temporary files
+    keychain_name = "temp_build_keychain"
     keychain_password = "temp_password"
+    cert_path = File.expand_path("./certificate.p12")
+    prov_profile_path = File.expand_path("./profile.mobileprovision")
 
     begin
-      # 1. Create a new temporary keychain
+      # 1. Ensure build directory exists
+      FileUtils.mkdir_p("./build")
+
+      # 2. Create a new temporary keychain
+      delete_keychain(name: keychain_name) if File.exist?(File.expand_path("~/Library/Keychains/#{keychain_name}-db"))
+      
       create_keychain(
-        name: keychain_path,
+        name: keychain_name,
         password: keychain_password,
         unlock: true,
         timeout: 3600,
         add_to_search_list: true,
-        default_keychain: true
+        default_keychain: false  # Don't set as default to avoid conflicts
       )
 
-      # 2. Decode and import the certificate
-      cert_path = File.expand_path("certificate.p12")
+      # 3. Decode and import the certificate
+      UI.message("Decoding certificate...")
       File.open(cert_path, "wb") do |file|
         file.write(Base64.decode64(ENV["APPLE_CERTIFICATE_BASE64"]))
       end
+      
       import_certificate(
-        keychain_name: keychain_path,
+        keychain_name: keychain_name,
         certificate_path: cert_path,
         certificate_password: ENV['APPLE_CERTIFICATE_PASSWORD']
       )
 
-      # 3. Explicitly allow codesign to access the keychain (Fix for "Invalid trust settings")
-      set_keychain_settings(
-        path: keychain_path,
-        allow_without_confirmation: true
-      )
+      # 4. Set keychain settings to allow access
+      sh("security set-keychain-settings -t 3600 -u ~/Library/Keychains/#{keychain_name}-db")
+      sh("security unlock-keychain -p '#{keychain_password}' ~/Library/Keychains/#{keychain_name}-db")
+      
+      # 5. Set partition list to allow codesign to access the keychain
+      sh("security set-key-partition-list -S apple-tool:,apple: -s -k '#{keychain_password}' ~/Library/Keychains/#{keychain_name}-db")
 
-      # 4. Decode and install provisioning profile
-      prov_profile_path = File.expand_path("profile.mobileprovision")
+      # 6. Decode and install provisioning profile
+      UI.message("Installing provisioning profile...")
       File.open(prov_profile_path, "wb") do |file|
         file.write(Base64.decode64(ENV["PROVISIONING_PROFILE_BASE64"]))
       end
       install_provisioning_profile(path: prov_profile_path)
-
-      # 5. Set build number
-      increment_build_number
       
-      # 6. Build the app, explicitly telling it which keychain to use
+      # 7. Get the provisioning profile name from the installed profile
+      profile_info = sh("security cms -D -i '#{prov_profile_path}'", log: false)
+      profile_plist = Plist.parse_xml(profile_info)
+      profile_name = profile_plist["Name"]
+      UI.message("Using provisioning profile: #{profile_name}")
+
+      # 8. Set build number (use CI build number if available)
+      build_number = ENV['CI_BUILD_NUMBER'] || (get_build_number + 1).to_s
+      increment_build_number(build_number: build_number)
+      
+      # 9. Build the app
+      UI.message("Building app with gym...")
       gym(
         scheme: "FlowCards",
         workspace: "FlowCards.xcworkspace",
         output_directory: "./build",
         output_name: "FlowCards.ipa",
         clean: true,
-        keychain_path: keychain_path,
-        keychain_password: keychain_password
+        export_method: "app-store-connect",  # Use app-store-connect instead of deprecated app-store
+        export_options: {
+          method: "app-store-connect",
+          provisioningProfiles: {
+            # Use the actual profile name from the installed profile
+            "com.mugime.flowcards" => profile_name
+          }
+        }
       )
       
       UI.success("Successfully built iOS app!")
@@ -64,47 +88,38 @@ platform :ios do
       raise e
     ensure
       # Clean up keychain
-      delete_keychain(name: keychain_path) if File.exist?(keychain_path)
+      begin
+        delete_keychain(name: keychain_name)
+      rescue
+        UI.warning("Failed to delete keychain, but continuing...")
+      end
+      
       # Clean up temporary files
       File.delete(cert_path) if File.exist?(cert_path)
       File.delete(prov_profile_path) if File.exist?(prov_profile_path)
     end
   end
 
-  desc "Archive the iOS application and ignore export errors"
-  lane :archive_only do
-    # Increment the build number by one
+  desc "Simple build for testing"
+  lane :build_simple do
+    # Increment build number
     increment_build_number
-
-    # Define a predictable path for the archive
-    output_path = "./build"
-    archive_name = "FlowCards.xcarchive"
-    final_archive_path = File.join(output_path, archive_name)
-
-    begin
-      # Run gym, telling it exactly where to put the archive.
-      # It will still fail at exporting, but the archive will be in a known location.
-      gym(
-        scheme: "FlowCards",
-        workspace: "FlowCards.xcworkspace",
-        clean: true,
-        output_directory: output_path,
-        archive_path: final_archive_path
-      )
-    rescue => ex
-      # Intentionally ignore the export error
-      UI.important("Gym failed at export, which is expected. Continuing as archive should be present.")
-      # Rethrow error if it's not the one we expect, just in case
-      raise ex unless ex.message.include?("Error packaging up the application")
-    end
     
-    # Verify the archive was created at the location we specified
-    if Dir.exist?(final_archive_path)
-      UI.success("Successfully archived to: #{final_archive_path}")
-      # Set the path for other tools or lanes to use
-      lane_context[SharedValues::XCODEBUILD_ARCHIVE] = final_archive_path
-    else
-      UI.user_error!("Archive was not created at the expected path: #{final_archive_path}")
-    end
+    # Enable automatic provisioning
+    automatic_code_signing(
+      use_automatic_signing: true,
+      team_id: "362PH5HAWW",  # Your team ID from the distribution certificate
+      code_sign_identity: "iPhone Developer"
+    )
+    
+    # Just try to build with automatic provisioning
+    gym(
+      scheme: "FlowCards",
+      workspace: "FlowCards.xcworkspace",
+      output_directory: "./build",
+      output_name: "FlowCards.ipa",
+      clean: true,
+      export_method: "development"
+    )
   end
 end
