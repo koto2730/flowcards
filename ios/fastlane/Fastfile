@@ -167,24 +167,28 @@ platform :ios do
       # 9. Set build number (increment by 1)
       increment_build_number
       
-      # 10. Build the app for App Store with explicit settings
-      UI.message("Building app for App Store...")
+      # 10. Build the app for App Store with speed optimizations
+      UI.message("Building app for App Store with optimizations...")
       gym(
         scheme: "FlowCards",
         workspace: "FlowCards.xcworkspace",
         output_directory: "./build",
         output_name: "FlowCards.ipa",
-        clean: true,
+        clean: false,  # 1. Incremental build for speed
+        include_symbols: false,  # 3. Skip dSYM generation
+        include_bitcode: false,  # 3. Skip bitcode
         export_method: "app-store",  # Use app-store instead of app-store-connect
         export_options: {
           method: "app-store",
           teamID: team_id,
           provisioningProfiles: {
             "com.mugime.flowcards" => profile_name
-          }
+          },
+          uploadSymbols: false,
+          uploadBitcode: false
         },
-        # Force manual signing in build
-        xcargs: "CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY='iPhone Distribution' PROVISIONING_PROFILE_SPECIFIER='#{profile_name}' DEVELOPMENT_TEAM='#{team_id}'"
+        # 2. Parallel builds + manual signing
+        xcargs: "CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY='iPhone Distribution' PROVISIONING_PROFILE_SPECIFIER='#{profile_name}' DEVELOPMENT_TEAM='#{team_id}' -jobs 4 -parallelizeTargets"
       )
       
       UI.success("Successfully built iOS app!")
