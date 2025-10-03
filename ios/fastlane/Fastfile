@@ -54,12 +54,34 @@ platform :ios do
       
       # Import certificate using security command directly
       UI.message("Importing certificate with security command...")
+      
+      # First, try without keychain specification to see if it works with default
       begin
-        sh("security import '#{cert_path}' -k ~/Library/Keychains/#{keychain_name}-db -P '#{ENV['APPLE_CERTIFICATE_PASSWORD']}' -T /usr/bin/codesign -T /usr/bin/xcodebuild")
-        UI.success("Certificate imported successfully")
+        UI.message("Trying import without specific keychain...")
+        sh("security import '#{cert_path}' -P '#{ENV['APPLE_CERTIFICATE_PASSWORD']}' -T /usr/bin/codesign -T /usr/bin/xcodebuild")
+        UI.success("Certificate imported to default keychain successfully")
       rescue => e
-        UI.error("Certificate import failed: #{e.message}")
-        raise e
+        UI.warning("Default keychain import failed, trying with specific keychain...")
+        
+        # Try with -A flag (allow any application to access)
+        begin
+          sh("security import '#{cert_path}' -k ~/Library/Keychains/#{keychain_name}-db -P '#{ENV['APPLE_CERTIFICATE_PASSWORD']}' -A")
+          UI.success("Certificate imported with -A flag successfully")
+        rescue => e2
+          UI.error("Certificate import failed with both methods:")
+          UI.error("Method 1: #{e.message}")
+          UI.error("Method 2: #{e2.message}")
+          
+          # As last resort, try with login keychain
+          begin
+            UI.message("Trying with login keychain as last resort...")
+            sh("security import '#{cert_path}' -k ~/Library/Keychains/login.keychain-db -P '#{ENV['APPLE_CERTIFICATE_PASSWORD']}' -T /usr/bin/codesign -T /usr/bin/xcodebuild")
+            UI.success("Certificate imported to login keychain successfully")
+          rescue => e3
+            UI.error("All import methods failed: #{e3.message}")
+            raise e3
+          end
+        end
       end
 
       # 4. Set keychain settings to allow access (only if certificate import succeeded)
