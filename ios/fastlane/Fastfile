@@ -28,8 +28,28 @@ platform :ios do
 
       # 3. Decode and import the certificate
       UI.message("Decoding certificate...")
+      if ENV["APPLE_CERTIFICATE_BASE64"].nil? || ENV["APPLE_CERTIFICATE_BASE64"].empty?
+        UI.user_error!("APPLE_CERTIFICATE_BASE64 environment variable is not set")
+      end
+      if ENV["APPLE_CERTIFICATE_PASSWORD"].nil? || ENV["APPLE_CERTIFICATE_PASSWORD"].empty?
+        UI.user_error!("APPLE_CERTIFICATE_PASSWORD environment variable is not set")
+      end
+      
+      UI.message("Certificate Base64 length: #{ENV['APPLE_CERTIFICATE_BASE64'].length}")
+      
       File.open(cert_path, "wb") do |file|
         file.write(Base64.decode64(ENV["APPLE_CERTIFICATE_BASE64"]))
+      end
+      
+      UI.message("Certificate file size: #{File.size(cert_path)} bytes")
+      
+      # Test the certificate file before importing
+      begin
+        sh("openssl pkcs12 -info -in '#{cert_path}' -noout -passin pass:'#{ENV['APPLE_CERTIFICATE_PASSWORD']}'")
+        UI.success("Certificate validation successful")
+      rescue => e
+        UI.error("Certificate validation failed: #{e.message}")
+        raise e
       end
       
       import_certificate(
@@ -38,7 +58,8 @@ platform :ios do
         certificate_password: ENV['APPLE_CERTIFICATE_PASSWORD']
       )
 
-      # 4. Set keychain settings to allow access
+      # 4. Set keychain settings to allow access (only if certificate import succeeded)
+      UI.message("Setting keychain permissions...")
       sh("security set-keychain-settings -t 3600 -u ~/Library/Keychains/#{keychain_name}-db")
       sh("security unlock-keychain -p '#{keychain_password}' ~/Library/Keychains/#{keychain_name}-db")
       
