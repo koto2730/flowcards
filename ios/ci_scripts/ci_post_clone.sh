@@ -1,6 +1,6 @@
 #!/bin/zsh
 
-# ci_post_clone.shgit
+# ci_post_clone.sh
 # Xcode Cloud post-clone script for React Native project
 # This script installs npm dependencies and CocoaPods.
 
