@@ -175,9 +175,9 @@ platform :ios do
         output_directory: "./build",
         output_name: "FlowCards.ipa",
         clean: true,
-        export_method: "app-store-connect",
+        export_method: "app-store",  # Use app-store instead of app-store-connect
         export_options: {
-          method: "app-store-connect",
+          method: "app-store",
           teamID: team_id,
           provisioningProfiles: {
             "com.mugime.flowcards" => profile_name
