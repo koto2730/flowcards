@@ -2,6 +2,8 @@ apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 
+import groovy.json.JsonSlurper
+
 /**
  * This is the configuration block to customize your React Native Android app.
  * By default you don't need to apply any configuration, just uncomment the lines you need.
@@ -82,8 +84,9 @@ android {
         applicationId "com.flowcards"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 3
-        versionName "1.0.1"
+        versionCode project.hasProperty('versionCode') ? project.property('versionCode').toInteger() : 3
+        def packageJson = new JsonSlurper().parse(file('../../package.json'))
+        versionName packageJson.version
     }
     signingConfigs {
         debug {
@@ -93,11 +96,11 @@ android {
             keyPassword 'android'
         }
         release {
-            if (project.hasProperty('MYAPP_UPLOAD_STORE_FILE')) {
-                storeFile file(MYAPP_UPLOAD_STORE_FILE)
-                storePassword System.getenv("MYAPP_UPLOAD_STORE_PASSWORD") ?: MYAPP_UPLOAD_STORE_PASSWORD
-                keyAlias System.getenv("MYAPP_UPLOAD_KEY_ALIAS") ?: MYAPP_UPLOAD_KEY_ALIAS
-                keyPassword System.getenv("MYAPP_UPLOAD_KEY_PASSWORD") ?: MYAPP_UPLOAD_KEY_PASSWORD
+            if (System.getenv("MYAPP_UPLOAD_STORE_FILE") != null) {
+                storeFile file(System.getenv("MYAPP_UPLOAD_STORE_FILE"))
+                storePassword System.getenv("MYAPP_UPLOAD_STORE_PASSWORD")
+                keyAlias System.getenv("MYAPP_UPLOAD_KEY_ALIAS")
+                keyPassword System.getenv("MYAPP_UPLOAD_KEY_PASSWORD")
             }
         }
     }

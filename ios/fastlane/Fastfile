@@ -1,0 +1,241 @@
+default_platform(:ios)
+
+platform :ios do
+  desc "Build the iOS application for App Store distribution"
+  lane :build_release do
+    
+    # Specify Xcode version to avoid version conflicts
+    xcode_select("/Applications/Xcode_16.4.app")
+    
+    # Define paths for temporary files
+    keychain_name = "temp_build_keychain"
+    keychain_password = "temp_password"
+    cert_path = File.expand_path("./certificate.p12")
+    prov_profile_path = File.expand_path("./profile.mobileprovision")
+
+    begin
+      # 1. Ensure build directory exists
+      FileUtils.mkdir_p("./build")
+
+      # 2. Create a new temporary keychain
+      delete_keychain(name: keychain_name) if File.exist?(File.expand_path("~/Library/Keychains/#{keychain_name}-db"))
+      
+      create_keychain(
+        name: keychain_name,
+        password: keychain_password,
+        unlock: true,
+        timeout: 3600,
+        add_to_search_list: true,
+        default_keychain: false  # Don't set as default to avoid conflicts
+      )
+
+      # 3. Decode and import the certificate
+      UI.message("Decoding certificate...")
+      if ENV["APPLE_CERTIFICATE_BASE64"].nil? || ENV["APPLE_CERTIFICATE_BASE64"].empty?
+        UI.user_error!("APPLE_CERTIFICATE_BASE64 environment variable is not set")
+      end
+      if ENV["APPLE_CERTIFICATE_PASSWORD"].nil? || ENV["APPLE_CERTIFICATE_PASSWORD"].empty?
+        UI.user_error!("APPLE_CERTIFICATE_PASSWORD environment variable is not set")
+      end
+      
+      UI.message("Certificate Base64 length: #{ENV['APPLE_CERTIFICATE_BASE64'].length}")
+      
+      File.open(cert_path, "wb") do |file|
+        file.write(Base64.decode64(ENV["APPLE_CERTIFICATE_BASE64"]))
+      end
+      
+      UI.message("Certificate file size: #{File.size(cert_path)} bytes")
+      
+      # Test the certificate file before importing
+      begin
+        sh("openssl pkcs12 -info -in '#{cert_path}' -noout -passin pass:'#{ENV['APPLE_CERTIFICATE_PASSWORD']}'")
+        UI.success("Certificate validation successful")
+      rescue => e
+        UI.error("Certificate validation failed: #{e.message}")
+        raise e
+      end
+      
+      # Import certificate using security command directly
+      UI.message("Importing certificate with security command...")
+      
+      imported_keychain = nil
+      
+      # First, try without keychain specification to see if it works with default
+      begin
+        UI.message("Trying import without specific keychain...")
+        sh("security import '#{cert_path}' -P '#{ENV['APPLE_CERTIFICATE_PASSWORD']}' -T /usr/bin/codesign -T /usr/bin/xcodebuild")
+        UI.success("Certificate imported to default keychain successfully")
+        imported_keychain = "default"
+      rescue => e
+        UI.message("Default keychain import failed, trying with specific keychain...")
+        
+        # Try with -A flag (allow any application to access)
+        begin
+          sh("security import '#{cert_path}' -k ~/Library/Keychains/#{keychain_name}-db -P '#{ENV['APPLE_CERTIFICATE_PASSWORD']}' -A")
+          UI.success("Certificate imported with -A flag successfully")
+          imported_keychain = "temp_build_keychain"
+        rescue => e2
+          UI.error("Certificate import failed with both methods:")
+          UI.error("Method 1: #{e.message}")
+          UI.error("Method 2: #{e2.message}")
+          
+          # As last resort, try with login keychain
+          begin
+            UI.message("Trying with login keychain as last resort...")
+            sh("security import '#{cert_path}' -k ~/Library/Keychains/login.keychain-db -P '#{ENV['APPLE_CERTIFICATE_PASSWORD']}' -T /usr/bin/codesign -T /usr/bin/xcodebuild")
+            UI.success("Certificate imported to login keychain successfully")
+            imported_keychain = "login"
+          rescue => e3
+            UI.error("All import methods failed: #{e3.message}")
+            
+            # Try to diagnose the issue
+            UI.message("Diagnostic information:")
+            UI.message("Certificate file exists: #{File.exist?(cert_path)}")
+            UI.message("Certificate file size: #{File.size(cert_path)} bytes")
+            
+            # Check if password is being truncated or has special characters
+            UI.message("Password length: #{ENV['APPLE_CERTIFICATE_PASSWORD'].length}")
+            
+            raise e3
+          end
+        end
+      end
+
+      # 4. Set keychain settings based on where certificate was imported
+      if imported_keychain == "temp_build_keychain"
+        UI.message("Setting keychain permissions for temp keychain...")
+        sh("security set-keychain-settings -t 3600 -u ~/Library/Keychains/#{keychain_name}-db")
+        sh("security unlock-keychain -p '#{keychain_password}' ~/Library/Keychains/#{keychain_name}-db")
+        
+        # 5. Set partition list to allow codesign to access the keychain
+        begin
+          sh("security set-key-partition-list -S apple-tool:,apple: -s -k '#{keychain_password}' ~/Library/Keychains/#{keychain_name}-db")
+        rescue => e
+          UI.message("Partition list setting failed, but continuing... #{e.message}")
+        end
+      else
+        UI.message("Certificate imported to #{imported_keychain} keychain, skipping temp keychain setup")
+      end
+
+      # 6. Decode and install provisioning profile
+      UI.message("Installing provisioning profile...")
+      if ENV["PROVISIONING_PROFILE_BASE64"].nil? || ENV["PROVISIONING_PROFILE_BASE64"].empty?
+        UI.user_error!("PROVISIONING_PROFILE_BASE64 environment variable is not set")
+      end
+      
+      File.open(prov_profile_path, "wb") do |file|
+        file.write(Base64.decode64(ENV["PROVISIONING_PROFILE_BASE64"]))
+      end
+      
+      UI.message("Provisioning profile file size: #{File.size(prov_profile_path)} bytes")
+      
+      # Install to the default location
+      install_provisioning_profile(path: prov_profile_path)
+      
+      # Also manually copy to the standard location
+      profiles_dir = File.expand_path("~/Library/MobileDevice/Provisioning Profiles")
+      FileUtils.mkdir_p(profiles_dir)
+      profile_uuid = sh("grep -A1 UUID '#{prov_profile_path}' | grep string | sed 's/.*<string>\\(.*\\)<\\/string>.*/\\1/'", log: false).strip
+      manual_profile_path = File.join(profiles_dir, "#{profile_uuid}.mobileprovision")
+      FileUtils.cp(prov_profile_path, manual_profile_path)
+      UI.message("Copied provisioning profile to: #{manual_profile_path}")
+      
+      # 7. Get the provisioning profile name from the installed profile
+      profile_info = sh("security cms -D -i '#{prov_profile_path}'", log: false)
+      profile_plist = Plist.parse_xml(profile_info)
+      profile_name = profile_plist["Name"]
+      team_id = profile_plist["TeamIdentifier"].first
+      UI.message("Using provisioning profile: #{profile_name}")
+      UI.message("Team ID from profile: #{team_id}")
+      
+      # 8. Configure for App Store distribution
+      UI.message("Configuring for App Store distribution...")
+      
+      # Use xcconfig or direct xcodebuild to force the settings
+      UI.message("Setting manual code signing with xcodebuild...")
+      sh("xcodebuild -workspace FlowCards.xcworkspace -scheme FlowCards -configuration Release CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY='iPhone Distribution' PROVISIONING_PROFILE_SPECIFIER='#{profile_name}' DEVELOPMENT_TEAM='#{team_id}' -showBuildSettings | head -1")
+      
+      # Also try the update_code_signing_settings
+      update_code_signing_settings(
+        use_automatic_signing: false,
+        team_id: team_id,
+        code_sign_identity: "iPhone Distribution",
+        profile_name: profile_name,
+        path: "FlowCards.xcodeproj"
+      )
+
+      # 9. Set build number (increment by 1)
+      increment_build_number
+      
+      # 10. Build the app for App Store with speed optimizations
+      UI.message("Building app for App Store with optimizations...")
+      gym(
+        scheme: "FlowCards",
+        workspace: "FlowCards.xcworkspace",
+        output_directory: "./build",
+        output_name: "FlowCards.ipa",
+        clean: false,  # 1. Incremental build for speed
+        include_symbols: false,  # 3. Skip dSYM generation
+        include_bitcode: false,  # 3. Skip bitcode
+        export_method: "app-store",  # Use app-store instead of app-store-connect
+        export_options: {
+          method: "app-store",
+          teamID: team_id,
+          provisioningProfiles: {
+            "com.mugime.flowcards" => profile_name
+          },
+          uploadSymbols: false,
+          uploadBitcode: false
+        },
+        # 2. Parallel builds + manual signing
+        xcargs: "CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY='iPhone Distribution' PROVISIONING_PROFILE_SPECIFIER='#{profile_name}' DEVELOPMENT_TEAM='#{team_id}' -jobs 4 -parallelizeTargets"
+      )
+      
+      UI.success("Successfully built iOS app!")
+      
+    rescue => e
+      UI.error("Build failed: #{e.message}")
+      UI.error("Backtrace: #{e.backtrace.join("\n")}")
+      raise e
+    ensure
+      # Clean up keychain
+      begin
+        delete_keychain(name: keychain_name)
+      rescue
+        UI.warning("Failed to delete keychain, but continuing...")
+      end
+      
+      # Clean up temporary files
+      File.delete(cert_path) if File.exist?(cert_path)
+      File.delete(prov_profile_path) if File.exist?(prov_profile_path)
+    end
+  end
+
+  desc "Simple build for testing"
+  lane :build_simple do
+    # Increment build number
+    increment_build_number
+    
+    # Enable automatic provisioning
+    automatic_code_signing(
+      use_automatic_signing: true,
+      team_id: ENV["APPLE_TEAM_ID"],  # Use team ID from GitHub Secrets
+      code_sign_identity: "iPhone Developer"
+    )
+    
+    # Just try to build with automatic provisioning
+    gym(
+      scheme: "FlowCards",
+      workspace: "FlowCards.xcworkspace",
+      output_directory: "./build",
+      output_name: "FlowCards.ipa",
+      clean: true,
+      export_method: "development",
+      export_options: {
+        method: "development"
+      },
+      # Allow provisioning updates for CI
+      xcargs: "-allowProvisioningUpdates"
+    )
+  end
+end
