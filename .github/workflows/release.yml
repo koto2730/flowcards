@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main # mainブランチにマージされたら実行
-      - feat/setup-ci # テスト用に現在のブランチを追加
   workflow_dispatch: {} # GitHub上で手動実行するためのトリガー
 
 env:
