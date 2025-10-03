@@ -147,10 +147,20 @@ platform :ios do
       
       # 8. Disable automatic signing and set manual provisioning
       UI.message("Configuring manual code signing...")
+      
+      # Determine the correct code signing identity based on profile type
+      if profile_name.include?("App Store") || profile_name.include?("Distribution")
+        code_sign_identity = "iPhone Distribution"
+        UI.message("Using Distribution identity for App Store profile")
+      else
+        code_sign_identity = "iPhone Developer"
+        UI.message("Using Development identity for development profile")
+      end
+      
       automatic_code_signing(
         use_automatic_signing: false,
         team_id: team_id,
-        code_sign_identity: "iPhone Developer",
+        code_sign_identity: code_sign_identity,
         profile_name: profile_name
       )
 
