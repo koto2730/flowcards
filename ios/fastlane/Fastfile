@@ -55,11 +55,14 @@ platform :ios do
       # Import certificate using security command directly
       UI.message("Importing certificate with security command...")
       
+      imported_keychain = nil
+      
       # First, try without keychain specification to see if it works with default
       begin
         UI.message("Trying import without specific keychain...")
         sh("security import '#{cert_path}' -P '#{ENV['APPLE_CERTIFICATE_PASSWORD']}' -T /usr/bin/codesign -T /usr/bin/xcodebuild")
         UI.success("Certificate imported to default keychain successfully")
+        imported_keychain = "default"
       rescue => e
         UI.message("Default keychain import failed, trying with specific keychain...")
         
@@ -67,6 +70,7 @@ platform :ios do
         begin
           sh("security import '#{cert_path}' -k ~/Library/Keychains/#{keychain_name}-db -P '#{ENV['APPLE_CERTIFICATE_PASSWORD']}' -A")
           UI.success("Certificate imported with -A flag successfully")
+          imported_keychain = "temp_build_keychain"
         rescue => e2
           UI.error("Certificate import failed with both methods:")
           UI.error("Method 1: #{e.message}")
@@ -77,6 +81,7 @@ platform :ios do
             UI.message("Trying with login keychain as last resort...")
             sh("security import '#{cert_path}' -k ~/Library/Keychains/login.keychain-db -P '#{ENV['APPLE_CERTIFICATE_PASSWORD']}' -T /usr/bin/codesign -T /usr/bin/xcodebuild")
             UI.success("Certificate imported to login keychain successfully")
+            imported_keychain = "login"
           rescue => e3
             UI.error("All import methods failed: #{e3.message}")
             
@@ -93,13 +98,21 @@ platform :ios do
         end
       end
 
-      # 4. Set keychain settings to allow access (only if certificate import succeeded)
-      UI.message("Setting keychain permissions...")
-      sh("security set-keychain-settings -t 3600 -u ~/Library/Keychains/#{keychain_name}-db")
-      sh("security unlock-keychain -p '#{keychain_password}' ~/Library/Keychains/#{keychain_name}-db")
-      
-      # 5. Set partition list to allow codesign to access the keychain
-      sh("security set-key-partition-list -S apple-tool:,apple: -s -k '#{keychain_password}' ~/Library/Keychains/#{keychain_name}-db")
+      # 4. Set keychain settings based on where certificate was imported
+      if imported_keychain == "temp_build_keychain"
+        UI.message("Setting keychain permissions for temp keychain...")
+        sh("security set-keychain-settings -t 3600 -u ~/Library/Keychains/#{keychain_name}-db")
+        sh("security unlock-keychain -p '#{keychain_password}' ~/Library/Keychains/#{keychain_name}-db")
+        
+        # 5. Set partition list to allow codesign to access the keychain
+        begin
+          sh("security set-key-partition-list -S apple-tool:,apple: -s -k '#{keychain_password}' ~/Library/Keychains/#{keychain_name}-db")
+        rescue => e
+          UI.message("Partition list setting failed, but continuing... #{e.message}")
+        end
+      else
+        UI.message("Certificate imported to #{imported_keychain} keychain, skipping temp keychain setup")
+      end
 
       # 6. Decode and install provisioning profile
       UI.message("Installing provisioning profile...")
