@@ -49,7 +49,7 @@ jobs:
           MYAPP_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_ALIAS }}
           MYAPP_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
-      - name: Create Draft Release and Upload Android Asset
+      - name: Create or Update Draft Release and Upload Android Asset
         id: create_release
         uses: softprops/action-gh-release@v1
         with:
@@ -60,7 +60,6 @@ jobs:
   build-ios:
     name: Build iOS App
     runs-on: macos-latest
-    needs: build-android
     steps:
       - name: Check out code
         uses: actions/checkout@v3

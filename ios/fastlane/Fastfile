@@ -119,7 +119,12 @@ platform :ios do
       output_directory: "./build",
       output_name: "FlowCards.ipa",
       clean: true,
-      export_method: "development"
+      export_method: "development",
+      export_options: {
+        method: "development"
+      },
+      # Allow provisioning updates for CI
+      xcargs: "-allowProvisioningUpdates"
     )
   end
 end
