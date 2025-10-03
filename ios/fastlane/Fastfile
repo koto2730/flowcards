@@ -4,6 +4,9 @@ platform :ios do
   desc "Build the iOS application for App Store distribution"
   lane :build_release do
     
+    # Specify Xcode version to avoid version conflicts
+    xcode_select("/Applications/Xcode_16.4.app")
+    
     # Define paths for temporary files
     keychain_name = "temp_build_keychain"
     keychain_password = "temp_password"
@@ -145,26 +148,37 @@ platform :ios do
       UI.message("Using provisioning profile: #{profile_name}")
       UI.message("Team ID from profile: #{team_id}")
       
-      # 8. Skip code signing configuration - let Xcode handle it automatically
-      UI.message("Skipping manual code signing - letting Xcode auto-manage...")
+      # 8. Configure for App Store distribution
+      UI.message("Configuring for App Store distribution...")
+      
+      # Use the new update_code_signing_settings action
+      update_code_signing_settings(
+        use_automatic_signing: false,
+        team_id: team_id,
+        code_sign_identity: "iPhone Distribution",  # Use Distribution for App Store
+        profile_name: profile_name,
+        path: "FlowCards.xcodeproj"
+      )
 
       # 9. Set build number (increment by 1)
       increment_build_number
       
-      # 10. Build the app with automatic signing
-      UI.message("Building app with gym...")
+      # 10. Build the app for App Store
+      UI.message("Building app for App Store...")
       gym(
         scheme: "FlowCards",
         workspace: "FlowCards.xcworkspace",
         output_directory: "./build",
         output_name: "FlowCards.ipa",
         clean: true,
-        export_method: "development",
+        export_method: "app-store-connect",
         export_options: {
-          method: "development"
-        },
-        # Allow provisioning updates and automatic signing
-        xcargs: "-allowProvisioningUpdates -allowProvisioningDeviceRegistration"
+          method: "app-store-connect",
+          teamID: team_id,
+          provisioningProfiles: {
+            "com.mugime.flowcards" => profile_name
+          }
+        }
       )
       
       UI.success("Successfully built iOS app!")
