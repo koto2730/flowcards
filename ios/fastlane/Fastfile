@@ -116,16 +116,43 @@ platform :ios do
 
       # 6. Decode and install provisioning profile
       UI.message("Installing provisioning profile...")
+      if ENV["PROVISIONING_PROFILE_BASE64"].nil? || ENV["PROVISIONING_PROFILE_BASE64"].empty?
+        UI.user_error!("PROVISIONING_PROFILE_BASE64 environment variable is not set")
+      end
+      
       File.open(prov_profile_path, "wb") do |file|
         file.write(Base64.decode64(ENV["PROVISIONING_PROFILE_BASE64"]))
       end
+      
+      UI.message("Provisioning profile file size: #{File.size(prov_profile_path)} bytes")
+      
+      # Install to the default location
       install_provisioning_profile(path: prov_profile_path)
+      
+      # Also manually copy to the standard location
+      profiles_dir = File.expand_path("~/Library/MobileDevice/Provisioning Profiles")
+      FileUtils.mkdir_p(profiles_dir)
+      profile_uuid = sh("grep -A1 UUID '#{prov_profile_path}' | grep string | sed 's/.*<string>\\(.*\\)<\\/string>.*/\\1/'", log: false).strip
+      manual_profile_path = File.join(profiles_dir, "#{profile_uuid}.mobileprovision")
+      FileUtils.cp(prov_profile_path, manual_profile_path)
+      UI.message("Copied provisioning profile to: #{manual_profile_path}")
       
       # 7. Get the provisioning profile name from the installed profile
       profile_info = sh("security cms -D -i '#{prov_profile_path}'", log: false)
       profile_plist = Plist.parse_xml(profile_info)
       profile_name = profile_plist["Name"]
+      team_id = profile_plist["TeamIdentifier"].first
       UI.message("Using provisioning profile: #{profile_name}")
+      UI.message("Team ID from profile: #{team_id}")
+      
+      # 8. Disable automatic signing and set manual provisioning
+      UI.message("Configuring manual code signing...")
+      automatic_code_signing(
+        use_automatic_signing: false,
+        team_id: team_id,
+        code_sign_identity: "iPhone Developer",
+        profile_name: profile_name
+      )
 
       # 8. Set build number (increment by 1)
       increment_build_number
@@ -140,7 +167,11 @@ platform :ios do
         clean: true,
         export_method: "development",
         export_options: {
-          method: "development"
+          method: "development",
+          teamID: team_id,
+          provisioningProfiles: {
+            "com.mugime.flowcards" => profile_name
+          }
         },
         # Allow provisioning updates for CI
         xcargs: "-allowProvisioningUpdates"
