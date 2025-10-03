@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/zsh
 
 # ci_post_clone.shgit
 # Xcode Cloud post-clone script for React Native project
