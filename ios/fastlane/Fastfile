@@ -145,24 +145,13 @@ platform :ios do
       UI.message("Using provisioning profile: #{profile_name}")
       UI.message("Team ID from profile: #{team_id}")
       
-      # 8. Disable automatic signing and set manual provisioning
-      UI.message("Configuring manual code signing...")
-      
-      # Always use iPhone Developer since we have development certificate
-      code_sign_identity = "iPhone Developer"
-      UI.message("Using Development identity to match available certificate")
-      
-      automatic_code_signing(
-        use_automatic_signing: false,
-        team_id: team_id,
-        code_sign_identity: code_sign_identity,
-        profile_name: profile_name
-      )
+      # 8. Skip code signing configuration - let Xcode handle it automatically
+      UI.message("Skipping manual code signing - letting Xcode auto-manage...")
 
-      # 8. Set build number (increment by 1)
+      # 9. Set build number (increment by 1)
       increment_build_number
       
-      # 9. Build the app (using simple gym settings like build_simple)
+      # 10. Build the app with automatic signing
       UI.message("Building app with gym...")
       gym(
         scheme: "FlowCards",
@@ -172,14 +161,10 @@ platform :ios do
         clean: true,
         export_method: "development",
         export_options: {
-          method: "development",
-          teamID: team_id,
-          provisioningProfiles: {
-            "com.mugime.flowcards" => profile_name
-          }
+          method: "development"
         },
-        # Allow provisioning updates for CI
-        xcargs: "-allowProvisioningUpdates"
+        # Allow provisioning updates and automatic signing
+        xcargs: "-allowProvisioningUpdates -allowProvisioningDeviceRegistration"
       )
       
       UI.success("Successfully built iOS app!")
