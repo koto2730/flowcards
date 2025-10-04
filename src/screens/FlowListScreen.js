@@ -266,7 +266,7 @@ const FlowListScreen = ({ navigation }) => {
           text: t('ok'),
           onPress: async () => {
             try {
-              await resetDB();
+              await resetDB(i18n.language);
               fetchFlows(true);
               setMenuVisible(false);
               Alert.alert(t('dbInitDoneTitle'), t('dbInitDone'));

@@ -21,9 +21,8 @@ const executeSql = (sql, params = []) => {
   });
 };
 
-const getSampleDataByLang = () => {
-  const locales = RNLocalize.getLocales();
-  const lang = Array.isArray(locales) ? locales[0].languageCode : 'en';
+const getSampleDataByLang = lang => {
+  const language = lang || (Array.isArray(RNLocalize.getLocales()) ? RNLocalize.getLocales()[0].languageCode : 'en');
 
   if (lang === 'ja') {
     return {
@@ -211,8 +210,8 @@ const getSampleDataByLang = () => {
   }
 };
 
-const insertSampleData = tx => {
-  const sample = getSampleDataByLang();
+const insertSampleData = (tx, lang) => {
+  const sample = getSampleDataByLang(lang);
   return new Promise((resolve, reject) => {
     tx.executeSql(
       'INSERT INTO flows (name) VALUES (?);',
@@ -257,7 +256,7 @@ const insertSampleData = tx => {
   });
 };
 
-export const initDB = () => {
+export const initDB = lang => {
   return new Promise((resolve, reject) => {
     db.transaction(tx => {
       tx.executeSql(
@@ -308,7 +307,7 @@ export const initDB = () => {
                     [],
                     (_, { rows }) => {
                       if (rows.length === 0) {
-                        insertSampleData(tx).then(resolve).catch(reject);
+                        insertSampleData(tx, lang).then(resolve).catch(reject);
                       } else {
                         resolve();
                       }
@@ -420,7 +419,7 @@ export const deleteEdgesByFlowId = flowId =>
   executeSql('DELETE FROM edges WHERE flowId = ?;', [flowId]);
 
 // DB初期化（全テーブル削除＆再作成）
-export const resetDB = () => {
+export const resetDB = lang => {
   return new Promise((resolve, reject) => {
     db.transaction(tx => {
       // テーブル削除
@@ -437,7 +436,7 @@ export const resetDB = () => {
                 [],
                 () => {
                   // テーブル再作成
-                  initDB().then(resolve).catch(reject);
+                  initDB(lang).then(resolve).catch(reject);
                 },
                 (_, err) => reject(err),
               );
