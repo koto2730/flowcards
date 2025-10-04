@@ -21,7 +21,7 @@ const CARD_SIZES = {
   large: { width: 180, height: 254 },
 };
 
-export const useFlowData = (flowId, isSeeThrough) => {
+export const useFlowData = (flowId, isSeeThrough, t) => {
   const [allNodes, setAllNodes] = useState([]);
   const [edges, setEdges] = useState([]);
   const [currentParentId, setCurrentParentId] = useState('root');
@@ -309,7 +309,7 @@ export const useFlowData = (flowId, isSeeThrough) => {
       id: uuidv4(),
       flowId: flowId,
       parentId: currentParentId,
-      label: '新しいカード',
+      label: t('newCard'),
       description: '',
       x: position.x,
       y: position.y,
@@ -369,8 +369,8 @@ export const useFlowData = (flowId, isSeeThrough) => {
         id: newParentId,
         flowId: flowId,
         parentId: 'root',
-        label: '新しいセクション',
-        description: 'グループ化されました',
+        label: t('newSection'),
+        description: t('grouped'),
         x: screenCenter.x - CARD_SIZES.medium.width / 2,
         y: screenCenter.y - CARD_SIZES.medium.height / 2,
         width: CARD_SIZES.medium.width,

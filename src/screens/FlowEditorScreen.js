@@ -39,6 +39,7 @@ import {
 } from '../utils/flowUtils';
 import { useFlowData } from '../hooks/useFlowData';
 import ColorPalette from 'react-native-color-palette';
+import { useTranslation } from 'react-i18next';
 
 const { width, height } = Dimensions.get('window');
 
@@ -54,6 +55,7 @@ const getTextColorForBackground = hexColor => {
 
 const FlowEditorScreen = ({ route, navigation }) => {
   const { flowId, flowName } = route.params;
+  const { t } = useTranslation();
   const [isSeeThrough, setIsSeeThrough] = useState(false);
   const {
     allNodes,
@@ -70,7 +72,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
     toggleLinkingMode,
     handleCardTap,
     handleDeleteEdge,
-  } = useFlowData(flowId, isSeeThrough);
+  } = useFlowData(flowId, isSeeThrough, t);
 
   const [editingNode, setEditingNode] = useState(null);
   const [colorPickerVisible, setColorPickerVisible] = useState(false);
@@ -595,7 +597,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
                   setEditingNode(prev => ({ ...prev, title: text }))
                 }
                 style={styles.input}
-                placeholder="Title"
+                placeholder={t('title')}
                 autoFocus
                 maxLength={16}
               />
@@ -605,7 +607,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
                   setEditingNode(prev => ({ ...prev, description: text }))
                 }
                 style={styles.input}
-                placeholder="Description"
+                placeholder={t('description')}
                 multiline
                 maxLength={100}
                 editable={editingNode.size !== 'small'}
@@ -616,9 +618,9 @@ const FlowEditorScreen = ({ route, navigation }) => {
                   setEditingNode(prev => ({ ...prev, size: value }))
                 }
                 buttons={[
-                  { value: 'small', label: '小' },
-                  { value: 'medium', label: '中' },
-                  { value: 'large', label: '大' },
+                  { value: 'small', label: t('sizeSmall') },
+                  { value: 'medium', label: t('sizeMedium') },
+                  { value: 'large', label: t('sizeLarge') },
                 ]}
                 style={styles.sizeSelectionContainer}
               />
@@ -635,13 +637,13 @@ const FlowEditorScreen = ({ route, navigation }) => {
                     { color: getTextColorForBackground(editingNode.color) },
                   ]}
                 >
-                  色を選択
+                  {t('selectColor')}
                 </Text>
               </TouchableOpacity>
               <View style={styles.buttonContainer}>
-                <Button title="保存" onPress={handleSaveEditingNode} />
+                <Button title={t('save')} onPress={handleSaveEditingNode} />
                 <Button
-                  title="キャンセル"
+                  title={t('cancel')}
                   onPress={() => setEditingNode(null)}
                   color="gray"
                 />
@@ -686,7 +688,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
                     '#6B7280',
                     '#FFFFFF',
                   ]}
-                  title={"カードの色を選択"}
+                  title={t('selectCardColor')}
                   icon={<Text>✔</Text>}
                 />
               </View>
