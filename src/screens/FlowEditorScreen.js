@@ -10,6 +10,9 @@ import {
   Modal,
   TouchableOpacity,
   Text,
+  Image,
+  PermissionsAndroid,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Canvas, Path, Group, useFonts } from '@shopify/react-native-skia';
@@ -20,13 +23,18 @@ import Animated, {
   useDerivedValue,
   withTiming,
 } from 'react-native-reanimated';
-import { updateFlow, getFlows } from '../db';
+import { updateFlow, getFlows, getAttachmentByNodeId, insertAttachment, deleteAttachment } from '../db';
+import DocumentPicker from '@react-native-documents/picker';
+import RNFS from 'react-native-fs';
+import { createThumbnail } from 'react-native-create-thumbnail';
+import { Linking } from 'react-native';
 import {
   Divider,
   FAB,
   Provider as PaperProvider,
   SegmentedButtons,
-} from 'react-native-paper';
+}
+from 'react-native-paper';
 import OriginalTheme from './OriginalTheme';
 import SkiaCard from '../components/Card';
 import {
@@ -42,6 +50,7 @@ import ColorPalette from 'react-native-color-palette';
 import { useTranslation } from 'react-i18next';
 
 const { width, height } = Dimensions.get('window');
+const ATTACHMENT_DIR = `${RNFS.DocumentDirectoryPath}/attachments`;
 
 const getTextColorForBackground = hexColor => {
   if (!hexColor) return 'black';
@@ -51,6 +60,43 @@ const getTextColorForBackground = hexColor => {
   const b = parseInt(color.substring(4, 6), 16);
   const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
   return luminance > 186 ? 'black' : 'white';
+};
+
+const requestStoragePermission = async () => {
+  if (Platform.OS !== 'android') {
+    return true;
+  }
+
+  try {
+    let permissionsToRequest;
+    if (Platform.Version >= 33) {
+      permissionsToRequest = [
+        PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
+        PermissionsAndroid.PERMISSIONS.READ_MEDIA_VIDEO,
+      ];
+    } else {
+      permissionsToRequest = [PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE];
+    }
+
+    const statuses = await PermissionsAndroid.requestMultiple(permissionsToRequest);
+    
+    const allGranted = Object.values(statuses).every(
+      status => status === PermissionsAndroid.RESULTS.GRANTED
+    );
+
+    if (allGranted) {
+      return true;
+    } else {
+      Alert.alert(
+        'Permission Denied',
+        'Storage permission is required to attach files.',
+      );
+      return false;
+    }
+  } catch (err) {
+    console.warn(err);
+    return false;
+  }
 };
 
 const FlowEditorScreen = ({ route, navigation }) => {
@@ -101,6 +147,13 @@ const FlowEditorScreen = ({ route, navigation }) => {
       require('../../assets/fonts/Noto_Sans_SC/static/NotoSansSC-Bold.ttf'),
     ],
   });
+
+  useEffect(() => {
+    const ensureDirExists = async () => {
+      await RNFS.mkdir(ATTACHMENT_DIR);
+    };
+    ensureDirExists();
+  }, []);
 
   useEffect(() => {
     const loadPosition = async () => {
@@ -188,7 +241,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
         .find(node => isPointInCard(node, worldX, worldY));
       if (hitNode && !isSeeThrough) {
         activeNodeId.value = hitNode.id;
-        dragStartOffset.value = {
+        dragStartOffset.value = { 
           x: worldX - hitNode.position.x,
           y: worldY - hitNode.position.y,
         };
@@ -342,6 +395,30 @@ const FlowEditorScreen = ({ route, navigation }) => {
     }
   });
 
+  const handleNodeLongPress = async hitNode => {
+    try {
+      const attachment = await getAttachmentByNodeId(hitNode.id);
+      setEditingNode({
+        id: hitNode.id,
+        title: hitNode.data.label,
+        description: hitNode.data.description,
+        size: hitNode.data.size || 'medium',
+        color: hitNode.data.color || '#FFFFFF',
+        attachment: attachment,
+      });
+    } catch (e) {
+      console.error('Failed to fetch attachment', e);
+      setEditingNode({
+        id: hitNode.id,
+        title: hitNode.data.label,
+        description: hitNode.data.description,
+        size: hitNode.data.size || 'medium',
+        color: hitNode.data.color || '#FFFFFF',
+        attachment: null,
+      });
+    }
+  };
+
   const longPressGesture = Gesture.LongPress()
     .minDuration(800)
     .onStart(event => {
@@ -353,13 +430,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
         .reverse()
         .find(node => isPointInCard(node, worldX, worldY));
       if (hitNode) {
-        runOnJS(setEditingNode)({
-          id: hitNode.id,
-          title: hitNode.data.label,
-          description: hitNode.data.description,
-          size: hitNode.data.size || 'medium',
-          color: hitNode.data.color || '#FFFFFF',
-        });
+        runOnJS(handleNodeLongPress)(hitNode);
       }
     });
 
@@ -450,15 +521,108 @@ const FlowEditorScreen = ({ route, navigation }) => {
     });
   };
 
-  const handleSaveEditingNode = () => {
-    if (editingNode) {
+  const handleAttachFile = async () => {
+    const hasPermission = await requestStoragePermission();
+    if (!hasPermission) return;
+
+    try {
+      const res = await DocumentPicker.pickSingle({
+        type: [DocumentPicker.types.allFiles],
+      });
+
+      const originalUri = res.uri;
+      const fileName = res.name;
+      const fileType = res.type;
+
+      const uniqueFileName = `${Date.now()}-${fileName}`;
+      const storedPath = `${ATTACHMENT_DIR}/${uniqueFileName}`;
+
+      await RNFS.copyFile(originalUri, storedPath);
+
+      let thumbnailPath = null;
+      if (fileType.startsWith('video/')) {
+        const thumbnailRes = await createThumbnail({
+          url: storedPath,
+          timeStamp: 1000, // 1 second
+        });
+        thumbnailPath = thumbnailRes.path;
+      }
+
+      const newAttachment = {
+        node_id: editingNode.id,
+        filename: fileName,
+        mime_type: fileType,
+        original_uri: originalUri,
+        stored_path: storedPath,
+        thumbnail_path: thumbnailPath,
+      };
+
+      setEditingNode(prev => ({ ...prev, attachment: newAttachment }));
+    } catch (err) {
+      if (DocumentPicker.isCancel(err)) {
+        // User cancelled the picker
+      } else {
+        console.error('Error picking or copying file', err);
+      }
+    }
+  };
+
+  const handleOpenAttachment = () => {
+    if (editingNode?.attachment?.stored_path) {
+      Linking.openURL(`file://${editingNode.attachment.stored_path}`);
+    }
+  };
+
+  const handleRemoveAttachment = async () => {
+    if (!editingNode?.attachment) return;
+
+    const { id, stored_path, thumbnail_path } = editingNode.attachment;
+
+    try {
+      if (stored_path) {
+        const fileExists = await RNFS.exists(stored_path);
+        if (fileExists) {
+          await RNFS.unlink(stored_path);
+        }
+      }
+      if (thumbnail_path) {
+        const thumbExists = await RNFS.exists(thumbnail_path);
+        if (thumbExists) {
+          await RNFS.unlink(thumbnail_path);
+        }
+      }
+
+      setEditingNode(prev => ({ ...prev, attachment: null, attachment_deleted: true }));
+    } catch (err) {
+      console.error('Error removing attachment files', err);
+    }
+  };
+
+
+  const handleSaveEditingNode = async () => {
+    if (!editingNode) return;
+
+    try {
+      // Handle attachment changes first
+      if (editingNode.attachment_deleted && editingNode.attachment?.id) {
+        await deleteAttachment(editingNode.attachment.id);
+      } else if (editingNode.attachment && !editingNode.attachment.id) {
+        // New attachment, insert it
+        await insertAttachment(editingNode.attachment);
+      }
+
+      // Then, update the node data
       const dataToUpdate = {
         title: editingNode.title,
         description: editingNode.description,
         size: editingNode.size,
         color: editingNode.color,
       };
-      handleUpdateNodeData(editingNode.id, dataToUpdate, fontMgr);
+      await handleUpdateNodeData(editingNode.id, dataToUpdate, fontMgr);
+    } catch (err) {
+      console.error('Failed to save node or attachment', err);
+    }
+    finally {
       setEditingNode(null);
     }
   };
@@ -640,6 +804,36 @@ const FlowEditorScreen = ({ route, navigation }) => {
                   {t('selectColor')}
                 </Text>
               </TouchableOpacity>
+
+              <Divider style={{ marginVertical: 10 }} />
+
+              {editingNode.attachment ? (
+                <View style={styles.attachmentContainer}>
+                   <Image
+                    source={{
+                      uri: editingNode.attachment.thumbnail_path
+                        ? `file://${editingNode.attachment.thumbnail_path}`
+                        : `file://${editingNode.attachment.stored_path}`,
+                    }}
+                    style={styles.thumbnail}
+                  />
+                  <Text style={styles.attachmentText} numberOfLines={1}>
+                    {editingNode.attachment.filename}
+                  </Text>
+                  <View style={styles.attachmentButtons}>
+                    <Button title={t('open')} onPress={handleOpenAttachment} />
+                    <Button title={t('remove')} onPress={handleRemoveAttachment} color="red" />
+                  </View>
+                </View>
+              ) : (
+                <Button
+                  title={t('attachFile')}
+                  onPress={handleAttachFile}
+                />
+              )}
+
+              <Divider style={{ marginVertical: 10 }} />
+
               <View style={styles.buttonContainer}>
                 <Button title={t('save')} onPress={handleSaveEditingNode} />
                 <Button
@@ -799,6 +993,24 @@ const styles = StyleSheet.create({
   },
   fabScale: {
     backgroundColor: OriginalTheme.colors.primary,
+  },
+  attachmentContainer: {
+    alignItems: 'center',
+  },
+  attachmentText: {
+    marginBottom: 10,
+  },
+  attachmentButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    width: '60%',
+  },
+  thumbnail: {
+    width: 100,
+    height: 100,
+    resizeMode: 'cover',
+    marginBottom: 10,
+    borderRadius: 5,
   },
 });
 

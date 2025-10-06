@@ -11,7 +11,9 @@ import {
   updateEdge,
   insertNode,
   deleteNode,
+  getAttachmentByNodeId,
 } from '../db';
+import RNFS from 'react-native-fs';
 import { doRectsOverlap, getRect, getClosestHandle } from '../utils/flowUtils';
 
 // 3つの固定サイズを定義
@@ -338,7 +340,26 @@ export const useFlowData = (flowId, isSeeThrough, t) => {
     findChildren(nodeId);
 
     try {
-      await Promise.all(Array.from(nodesToRemove).map(id => deleteNode(id)));
+      const deletePromises = Array.from(nodesToRemove).map(async id => {
+        const attachment = await getAttachmentByNodeId(id);
+        if (attachment) {
+          if (attachment.stored_path) {
+            const fileExists = await RNFS.exists(attachment.stored_path);
+            if (fileExists) {
+              await RNFS.unlink(attachment.stored_path);
+            }
+          }
+          if (attachment.thumbnail_path) {
+            const thumbExists = await RNFS.exists(attachment.thumbnail_path);
+            if (thumbExists) {
+              await RNFS.unlink(attachment.thumbnail_path);
+            }
+          }
+        }
+        return deleteNode(id);
+      });
+
+      await Promise.all(deletePromises);
       fetchData();
     } catch (error) {
       console.error('Failed to delete node(s):', error);

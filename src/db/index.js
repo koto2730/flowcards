@@ -1,10 +1,13 @@
 import SQLite from 'react-native-sqlite-storage';
 import * as RNLocalize from 'react-native-localize';
+import RNFS from 'react-native-fs';
 
 const db = SQLite.openDatabase({
   name: 'flowcards.db',
   location: 'default',
 });
+
+const ATTACHMENT_DIR = `${RNFS.DocumentDirectoryPath}/attachments`;
 
 // SQLite.enablePromise(true); // Promiseベースの操作を有効にする場合
 
@@ -303,14 +306,32 @@ export const initDB = lang => {
                 [],
                 () => {
                   tx.executeSql(
-                    'SELECT * FROM flows;',
+                    `CREATE TABLE IF NOT EXISTS attachments (
+                      id INTEGER PRIMARY KEY AUTOINCREMENT,
+                      node_id TEXT NOT NULL,
+                      filename TEXT,
+                      mime_type TEXT,
+                      original_uri TEXT,
+                      stored_path TEXT,
+                      thumbnail_path TEXT,
+                      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                      FOREIGN KEY (node_id) REFERENCES nodes (id) ON DELETE CASCADE
+                    );`,
                     [],
-                    (_, { rows }) => {
-                      if (rows.length === 0) {
-                        insertSampleData(tx, lang).then(resolve).catch(reject);
-                      } else {
-                        resolve();
-                      }
+                    () => {
+                      tx.executeSql(
+                        'SELECT * FROM flows;',
+                        [],
+                        (_, { rows }) => {
+                          if (rows.length === 0) {
+                            insertSampleData(tx, lang).then(resolve).catch(reject);
+                          }
+                          else {
+                            resolve();
+                          }
+                        },
+                        (_, err) => reject(err),
+                      );
                     },
                     (_, err) => reject(err),
                   );
@@ -326,6 +347,22 @@ export const initDB = lang => {
     });
   });
 };
+
+// --- attachments CRUD ---
+export const getAttachmentByNodeId = nodeId =>
+  executeSql('SELECT * FROM attachments WHERE node_id = ?;', [nodeId]).then(({ rows }) =>
+    rows.length > 0 ? rows.raw()[0] : null,
+  );
+
+export const insertAttachment = data => {
+  const keys = Object.keys(data);
+  const values = Object.values(data);
+  const placeholders = keys.map(() => '?').join(', ');
+  return executeSql(`INSERT INTO attachments (${keys.join(', ')}) VALUES (${placeholders});`, values);
+};
+
+export const deleteAttachment = id => executeSql('DELETE FROM attachments WHERE id = ?;', [id]);
+
 
 // --- flows CRUD ---
 export const getFlows = (options = {}) => {
@@ -421,32 +458,32 @@ export const deleteEdgesByFlowId = flowId =>
 // DB初期化（全テーブル削除＆再作成）
 export const resetDB = lang => {
   return new Promise((resolve, reject) => {
-    db.transaction(tx => {
-      // テーブル削除
-      tx.executeSql(
-        'DROP TABLE IF EXISTS edges;',
-        [],
-        () => {
-          tx.executeSql(
-            'DROP TABLE IF EXISTS nodes;',
-            [],
-            () => {
-              tx.executeSql(
-                'DROP TABLE IF EXISTS flows;',
-                [],
-                () => {
-                  // テーブル再作成
+    // 1. Delete all physical attachment files
+    RNFS.unlink(ATTACHMENT_DIR)
+      .catch(err => {
+        // Ignore if the directory doesn't exist
+        if (err.code === 'ENOENT') {
+          return;
+        }
+        throw err;
+      })
+      .then(() => RNFS.mkdir(ATTACHMENT_DIR)) // Recreate the directory
+      .then(() => {
+        // 2. Drop all tables
+        db.transaction(tx => {
+          tx.executeSql('DROP TABLE IF EXISTS attachments;', [], () => {
+            tx.executeSql('DROP TABLE IF EXISTS edges;', [], () => {
+              tx.executeSql('DROP TABLE IF EXISTS nodes;', [], () => {
+                tx.executeSql('DROP TABLE IF EXISTS flows;', [], () => {
+                  // 3. Re-initialize the schema and sample data
                   initDB(lang).then(resolve).catch(reject);
-                },
-                (_, err) => reject(err),
-              );
-            },
-            (_, err) => reject(err),
-          );
-        },
-        (_, err) => reject(err),
-      );
-    });
+                }, (_, err) => reject(err));
+              }, (_, err) => reject(err));
+            }, (_, err) => reject(err));
+          }, (_, err) => reject(err));
+        });
+      })
+      .catch(reject);
   });
 };
 
