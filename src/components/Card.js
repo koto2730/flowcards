@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { Platform } from 'react-native';
 import {
   Skia,
   Group,
@@ -9,11 +10,14 @@ import {
   Paragraph,
   TextAlign,
   FontWeight,
+  useImage,
+  Image,
+  useFont,
 } from '@shopify/react-native-skia';
 
 const CARD_MIN_WIDTH = 150;
 
-const SkiaCard = ({ 
+const SkiaCard = ({
   node,
   fontMgr,
   isSelected,
@@ -21,6 +25,7 @@ const SkiaCard = ({
   isLinkSource,
   isEditing,
   isSeeThroughParent,
+  showAttachment,
 }) => {
   const cardColor = isSelected ? '#E3F2FD' : node.color || 'white';
   const borderColor = isLinkSource ? '#34C759' : '#ddd';
@@ -54,6 +59,42 @@ const SkiaCard = ({
   const cardSize = node.data.size || 'medium';
   const layoutWidth = (node.size.width || CARD_MIN_WIDTH) - marginRow * 2;
 
+  const attachmentImage = useImage(
+    node.attachment?.thumbnail_path ||
+      (node.attachment?.mime_type?.startsWith('image/') &&
+        node.attachment?.stored_path)
+      ? `file://${
+          node.attachment.thumbnail_path || node.attachment.stored_path
+        }`
+      : null,
+  );
+
+  const iconFont = useFont(
+    Platform.OS === 'ios'
+      ? require('../../ios/Fonts/MaterialCommunityIcons.ttf')
+      : 'MaterialCommunityIcons',
+    24,
+  );
+
+  const attachmentIconPath = useMemo(() => {
+    if (!iconFont || !node.attachment) return null;
+    let iconChar;
+    if (node.attachment.mime_type === 'text/url') {
+      iconChar = String.fromCodePoint(0xf033b); // link-variant
+    } else {
+      iconChar = String.fromCodePoint(0xf021a); // file-outline
+    }
+    const path = iconFont.getPath(iconChar, 0, 0);
+    if (path) {
+      const bounds = path.getBounds();
+      const scale = 24 / bounds.height;
+      const matrix = Skia.Matrix();
+      matrix.preScale(scale, scale);
+      path.transform(matrix);
+    }
+    return path;
+  }, [iconFont, node.attachment]);
+
   const cardParagraph = useMemo(() => {
     if (!fontMgr) {
       return null;
@@ -76,9 +117,10 @@ const SkiaCard = ({
       fontSize: 14,
     };
 
-    const builder = Skia.ParagraphBuilder.Make(paragraphStyle, fontMgr).pushStyle(
-      titleStyle,
-    );
+    const builder = Skia.ParagraphBuilder.Make(
+      paragraphStyle,
+      fontMgr,
+    ).pushStyle(titleStyle);
     builder.addText(node.data.label ?? '');
     builder.pop();
 
@@ -88,7 +130,8 @@ const SkiaCard = ({
         descriptionText = descriptionText.substring(0, 8) + '...';
       }
       builder.pushStyle(descriptionStyle);
-      builder.addText(`\n${descriptionText}`);
+      builder.addText(`
+${descriptionText}`);
       builder.pop();
     }
 
@@ -107,9 +150,43 @@ const SkiaCard = ({
 
   const titleY = node.position.y + marginRow;
 
+  const renderAttachment = () => {
+    if (!showAttachment || !node.attachment) return null;
+
+    const ICON_SIZE = 24;
+    const PADDING = 5;
+    const x = node.position.x + node.size.width - ICON_SIZE - PADDING;
+    const y = node.position.y + node.size.height - ICON_SIZE - PADDING;
+
+    if (attachmentImage) {
+      return (
+        <Image
+          image={attachmentImage}
+          x={x}
+          y={y}
+          width={ICON_SIZE}
+          height={ICON_SIZE}
+          fit="cover"
+        />
+      );
+    }
+
+    if (attachmentIconPath) {
+      const transform = [
+        { translateX: x },
+        { translateY: y + ICON_SIZE - PADDING },
+      ];
+      return (
+        <Path path={attachmentIconPath} color="#666" transform={transform} />
+      );
+    }
+
+    return null;
+  };
+
   return (
-    <Group opacity={isEditing ? 0.5 : 1.0}> 
-      <Rect 
+    <Group opacity={isEditing ? 0.5 : 1.0}>
+      <Rect
         x={node.position.x}
         y={node.position.y}
         width={node.size.width}
@@ -117,7 +194,7 @@ const SkiaCard = ({
         color={cardColor}
       />
       {isSeeThroughParent ? (
-        <Path 
+        <Path
           path={borderPath}
           style="stroke"
           strokeWidth={2}
@@ -126,7 +203,7 @@ const SkiaCard = ({
           <DashPathEffect intervals={[4, 4]} />
         </Path>
       ) : (
-        <Rect 
+        <Rect
           x={node.position.x}
           y={node.position.y}
           width={node.size.width}
@@ -137,15 +214,16 @@ const SkiaCard = ({
         />
       )}
       {cardParagraph && (
-        <Paragraph 
+        <Paragraph
           paragraph={cardParagraph}
           x={node.position.x + marginRow}
           y={titleY}
           width={layoutWidth}
         />
       )}
+      {renderAttachment()}
       <Group>
-        <Circle 
+        <Circle
           cx={deleteButtonX}
           cy={deleteButtonY}
           r={deleteButtonRadius}

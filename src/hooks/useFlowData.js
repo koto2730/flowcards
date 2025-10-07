@@ -38,6 +38,15 @@ export const useFlowData = (flowId, isSeeThrough, t) => {
       const nodesData = await getNodes(flowId);
       const edgesData = await getEdges(flowId);
 
+      const attachmentPromises = nodesData.map(n => getAttachmentByNodeId(n.id));
+      const attachments = await Promise.all(attachmentPromises);
+      const attachmentsMap = attachments.reduce((acc, att) => {
+        if (att) {
+          acc[att.node_id] = att;
+        }
+        return acc;
+      }, {});
+
       const formattedNodes = Array.isArray(nodesData)
         ? nodesData.map(n => {
             let size = 'medium'; // デフォルト
@@ -65,6 +74,7 @@ export const useFlowData = (flowId, isSeeThrough, t) => {
               position: { x: n.x, y: n.y },
               size: { width: n.width, height: n.height },
               color: n.color ?? '#FFFFFF',
+              attachment: attachmentsMap[n.id] || null,
             };
           })
         : [];

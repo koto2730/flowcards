@@ -23,8 +23,14 @@ import Animated, {
   useDerivedValue,
   withTiming,
 } from 'react-native-reanimated';
-import { updateFlow, getFlows, getAttachmentByNodeId, insertAttachment, deleteAttachment } from '../db';
-import DocumentPicker from '@react-native-documents/picker';
+import {
+  updateFlow,
+  getFlows,
+  getAttachmentByNodeId,
+  insertAttachment,
+  deleteAttachment,
+} from '../db';
+import { pick, types, isCancel } from '@react-native-documents/picker';
 import RNFS from 'react-native-fs';
 import { createThumbnail } from 'react-native-create-thumbnail';
 import { Linking } from 'react-native';
@@ -33,8 +39,8 @@ import {
   FAB,
   Provider as PaperProvider,
   SegmentedButtons,
-}
-from 'react-native-paper';
+  Icon,
+} from 'react-native-paper';
 import OriginalTheme from './OriginalTheme';
 import SkiaCard from '../components/Card';
 import {
@@ -75,13 +81,17 @@ const requestStoragePermission = async () => {
         PermissionsAndroid.PERMISSIONS.READ_MEDIA_VIDEO,
       ];
     } else {
-      permissionsToRequest = [PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE];
+      permissionsToRequest = [
+        PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
+      ];
     }
 
-    const statuses = await PermissionsAndroid.requestMultiple(permissionsToRequest);
-    
+    const statuses = await PermissionsAndroid.requestMultiple(
+      permissionsToRequest,
+    );
+
     const allGranted = Object.values(statuses).every(
-      status => status === PermissionsAndroid.RESULTS.GRANTED
+      status => status === PermissionsAndroid.RESULTS.GRANTED,
     );
 
     if (allGranted) {
@@ -122,6 +132,9 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
   const [editingNode, setEditingNode] = useState(null);
   const [colorPickerVisible, setColorPickerVisible] = useState(false);
+  const [urlInputVisible, setUrlInputVisible] = useState(false);
+  const [attachmentUrl, setAttachmentUrl] = useState('');
+  const [showAttachmentsOnCanvas, setShowAttachmentsOnCanvas] = useState(false);
 
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
@@ -241,7 +254,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
         .find(node => isPointInCard(node, worldX, worldY));
       if (hitNode && !isSeeThrough) {
         activeNodeId.value = hitNode.id;
-        dragStartOffset.value = { 
+        dragStartOffset.value = {
           x: worldX - hitNode.position.x,
           y: worldY - hitNode.position.y,
         };
@@ -279,8 +292,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
           extra: { newPosition: nodePosition.value },
         });
         activeNodeId.value = null;
-      }
-      else {
+      } else {
         savedTranslateX.value = translateX.value;
         savedTranslateY.value = translateY.value;
       }
@@ -526,40 +538,44 @@ const FlowEditorScreen = ({ route, navigation }) => {
     if (!hasPermission) return;
 
     try {
-      const res = await DocumentPicker.pickSingle({
-        type: [DocumentPicker.types.allFiles],
+      const result = await pick({
+        type: [types.allFiles],
+        allowMultiSelection: false,
       });
 
-      const originalUri = res.uri;
-      const fileName = res.name;
-      const fileType = res.type;
+      if (result && result.length > 0) {
+        const res = result[0];
+        const originalUri = res.uri;
+        const fileName = res.name;
+        const fileType = res.type;
 
-      const uniqueFileName = `${Date.now()}-${fileName}`;
-      const storedPath = `${ATTACHMENT_DIR}/${uniqueFileName}`;
+        const uniqueFileName = `${Date.now()}-${fileName}`;
+        const storedPath = `${ATTACHMENT_DIR}/${uniqueFileName}`;
 
-      await RNFS.copyFile(originalUri, storedPath);
+        await RNFS.copyFile(originalUri, storedPath);
 
-      let thumbnailPath = null;
-      if (fileType.startsWith('video/')) {
-        const thumbnailRes = await createThumbnail({
-          url: storedPath,
-          timeStamp: 1000, // 1 second
-        });
-        thumbnailPath = thumbnailRes.path;
+        let thumbnailPath = null;
+        if (fileType.startsWith('video/')) {
+          const thumbnailRes = await createThumbnail({
+            url: storedPath,
+            timeStamp: 1000, // 1 second
+          });
+          thumbnailPath = thumbnailRes.path;
+        }
+
+        const newAttachment = {
+          node_id: editingNode.id,
+          filename: fileName,
+          mime_type: fileType,
+          original_uri: originalUri,
+          stored_path: storedPath,
+          thumbnail_path: thumbnailPath,
+        };
+
+        setEditingNode(prev => ({ ...prev, attachment: newAttachment }));
       }
-
-      const newAttachment = {
-        node_id: editingNode.id,
-        filename: fileName,
-        mime_type: fileType,
-        original_uri: originalUri,
-        stored_path: storedPath,
-        thumbnail_path: thumbnailPath,
-      };
-
-      setEditingNode(prev => ({ ...prev, attachment: newAttachment }));
     } catch (err) {
-      if (DocumentPicker.isCancel(err)) {
+      if (isCancel(err)) {
         // User cancelled the picker
       } else {
         console.error('Error picking or copying file', err);
@@ -567,16 +583,57 @@ const FlowEditorScreen = ({ route, navigation }) => {
     }
   };
 
+  const handleSaveUrlAttachment = () => {
+    if (
+      !attachmentUrl ||
+      (!attachmentUrl.startsWith('http://') &&
+        !attachmentUrl.startsWith('https://'))
+    ) {
+      Alert.alert(t('invalidUrl'), t('invalidUrlMessage'));
+      return;
+    }
+
+    const newAttachment = {
+      node_id: editingNode.id,
+      filename: attachmentUrl,
+      mime_type: 'text/url',
+      original_uri: attachmentUrl,
+      stored_path: null,
+      thumbnail_path: null,
+    };
+
+    setEditingNode(prev => ({ ...prev, attachment: newAttachment }));
+    setUrlInputVisible(false);
+    setAttachmentUrl('');
+  };
+
   const handleOpenAttachment = () => {
-    if (editingNode?.attachment?.stored_path) {
-      Linking.openURL(`file://${editingNode.attachment.stored_path}`);
+    if (!editingNode?.attachment) return;
+
+    const { mime_type, stored_path, original_uri } = editingNode.attachment;
+
+    if (mime_type === 'text/url' && original_uri) {
+      Linking.openURL(original_uri).catch(err => {
+        console.error('Failed to open URL', err);
+        Alert.alert('Error', 'Could not open the URL.');
+      });
+    } else if (stored_path) {
+      const url = `file://${stored_path}`;
+      console.log(`Attempting to open attachment: ${url}`);
+      Linking.openURL(url).catch(err => {
+        console.error('Failed to open attachment', err);
+        Alert.alert(
+          'Error',
+          'Could not open the attachment. The file might be corrupted or not supported on the simulator.',
+        );
+      });
     }
   };
 
   const handleRemoveAttachment = async () => {
     if (!editingNode?.attachment) return;
 
-    const { id, stored_path, thumbnail_path } = editingNode.attachment;
+    const { stored_path, thumbnail_path } = editingNode.attachment;
 
     try {
       if (stored_path) {
@@ -592,20 +649,24 @@ const FlowEditorScreen = ({ route, navigation }) => {
         }
       }
 
-      setEditingNode(prev => ({ ...prev, attachment: null, attachment_deleted: true }));
+      setEditingNode(prev => ({
+        ...prev,
+        attachment: null,
+        attachment_deleted: true,
+        deleted_attachment_id: prev.attachment.id,
+      }));
     } catch (err) {
       console.error('Error removing attachment files', err);
     }
   };
-
 
   const handleSaveEditingNode = async () => {
     if (!editingNode) return;
 
     try {
       // Handle attachment changes first
-      if (editingNode.attachment_deleted && editingNode.attachment?.id) {
-        await deleteAttachment(editingNode.attachment.id);
+      if (editingNode.attachment_deleted && editingNode.deleted_attachment_id) {
+        await deleteAttachment(editingNode.deleted_attachment_id);
       } else if (editingNode.attachment && !editingNode.attachment.id) {
         // New attachment, insert it
         await insertAttachment(editingNode.attachment);
@@ -621,8 +682,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
       await handleUpdateNodeData(editingNode.id, dataToUpdate, fontMgr);
     } catch (err) {
       console.error('Failed to save node or attachment', err);
-    }
-    finally {
+    } finally {
       setEditingNode(null);
     }
   };
@@ -680,53 +740,65 @@ const FlowEditorScreen = ({ route, navigation }) => {
         edges={['bottom', 'left', 'right']}
       >
         <View pointerEvents="box-none" style={styles.fabContainer} zIndex={100}>
-          <FAB
-            icon="magnify"
-            style={[styles.fab, styles.fabScale]}
-            small
-            onPress={() => runOnJS(resetScale)()}
-          />
-          <FAB
-            icon="target"
-            style={[styles.fab, styles.fabMove]}
-            onPress={() => runOnJS(moveToNearestCard)()}
-            small
-            visible={true}
-          />
-          <Divider style={{ height: 32, marginHorizontal: 4 }} />
-          <FAB
-            icon={isSeeThrough ? 'eye-off' : 'eye'}
-            style={[styles.fab, styles.fabEye]}
-            onPress={() => setIsSeeThrough(s => !s)}
-            disabled={linkingState.active}
-            small
-            visible={true}
-          />
-          <FAB
-            icon="arrow-up-bold"
-            style={[styles.fab, styles.fabTop]}
-            onPress={handlePressSectionUp}
-            disabled={fabDisabled}
-            small
-            visible={true}
-          />
-          <FAB
-            icon="link-variant"
-            style={[styles.fab, styles.fabMiddle]}
-            onPress={toggleLinkingMode}
-            color={linkingState.active ? '#34C759' : undefined}
-            disabled={isSeeThrough}
-            small
-            visible={true}
-          />
-          <FAB
-            icon="plus"
-            style={[styles.fab, styles.fabBottom]}
-            onPress={handleAddNode}
-            disabled={fabDisabled}
-            small
-            visible={true}
-          />
+          <View style={styles.fabRow}>
+            <FAB
+              icon="arrow-up-bold"
+              style={[styles.fab, styles.fabTop]}
+              onPress={handlePressSectionUp}
+              disabled={fabDisabled}
+              small
+              visible={true}
+            />
+            <FAB
+              icon="link-variant"
+              style={[styles.fab, styles.fabMiddle]}
+              onPress={toggleLinkingMode}
+              color={linkingState.active ? '#34C759' : undefined}
+              disabled={isSeeThrough}
+              small
+              visible={true}
+            />
+            <FAB
+              icon="plus"
+              style={[styles.fab, styles.fabBottom]}
+              onPress={handleAddNode}
+              disabled={fabDisabled}
+              small
+              visible={true}
+            />
+          </View>
+          <View style={styles.fabRow}>
+            <FAB
+              icon="magnify"
+              style={[styles.fab, styles.fabScale]}
+              small
+              onPress={() => runOnJS(resetScale)()}
+            />
+            <FAB
+              icon="target"
+              style={[styles.fab, styles.fabMove]}
+              onPress={() => runOnJS(moveToNearestCard)()}
+              small
+              visible={true}
+            />
+            <Divider style={{ height: 32, marginHorizontal: 4 }} />
+            <FAB
+              icon="paperclip"
+              style={[styles.fab, styles.fabEye]}
+              onPress={() => setShowAttachmentsOnCanvas(s => !s)}
+              color={showAttachmentsOnCanvas ? '#34C759' : undefined}
+              small
+              visible={true}
+            />
+            <FAB
+              icon={isSeeThrough ? 'eye-off' : 'eye'}
+              style={[styles.fab, styles.fabEye]}
+              onPress={() => setIsSeeThrough(s => !s)}
+              disabled={linkingState.active}
+              small
+              visible={true}
+            />
+          </View>
         </View>
         <GestureDetector gesture={composedGesture}>
           <View style={styles.flowArea}>
@@ -742,6 +814,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
                     isLinkSource={linkingState.sourceNodeId === node.id}
                     isEditing={editingNode && editingNode.id === node.id}
                     isSeeThroughParent={node.isSeeThroughParent}
+                    showAttachment={showAttachmentsOnCanvas}
                   />
                 ))}
                 {renderEdges()}
@@ -809,27 +882,38 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
               {editingNode.attachment ? (
                 <View style={styles.attachmentContainer}>
-                   <Image
-                    source={{
-                      uri: editingNode.attachment.thumbnail_path
-                        ? `file://${editingNode.attachment.thumbnail_path}`
-                        : `file://${editingNode.attachment.stored_path}`,
-                    }}
-                    style={styles.thumbnail}
-                  />
+                  {editingNode.attachment.mime_type === 'text/url' ? (
+                    <Icon source="link-variant" size={80} />
+                  ) : (
+                    <Image
+                      source={{
+                        uri: editingNode.attachment.thumbnail_path
+                          ? `file://${editingNode.attachment.thumbnail_path}`
+                          : `file://${editingNode.attachment.stored_path}`,
+                      }}
+                      style={styles.thumbnail}
+                    />
+                  )}
                   <Text style={styles.attachmentText} numberOfLines={1}>
                     {editingNode.attachment.filename}
                   </Text>
                   <View style={styles.attachmentButtons}>
                     <Button title={t('open')} onPress={handleOpenAttachment} />
-                    <Button title={t('remove')} onPress={handleRemoveAttachment} color="red" />
+                    <Button
+                      title={t('remove')}
+                      onPress={handleRemoveAttachment}
+                      color="red"
+                    />
                   </View>
                 </View>
               ) : (
-                <Button
-                  title={t('attachFile')}
-                  onPress={handleAttachFile}
-                />
+                <View style={styles.attachButtonsContainer}>
+                  <Button title={t('attachFile')} onPress={handleAttachFile} />
+                  <Button
+                    title={t('attachUrl')}
+                    onPress={() => setUrlInputVisible(true)}
+                  />
+                </View>
               )}
 
               <Divider style={{ marginVertical: 10 }} />
@@ -889,6 +973,37 @@ const FlowEditorScreen = ({ route, navigation }) => {
             </View>
           </Modal>
         )}
+        {urlInputVisible && (
+          <Modal
+            transparent={true}
+            animationType="fade"
+            visible={urlInputVisible}
+            onRequestClose={() => setUrlInputVisible(false)}
+          >
+            <View style={styles.colorPickerOverlay}>
+              <View style={styles.editingContainer}>
+                <TextInput
+                  value={attachmentUrl}
+                  onChangeText={setAttachmentUrl}
+                  style={styles.input}
+                  placeholder="https://example.com"
+                  autoFocus
+                />
+                <View style={styles.buttonContainer}>
+                  <Button title={t('save')} onPress={handleSaveUrlAttachment} />
+                  <Button
+                    title={t('cancel')}
+                    onPress={() => {
+                      setUrlInputVisible(false);
+                      setAttachmentUrl('');
+                    }}
+                    color="gray"
+                  />
+                </View>
+              </View>
+            </View>
+          </Modal>
+        )}
       </SafeAreaView>
     </PaperProvider>
   );
@@ -905,9 +1020,12 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 16,
     right: 16,
+    paddingBottom: 16,
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'flex-end',
     alignItems: 'center',
+    maxWidth: '100%',
   },
   fab: {
     marginHorizontal: 4,
@@ -998,12 +1116,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   attachmentText: {
+    marginTop: 8,
     marginBottom: 10,
   },
   attachmentButtons: {
     flexDirection: 'row',
     justifyContent: 'space-around',
     width: '60%',
+  },
+  attachButtonsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
   },
   thumbnail: {
     width: 100,
