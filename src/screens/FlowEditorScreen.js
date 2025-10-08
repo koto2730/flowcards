@@ -54,6 +54,7 @@ import {
 import { useFlowData } from '../hooks/useFlowData';
 import ColorPalette from 'react-native-color-palette';
 import { useTranslation } from 'react-i18next';
+import { getLinkPreview } from 'link-preview-js';
 
 const { width, height } = Dimensions.get('window');
 const ATTACHMENT_DIR = `${RNFS.DocumentDirectoryPath}/attachments`;
@@ -583,7 +584,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
     }
   };
 
-  const handleSaveUrlAttachment = () => {
+  const handleSaveUrlAttachment = async () => {
     if (
       !attachmentUrl ||
       (!attachmentUrl.startsWith('http://') &&
@@ -593,18 +594,56 @@ const FlowEditorScreen = ({ route, navigation }) => {
       return;
     }
 
-    const newAttachment = {
-      node_id: editingNode.id,
-      filename: attachmentUrl,
-      mime_type: 'text/url',
-      original_uri: attachmentUrl,
-      stored_path: null,
-      thumbnail_path: null,
-    };
+    try {
+      const previewData = await getLinkPreview(attachmentUrl);
+      let thumbnail_path = null;
+      let preview_image_url = null;
 
-    setEditingNode(prev => ({ ...prev, attachment: newAttachment }));
-    setUrlInputVisible(false);
-    setAttachmentUrl('');
+      if (previewData.images && previewData.images.length > 0) {
+        const imageUrl = previewData.images[0];
+        preview_image_url = imageUrl;
+        // Basic extension extraction, might not be perfect
+        const fileExtension = (imageUrl.split('.').pop() || 'jpg').split('?')[0];
+        const localPath = `${ATTACHMENT_DIR}/${Date.now()}.${fileExtension}`;
+
+        const download = RNFS.downloadFile({
+          fromUrl: imageUrl,
+          toFile: localPath,
+        });
+
+        await download.promise;
+        thumbnail_path = localPath;
+      }
+
+      const newAttachment = {
+        node_id: editingNode.id,
+        filename: previewData.title || attachmentUrl,
+        mime_type: 'text/url',
+        original_uri: attachmentUrl,
+        stored_path: null,
+        thumbnail_path: thumbnail_path,
+        preview_title: previewData.title,
+        preview_description: previewData.description,
+        preview_image_url: preview_image_url,
+      };
+
+      setEditingNode(prev => ({ ...prev, attachment: newAttachment }));
+    } catch (error) {
+      console.error('Could not get link preview', error);
+      // Fallback to saving just the URL
+      const newAttachment = {
+        node_id: editingNode.id,
+        filename: attachmentUrl,
+        mime_type: 'text/url',
+        original_uri: attachmentUrl,
+        stored_path: null,
+        thumbnail_path: null,
+      };
+      setEditingNode(prev => ({ ...prev, attachment: newAttachment }));
+    } finally {
+      setUrlInputVisible(false);
+      setAttachmentUrl('');
+    }
   };
 
   const handleOpenAttachment = () => {
@@ -739,65 +778,81 @@ const FlowEditorScreen = ({ route, navigation }) => {
         style={styles.container}
         edges={['bottom', 'left', 'right']}
       >
-        <View pointerEvents="box-none" style={styles.fabContainer} zIndex={100}>
-          <View style={styles.fabRow}>
-            <FAB
-              icon="arrow-up-bold"
-              style={[styles.fab, styles.fabTop]}
-              onPress={handlePressSectionUp}
-              disabled={fabDisabled}
-              small
-              visible={true}
-            />
-            <FAB
-              icon="link-variant"
-              style={[styles.fab, styles.fabMiddle]}
-              onPress={toggleLinkingMode}
-              color={linkingState.active ? '#34C759' : undefined}
-              disabled={isSeeThrough}
-              small
-              visible={true}
-            />
-            <FAB
-              icon="plus"
-              style={[styles.fab, styles.fabBottom]}
-              onPress={handleAddNode}
-              disabled={fabDisabled}
-              small
-              visible={true}
-            />
-          </View>
-          <View style={styles.fabRow}>
+        <View pointerEvents="box-none" style={styles.fabRootContainer} zIndex={100}>
+          {/* Global Group (Bottom Left) */}
+          <View style={styles.fabGroup}>
+            {/* 6: Reset Zoom */}
             <FAB
               icon="magnify"
-              style={[styles.fab, styles.fabScale]}
+              style={styles.fab}
               small
               onPress={() => runOnJS(resetScale)()}
             />
+            {/* 7: Pan/Move mode */}
             <FAB
               icon="target"
-              style={[styles.fab, styles.fabMove]}
+              style={styles.fab}
               onPress={() => runOnJS(moveToNearestCard)()}
               small
               visible={true}
             />
-            <Divider style={{ height: 32, marginHorizontal: 4 }} />
-            <FAB
-              icon="paperclip"
-              style={[styles.fab, styles.fabEye]}
-              onPress={() => setShowAttachmentsOnCanvas(s => !s)}
-              color={showAttachmentsOnCanvas ? '#34C759' : undefined}
-              small
-              visible={true}
-            />
-            <FAB
-              icon={isSeeThrough ? 'eye-off' : 'eye'}
-              style={[styles.fab, styles.fabEye]}
-              onPress={() => setIsSeeThrough(s => !s)}
-              disabled={linkingState.active}
-              small
-              visible={true}
-            />
+          </View>
+
+          {/* Right Groups */}
+          <View style={styles.fabRightColumn}>
+            {/* Reference Group (Top Right) */}
+            <View style={[styles.fabGroup, { marginBottom: 8 }]}>
+              {/* 4: Show Attachments */}
+              <FAB
+                icon="paperclip"
+                style={styles.fab}
+                onPress={() => setShowAttachmentsOnCanvas(s => !s)}
+                color={showAttachmentsOnCanvas ? '#34C759' : undefined}
+                small
+                visible={true}
+              />
+              {/* 5: See-through Mode */}
+              <FAB
+                icon={isSeeThrough ? 'eye-off' : 'eye'}
+                style={styles.fab}
+                onPress={() => setIsSeeThrough(s => !s)}
+                disabled={linkingState.active}
+                small
+                visible={true}
+              />
+            </View>
+
+            {/* Edit Group (Bottom Right) */}
+            <View style={styles.fabGroup}>
+              {/* 3: Section Up */}
+              <FAB
+                icon="arrow-up-bold"
+                style={styles.fab}
+                onPress={handlePressSectionUp}
+                disabled={fabDisabled}
+                small
+                visible={true}
+              />
+              {/* 2: Link Line Mode */}
+              <FAB
+                icon="link-variant"
+                style={styles.fab}
+                onPress={toggleLinkingMode}
+                color={linkingState.active ? '#34C759' : undefined}
+                disabled={isSeeThrough}
+                small
+                visible={true}
+              />
+              {/* 1: Add Card */}
+              <FAB
+                icon="plus"
+                style={styles.fab}
+                onPress={handleAddNode}
+                disabled={fabDisabled}
+                small
+                visible={true}
+              />
+            </View>
           </View>
         </View>
         <GestureDetector gesture={composedGesture}>
@@ -1016,30 +1071,27 @@ const styles = StyleSheet.create({
   flowArea: {
     flex: 1,
   },
-  fabContainer: {
+  fabRootContainer: {
     position: 'absolute',
     bottom: 16,
+    left: 16,
     right: 16,
-    paddingBottom: 16,
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    pointerEvents: 'box-none',
+  },
+  fabRightColumn: {
+    flexDirection: 'column',
+    alignItems: 'flex-end',
+  },
+  fabGroup: {
+    flexDirection: 'row',
     alignItems: 'center',
-    maxWidth: '100%',
+    pointerEvents: 'box-none',
   },
   fab: {
     marginHorizontal: 4,
-  },
-  fabEye: {
-    backgroundColor: OriginalTheme.colors.primary,
-  },
-  fabTop: {
-    backgroundColor: OriginalTheme.colors.primary,
-  },
-  fabMiddle: {
-    backgroundColor: OriginalTheme.colors.primary,
-  },
-  fabBottom: {
     backgroundColor: OriginalTheme.colors.primary,
   },
   editingOverlay: {
@@ -1091,13 +1143,6 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 20,
   },
-  bottomLeftControls: {
-    position: 'absolute',
-    bottom: 16,
-    left: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
   scaleIndicatorText: {
     color: 'black',
     fontSize: 12,
@@ -1105,12 +1150,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 5,
-  },
-  fabMove: {
-    backgroundColor: OriginalTheme.colors.primary,
-  },
-  fabScale: {
-    backgroundColor: OriginalTheme.colors.primary,
   },
   attachmentContainer: {
     alignItems: 'center',

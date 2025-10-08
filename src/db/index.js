@@ -319,6 +319,12 @@ export const initDB = lang => {
                     );`,
                     [],
                     () => {
+                      // Run migrations to add columns for link preview.
+                      // Ignore errors if columns already exist.
+                      tx.executeSql('ALTER TABLE attachments ADD COLUMN preview_title TEXT;', [], () => {}, () => {});
+                      tx.executeSql('ALTER TABLE attachments ADD COLUMN preview_description TEXT;', [], () => {}, () => {});
+                      tx.executeSql('ALTER TABLE attachments ADD COLUMN preview_image_url TEXT;', [], () => {}, () => {});
+
                       tx.executeSql(
                         'SELECT * FROM flows;',
                         [],
