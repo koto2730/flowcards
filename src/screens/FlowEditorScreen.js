@@ -941,6 +941,10 @@ const FlowEditorScreen = ({ route, navigation }) => {
                     <Icon source="link-variant" size={80} />
                   ) : (
                     <Image
+                      key={
+                        editingNode.attachment.thumbnail_path ||
+                        editingNode.attachment.stored_path
+                      }
                       source={{
                         uri: editingNode.attachment.thumbnail_path
                           ? `file://${editingNode.attachment.thumbnail_path}`
@@ -1042,6 +1046,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
                   onChangeText={setAttachmentUrl}
                   style={styles.input}
                   placeholder="https://example.com"
+                  autoCapitalize="none"
                   autoFocus
                 />
                 <View style={styles.buttonContainer}>
