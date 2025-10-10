@@ -289,6 +289,10 @@ export const useFlowData = (flowId, isSeeThrough, t) => {
                       height: dbUpdateData.height,
                     },
                     color: newData.color,
+                    attachment:
+                      newData.attachment !== undefined
+                        ? newData.attachment
+                        : node.attachment,
                   }
                 : node,
             )

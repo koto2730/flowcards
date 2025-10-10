@@ -4,13 +4,6 @@ import {
   StyleSheet,
   Dimensions,
   TextInput,
-  Button,
-  KeyboardAvoidingView,
-  Platform,
-  Modal,
-  TouchableOpacity,
-  Text,
-  Image,
   PermissionsAndroid,
   Alert,
 } from 'react-native';
@@ -40,6 +33,12 @@ import {
   Provider as PaperProvider,
   SegmentedButtons,
   Icon,
+  Card,
+  Title,
+  Button,
+  Modal,
+  Portal,
+  Text,
 } from 'react-native-paper';
 import OriginalTheme from './OriginalTheme';
 import SkiaCard from '../components/Card';
@@ -255,10 +254,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
         .find(node => isPointInCard(node, worldX, worldY));
       if (hitNode && !isSeeThrough) {
         activeNodeId.value = hitNode.id;
-        dragStartOffset.value = {
-          x: worldX - hitNode.position.x,
-          y: worldY - hitNode.position.y,
-        };
+        dragStartOffset.value = { x: worldX - hitNode.position.x, y: worldY - hitNode.position.y };
         nodePosition.value = hitNode.position;
       } else {
         activeNodeId.value = null;
@@ -575,7 +571,8 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
         setEditingNode(prev => ({ ...prev, attachment: newAttachment }));
       }
-    } catch (err) {
+    }
+    catch (err) {
       if (isCancel(err)) {
         // User cancelled the picker
       } else {
@@ -703,12 +700,16 @@ const FlowEditorScreen = ({ route, navigation }) => {
     if (!editingNode) return;
 
     try {
+      let finalAttachmentState = editingNode.attachment;
+
       // Handle attachment changes first
       if (editingNode.attachment_deleted && editingNode.deleted_attachment_id) {
         await deleteAttachment(editingNode.deleted_attachment_id);
+        finalAttachmentState = null;
       } else if (editingNode.attachment && !editingNode.attachment.id) {
         // New attachment, insert it
-        await insertAttachment(editingNode.attachment);
+        const result = await insertAttachment(editingNode.attachment);
+        finalAttachmentState = { ...editingNode.attachment, id: result.insertId };
       }
 
       // Then, update the node data
@@ -717,6 +718,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
         description: editingNode.description,
         size: editingNode.size,
         color: editingNode.color,
+        attachment: finalAttachmentState,
       };
       await handleUpdateNodeData(editingNode.id, dataToUpdate, fontMgr);
     } catch (err) {
@@ -882,188 +884,204 @@ const FlowEditorScreen = ({ route, navigation }) => {
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             style={styles.editingOverlay}
           >
-            <View style={styles.editingContainer}>
-              <TextInput
-                value={editingNode.title}
-                onChangeText={text =>
-                  setEditingNode(prev => ({ ...prev, title: text }))
-                }
-                style={styles.input}
-                placeholder={t('title')}
-                autoFocus
-                maxLength={16}
-              />
-              <TextInput
-                value={editingNode.description}
-                onChangeText={text =>
-                  setEditingNode(prev => ({ ...prev, description: text }))
-                }
-                style={styles.input}
-                placeholder={t('description')}
-                multiline
-                maxLength={100}
-                editable={editingNode.size !== 'small'}
-              />
-              <SegmentedButtons
-                value={editingNode.size}
-                onValueChange={value =>
-                  setEditingNode(prev => ({ ...prev, size: value }))
-                }
-                buttons={[
-                  { value: 'small', label: t('sizeSmall') },
-                  { value: 'medium', label: t('sizeMedium') },
-                  { value: 'large', label: t('sizeLarge') },
-                ]}
-                style={styles.sizeSelectionContainer}
-              />
-              <TouchableOpacity
-                style={[
-                  styles.colorButton,
-                  { backgroundColor: editingNode.color },
-                ]}
-                onPress={() => setColorPickerVisible(true)}
-              >
-                <Text
-                  style={[
-                    styles.colorButtonText,
-                    { color: getTextColorForBackground(editingNode.color) },
-                  ]}
-                >
-                  {t('selectColor')}
-                </Text>
-              </TouchableOpacity>
-
-              <Divider style={{ marginVertical: 10 }} />
-
-              {editingNode.attachment ? (
-                <View style={styles.attachmentContainer}>
-                  {editingNode.attachment.mime_type === 'text/url' ? (
-                    <Icon source="link-variant" size={80} />
-                  ) : (
-                    <Image
-                      key={
-                        editingNode.attachment.thumbnail_path ||
-                        editingNode.attachment.stored_path
-                      }
-                      source={{
-                        uri: editingNode.attachment.thumbnail_path
-                          ? `file://${editingNode.attachment.thumbnail_path}`
-                          : `file://${editingNode.attachment.stored_path}`,
-                      }}
-                      style={styles.thumbnail}
-                    />
-                  )}
-                  <Text style={styles.attachmentText} numberOfLines={1}>
-                    {editingNode.attachment.filename}
-                  </Text>
-                  <View style={styles.attachmentButtons}>
-                    <Button title={t('open')} onPress={handleOpenAttachment} />
-                    <Button
-                      title={t('remove')}
-                      onPress={handleRemoveAttachment}
-                      color="red"
-                    />
-                  </View>
-                </View>
-              ) : (
-                <View style={styles.attachButtonsContainer}>
-                  <Button title={t('attachFile')} onPress={handleAttachFile} />
-                  <Button
-                    title={t('attachUrl')}
-                    onPress={() => setUrlInputVisible(true)}
-                  />
-                </View>
-              )}
-
-              <Divider style={{ marginVertical: 10 }} />
-
-              <View style={styles.buttonContainer}>
-                <Button title={t('save')} onPress={handleSaveEditingNode} />
-                <Button
-                  title={t('cancel')}
-                  onPress={() => setEditingNode(null)}
-                  color="gray"
+            <Card style={styles.editingContainer}>
+              <Card.Content>
+                <TextInput
+                  value={editingNode.title}
+                  onChangeText={text =>
+                    setEditingNode(prev => ({ ...prev, title: text }))
+                  }
+                  style={styles.input}
+                  placeholder={t('title')}
+                  autoFocus
+                  maxLength={16}
                 />
-              </View>
-            </View>
+                <TextInput
+                  value={editingNode.description}
+                  onChangeText={text =>
+                    setEditingNode(prev => ({ ...prev, description: text }))
+                  }
+                  style={styles.input}
+                  placeholder={t('description')}
+                  multiline
+                  maxLength={100}
+                  editable={editingNode.size !== 'small'}
+                />
+                <SegmentedButtons
+                  value={editingNode.size}
+                  onValueChange={value =>
+                    setEditingNode(prev => ({ ...prev, size: value }))
+                  }
+                  buttons={[
+                    { value: 'small', label: t('sizeSmall') },
+                    { value: 'medium', label: t('sizeMedium') },
+                    { value: 'large', label: t('sizeLarge') },
+                  ]}
+                  style={styles.sizeSelectionContainer}
+                />
+                <TouchableOpacity
+                  style={[
+                    styles.colorButton,
+                    { backgroundColor: editingNode.color },
+                  ]}
+                  onPress={() => setColorPickerVisible(true)}
+                >
+                  <Text
+                    style={[
+                      styles.colorButtonText,
+                      { color: getTextColorForBackground(editingNode.color) },
+                    ]}
+                  >
+                    {t('selectColor')}
+                  </Text>
+                </TouchableOpacity>
+
+                <Divider style={{ marginVertical: 10 }} />
+
+                {editingNode.attachment ? (
+                  <View style={styles.attachmentContainer}>
+                    {editingNode.attachment.mime_type === 'text/url' ? (
+                      editingNode.attachment.thumbnail_path ? (
+                        <Image
+                          key={editingNode.attachment.thumbnail_path}
+                          source={{
+                            uri: `file://${editingNode.attachment.thumbnail_path}`,
+                          }}
+                          style={styles.thumbnail}
+                        />
+                      ) : (
+                        <Icon source="link-variant" size={80} />
+                      )
+                    ) : (
+                      <Image
+                        key={
+                          editingNode.attachment.thumbnail_path ||
+                          editingNode.attachment.stored_path
+                        }
+                        source={{
+                          uri: editingNode.attachment.thumbnail_path
+                            ? `file://${editingNode.attachment.thumbnail_path}`
+                            : `file://${editingNode.attachment.stored_path}`,
+                        }}
+                        style={styles.thumbnail}
+                      />
+                    )}
+                    <Text style={styles.attachmentText} numberOfLines={1}>
+                      {editingNode.attachment.filename}
+                    </Text>
+                    <View style={styles.attachmentButtons}>
+                      <Button onPress={handleOpenAttachment}>{t('open')}</Button>
+                      <Button
+                        onPress={handleRemoveAttachment}
+                        textColor={OriginalTheme.colors.error}
+                      >
+                        {t('remove')}
+                      </Button>
+                    </View>
+                  </View>
+                ) : (
+                  <View style={styles.attachmentSection}>
+                    <Title style={styles.attachmentTitle}>{t('attach')}</Title>
+                    <View style={styles.attachButtonsContainer}>
+                      <Button
+                        icon="file-document-outline"
+                        mode="outlined"
+                        onPress={handleAttachFile}
+                        style={styles.attachButton}
+                      >
+                        {t('file')}
+                      </Button>
+                      <Button
+                        icon="web"
+                        mode="outlined"
+                        onPress={() => setUrlInputVisible(true)}
+                        style={styles.attachButton}
+                      >
+                        {t('url')}
+                      </Button>
+                    </View>
+                  </View>
+                )}
+              </Card.Content>
+              <Card.Actions style={styles.buttonContainer}>
+                <Button onPress={handleSaveEditingNode}>{t('save')}</Button>
+                <Button
+                  onPress={() => setEditingNode(null)}
+                  textColor={OriginalTheme.colors.secondary}
+                >
+                  {t('cancel')}
+                </Button>
+              </Card.Actions>
+            </Card>
           </KeyboardAvoidingView>
         )}
-        {colorPickerVisible && (
+        <Portal>
           <Modal
-            transparent={true}
-            animationType="fade"
             visible={colorPickerVisible}
-            onRequestClose={() => setColorPickerVisible(false)}
+            onDismiss={() => setColorPickerVisible(false)}
+            contentContainerStyle={styles.colorPickerContainer}
           >
-            <View style={styles.colorPickerOverlay}>
-              <View style={styles.colorPickerContainer}>
-                <ColorPalette
-                  onChange={color => {
-                    setEditingNode(prev => ({ ...prev, color: color }));
-                    setColorPickerVisible(false);
-                  }}
-                  value={editingNode.color}
-                  colors={[
-                    '#FCA5A5',
-                    '#F87171',
-                    '#FDBA74',
-                    '#FB923C',
-                    '#FDE047',
-                    '#FACC15',
-                    '#86EFAC',
-                    '#4ADE80',
-                    '#5EEAD4',
-                    '#2DD4BF',
-                    '#93C5FD',
-                    '#60A5FA',
-                    '#A5B4FC',
-                    '#818CF8',
-                    '#C4B5FD',
-                    '#A78BFA',
-                    '#D1D5DB',
-                    '#9CA3AF',
-                    '#6B7280',
-                    '#FFFFFF',
-                  ]}
-                  title={t('selectCardColor')}
-                  icon={<Text>✔</Text>}
-                />
-              </View>
-            </View>
+            {editingNode && (
+              <ColorPalette
+                onChange={color => {
+                  setEditingNode(prev => ({ ...prev, color: color }));
+                  setColorPickerVisible(false);
+                }}
+                value={editingNode.color}
+                colors={[
+                  '#FCA5A5',
+                  '#F87171',
+                  '#FDBA74',
+                  '#FB923C',
+                  '#FDE047',
+                  '#FACC15',
+                  '#86EFAC',
+                  '#4ADE80',
+                  '#5EEAD4',
+                  '#2DD4BF',
+                  '#93C5FD',
+                  '#60A5FA',
+                  '#A5B4FC',
+                  '#818CF8',
+                  '#C4B5FD',
+                  '#A78BFA',
+                  '#D1D5DB',
+                  '#9CA3AF',
+                  '#6B7280',
+                  '#FFFFFF',
+                ]}
+                title={t('selectCardColor')}
+                icon={<Text>✔</Text>}
+              />
+            )}
           </Modal>
-        )}
-        {urlInputVisible && (
           <Modal
-            transparent={true}
-            animationType="fade"
             visible={urlInputVisible}
-            onRequestClose={() => setUrlInputVisible(false)}
+            onDismiss={() => setUrlInputVisible(false)}
+            contentContainerStyle={styles.urlInputContainer}
           >
-            <View style={styles.colorPickerOverlay}>
-              <View style={styles.editingContainer}>
-                <TextInput
-                  value={attachmentUrl}
-                  onChangeText={setAttachmentUrl}
-                  style={styles.input}
-                  placeholder="https://example.com"
-                  autoCapitalize="none"
-                  autoFocus
-                />
-                <View style={styles.buttonContainer}>
-                  <Button title={t('save')} onPress={handleSaveUrlAttachment} />
-                  <Button
-                    title={t('cancel')}
-                    onPress={() => {
-                      setUrlInputVisible(false);
-                      setAttachmentUrl('');
-                    }}
-                    color="gray"
-                  />
-                </View>
-              </View>
+            <TextInput
+              value={attachmentUrl}
+              onChangeText={setAttachmentUrl}
+              style={styles.input}
+              placeholder="https://example.com"
+              autoCapitalize="none"
+              autoFocus
+            />
+            <View style={styles.buttonContainer}>
+              <Button onPress={handleSaveUrlAttachment}>{t('save')}</Button>
+              <Button
+                onPress={() => {
+                  setUrlInputVisible(false);
+                  setAttachmentUrl('');
+                }}
+                textColor={OriginalTheme.colors.secondary}
+              >
+                {t('cancel')}
+              </Button>
             </View>
           </Modal>
-        )}
+        </Portal>
       </SafeAreaView>
     </PaperProvider>
   );
@@ -1106,12 +1124,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   editingContainer: {
-    backgroundColor: 'white',
-    padding: 20,
-    borderRadius: 10,
-    width: '80%',
+    width: '90%',
+    padding: 8,
   },
   input: {
+    backgroundColor: 'transparent',
     borderBottomWidth: 1,
     borderColor: '#ccc',
     padding: 8,
@@ -1148,6 +1165,13 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 20,
   },
+  urlInputContainer: {
+    backgroundColor: 'white',
+    padding: 20,
+    borderRadius: 10,
+    width: '80%',
+    alignSelf: 'center',
+  },
   scaleIndicatorText: {
     color: 'black',
     fontSize: 12,
@@ -1168,9 +1192,21 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
     width: '60%',
   },
+  attachmentSection: {
+    alignItems: 'center',
+    marginVertical: 10,
+  },
+  attachmentTitle: {
+    fontSize: 16,
+    marginBottom: 10,
+  },
   attachButtonsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-around',
+    width: '100%',
+  },
+  attachButton: {
+    width: '45%',
   },
   thumbnail: {
     width: 100,
