@@ -153,7 +153,7 @@ ${descriptionText}`);
   const renderAttachment = () => {
     if (!showAttachment || !node.attachment) return null;
 
-    const ICON_SIZE = 24;
+    const ICON_SIZE = 48;
     const PADDING = 5;
     const x = node.position.x + node.size.width - ICON_SIZE - PADDING;
     const y = node.position.y + node.size.height - ICON_SIZE - PADDING;
