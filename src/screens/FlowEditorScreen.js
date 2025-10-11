@@ -6,6 +6,10 @@ import {
   TextInput,
   PermissionsAndroid,
   Alert,
+  KeyboardAvoidingView,
+  TouchableOpacity,
+  Image,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Canvas, Path, Group, useFonts } from '@shopify/react-native-skia';
@@ -254,7 +258,10 @@ const FlowEditorScreen = ({ route, navigation }) => {
         .find(node => isPointInCard(node, worldX, worldY));
       if (hitNode && !isSeeThrough) {
         activeNodeId.value = hitNode.id;
-        dragStartOffset.value = { x: worldX - hitNode.position.x, y: worldY - hitNode.position.y };
+        dragStartOffset.value = {
+          x: worldX - hitNode.position.x,
+          y: worldY - hitNode.position.y,
+        };
         nodePosition.value = hitNode.position;
       } else {
         activeNodeId.value = null;
@@ -571,8 +578,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
         setEditingNode(prev => ({ ...prev, attachment: newAttachment }));
       }
-    }
-    catch (err) {
+    } catch (err) {
       if (isCancel(err)) {
         // User cancelled the picker
       } else {
@@ -600,7 +606,9 @@ const FlowEditorScreen = ({ route, navigation }) => {
         const imageUrl = previewData.images[0];
         preview_image_url = imageUrl;
         // Basic extension extraction, might not be perfect
-        const fileExtension = (imageUrl.split('.').pop() || 'jpg').split('?')[0];
+        const fileExtension = (imageUrl.split('.').pop() || 'jpg').split(
+          '?',
+        )[0];
         const localPath = `${ATTACHMENT_DIR}/${Date.now()}.${fileExtension}`;
 
         const download = RNFS.downloadFile({
@@ -709,7 +717,10 @@ const FlowEditorScreen = ({ route, navigation }) => {
       } else if (editingNode.attachment && !editingNode.attachment.id) {
         // New attachment, insert it
         const result = await insertAttachment(editingNode.attachment);
-        finalAttachmentState = { ...editingNode.attachment, id: result.insertId };
+        finalAttachmentState = {
+          ...editingNode.attachment,
+          id: result.insertId,
+        };
       }
 
       // Then, update the node data
@@ -780,7 +791,11 @@ const FlowEditorScreen = ({ route, navigation }) => {
         style={styles.container}
         edges={['bottom', 'left', 'right']}
       >
-        <View pointerEvents="box-none" style={styles.fabRootContainer} zIndex={100}>
+        <View
+          pointerEvents="box-none"
+          style={styles.fabRootContainer}
+          zIndex={100}
+        >
           {/* Global Group (Bottom Left) */}
           <View style={styles.fabGroup}>
             {/* 6: Reset Zoom */}
@@ -970,7 +985,9 @@ const FlowEditorScreen = ({ route, navigation }) => {
                       {editingNode.attachment.filename}
                     </Text>
                     <View style={styles.attachmentButtons}>
-                      <Button onPress={handleOpenAttachment}>{t('open')}</Button>
+                      <Button onPress={handleOpenAttachment}>
+                        {t('open')}
+                      </Button>
                       <Button
                         onPress={handleRemoveAttachment}
                         textColor={OriginalTheme.colors.error}
