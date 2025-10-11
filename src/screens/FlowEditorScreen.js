@@ -4,12 +4,12 @@ import {
   StyleSheet,
   Dimensions,
   TextInput,
-  Button,
+  PermissionsAndroid,
+  Alert,
   KeyboardAvoidingView,
-  Platform,
-  Modal,
   TouchableOpacity,
-  Text,
+  Image,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Canvas, Path, Group, useFonts } from '@shopify/react-native-skia';
@@ -20,12 +20,29 @@ import Animated, {
   useDerivedValue,
   withTiming,
 } from 'react-native-reanimated';
-import { updateFlow, getFlows } from '../db';
+import {
+  updateFlow,
+  getFlows,
+  getAttachmentByNodeId,
+  insertAttachment,
+  deleteAttachment,
+} from '../db';
+import { pick, types, isCancel } from '@react-native-documents/picker';
+import RNFS from 'react-native-fs';
+import { createThumbnail } from 'react-native-create-thumbnail';
+import { Linking } from 'react-native';
 import {
   Divider,
   FAB,
   Provider as PaperProvider,
   SegmentedButtons,
+  Icon,
+  Card,
+  Title,
+  Button,
+  Modal,
+  Portal,
+  Text,
 } from 'react-native-paper';
 import OriginalTheme from './OriginalTheme';
 import SkiaCard from '../components/Card';
@@ -40,8 +57,10 @@ import {
 import { useFlowData } from '../hooks/useFlowData';
 import ColorPalette from 'react-native-color-palette';
 import { useTranslation } from 'react-i18next';
+import { getLinkPreview } from 'link-preview-js';
 
 const { width, height } = Dimensions.get('window');
+const ATTACHMENT_DIR = `${RNFS.DocumentDirectoryPath}/attachments`;
 
 const getTextColorForBackground = hexColor => {
   if (!hexColor) return 'black';
@@ -51,6 +70,47 @@ const getTextColorForBackground = hexColor => {
   const b = parseInt(color.substring(4, 6), 16);
   const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
   return luminance > 186 ? 'black' : 'white';
+};
+
+const requestStoragePermission = async () => {
+  if (Platform.OS !== 'android') {
+    return true;
+  }
+
+  try {
+    let permissionsToRequest;
+    if (Platform.Version >= 33) {
+      permissionsToRequest = [
+        PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
+        PermissionsAndroid.PERMISSIONS.READ_MEDIA_VIDEO,
+      ];
+    } else {
+      permissionsToRequest = [
+        PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
+      ];
+    }
+
+    const statuses = await PermissionsAndroid.requestMultiple(
+      permissionsToRequest,
+    );
+
+    const allGranted = Object.values(statuses).every(
+      status => status === PermissionsAndroid.RESULTS.GRANTED,
+    );
+
+    if (allGranted) {
+      return true;
+    } else {
+      Alert.alert(
+        'Permission Denied',
+        'Storage permission is required to attach files.',
+      );
+      return false;
+    }
+  } catch (err) {
+    console.warn(err);
+    return false;
+  }
 };
 
 const FlowEditorScreen = ({ route, navigation }) => {
@@ -76,6 +136,9 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
   const [editingNode, setEditingNode] = useState(null);
   const [colorPickerVisible, setColorPickerVisible] = useState(false);
+  const [urlInputVisible, setUrlInputVisible] = useState(false);
+  const [attachmentUrl, setAttachmentUrl] = useState('');
+  const [showAttachmentsOnCanvas, setShowAttachmentsOnCanvas] = useState(false);
 
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
@@ -101,6 +164,13 @@ const FlowEditorScreen = ({ route, navigation }) => {
       require('../../assets/fonts/Noto_Sans_SC/static/NotoSansSC-Bold.ttf'),
     ],
   });
+
+  useEffect(() => {
+    const ensureDirExists = async () => {
+      await RNFS.mkdir(ATTACHMENT_DIR);
+    };
+    ensureDirExists();
+  }, []);
 
   useEffect(() => {
     const loadPosition = async () => {
@@ -226,8 +296,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
           extra: { newPosition: nodePosition.value },
         });
         activeNodeId.value = null;
-      }
-      else {
+      } else {
         savedTranslateX.value = translateX.value;
         savedTranslateY.value = translateY.value;
       }
@@ -342,6 +411,30 @@ const FlowEditorScreen = ({ route, navigation }) => {
     }
   });
 
+  const handleNodeLongPress = async hitNode => {
+    try {
+      const attachment = await getAttachmentByNodeId(hitNode.id);
+      setEditingNode({
+        id: hitNode.id,
+        title: hitNode.data.label,
+        description: hitNode.data.description,
+        size: hitNode.data.size || 'medium',
+        color: hitNode.data.color || '#FFFFFF',
+        attachment: attachment,
+      });
+    } catch (e) {
+      console.error('Failed to fetch attachment', e);
+      setEditingNode({
+        id: hitNode.id,
+        title: hitNode.data.label,
+        description: hitNode.data.description,
+        size: hitNode.data.size || 'medium',
+        color: hitNode.data.color || '#FFFFFF',
+        attachment: null,
+      });
+    }
+  };
+
   const longPressGesture = Gesture.LongPress()
     .minDuration(800)
     .onStart(event => {
@@ -353,13 +446,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
         .reverse()
         .find(node => isPointInCard(node, worldX, worldY));
       if (hitNode) {
-        runOnJS(setEditingNode)({
-          id: hitNode.id,
-          title: hitNode.data.label,
-          description: hitNode.data.description,
-          size: hitNode.data.size || 'medium',
-          color: hitNode.data.color || '#FFFFFF',
-        });
+        runOnJS(handleNodeLongPress)(hitNode);
       }
     });
 
@@ -450,15 +537,204 @@ const FlowEditorScreen = ({ route, navigation }) => {
     });
   };
 
-  const handleSaveEditingNode = () => {
-    if (editingNode) {
+  const handleAttachFile = async () => {
+    const hasPermission = await requestStoragePermission();
+    if (!hasPermission) return;
+
+    try {
+      const result = await pick({
+        type: [types.allFiles],
+        allowMultiSelection: false,
+      });
+
+      if (result && result.length > 0) {
+        const res = result[0];
+        const originalUri = res.uri;
+        const fileName = res.name;
+        const fileType = res.type;
+
+        const uniqueFileName = `${Date.now()}-${fileName}`;
+        const storedPath = `${ATTACHMENT_DIR}/${uniqueFileName}`;
+
+        await RNFS.copyFile(originalUri, storedPath);
+
+        let thumbnailPath = null;
+        if (fileType.startsWith('video/')) {
+          const thumbnailRes = await createThumbnail({
+            url: storedPath,
+            timeStamp: 1000, // 1 second
+          });
+          thumbnailPath = thumbnailRes.path;
+        }
+
+        const newAttachment = {
+          node_id: editingNode.id,
+          filename: fileName,
+          mime_type: fileType,
+          original_uri: originalUri,
+          stored_path: storedPath,
+          thumbnail_path: thumbnailPath,
+        };
+
+        setEditingNode(prev => ({ ...prev, attachment: newAttachment }));
+      }
+    } catch (err) {
+      if (isCancel(err)) {
+        // User cancelled the picker
+      } else {
+        console.error('Error picking or copying file', err);
+      }
+    }
+  };
+
+  const handleSaveUrlAttachment = async () => {
+    if (
+      !attachmentUrl ||
+      (!attachmentUrl.startsWith('http://') &&
+        !attachmentUrl.startsWith('https://'))
+    ) {
+      Alert.alert(t('invalidUrl'), t('invalidUrlMessage'));
+      return;
+    }
+
+    try {
+      const previewData = await getLinkPreview(attachmentUrl);
+      let thumbnail_path = null;
+      let preview_image_url = null;
+
+      if (previewData.images && previewData.images.length > 0) {
+        const imageUrl = previewData.images[0];
+        preview_image_url = imageUrl;
+        // Basic extension extraction, might not be perfect
+        const fileExtension = (imageUrl.split('.').pop() || 'jpg').split(
+          '?',
+        )[0];
+        const localPath = `${ATTACHMENT_DIR}/${Date.now()}.${fileExtension}`;
+
+        const download = RNFS.downloadFile({
+          fromUrl: imageUrl,
+          toFile: localPath,
+        });
+
+        await download.promise;
+        thumbnail_path = localPath;
+      }
+
+      const newAttachment = {
+        node_id: editingNode.id,
+        filename: previewData.title || attachmentUrl,
+        mime_type: 'text/url',
+        original_uri: attachmentUrl,
+        stored_path: null,
+        thumbnail_path: thumbnail_path,
+        preview_title: previewData.title,
+        preview_description: previewData.description,
+        preview_image_url: preview_image_url,
+      };
+
+      setEditingNode(prev => ({ ...prev, attachment: newAttachment }));
+    } catch (error) {
+      console.error('Could not get link preview', error);
+      // Fallback to saving just the URL
+      const newAttachment = {
+        node_id: editingNode.id,
+        filename: attachmentUrl,
+        mime_type: 'text/url',
+        original_uri: attachmentUrl,
+        stored_path: null,
+        thumbnail_path: null,
+      };
+      setEditingNode(prev => ({ ...prev, attachment: newAttachment }));
+    } finally {
+      setUrlInputVisible(false);
+      setAttachmentUrl('');
+    }
+  };
+
+  const handleOpenAttachment = () => {
+    if (!editingNode?.attachment) return;
+
+    const { mime_type, stored_path, original_uri } = editingNode.attachment;
+
+    if (mime_type === 'text/url' && original_uri) {
+      Linking.openURL(original_uri).catch(err => {
+        console.error('Failed to open URL', err);
+        Alert.alert('Error', 'Could not open the URL.');
+      });
+    } else if (stored_path) {
+      const url = `file://${stored_path}`;
+      console.log(`Attempting to open attachment: ${url}`);
+      Linking.openURL(url).catch(err => {
+        console.error('Failed to open attachment', err);
+        Alert.alert(
+          'Error',
+          'Could not open the attachment. The file might be corrupted or not supported on the simulator.',
+        );
+      });
+    }
+  };
+
+  const handleRemoveAttachment = async () => {
+    if (!editingNode?.attachment) return;
+
+    const { stored_path, thumbnail_path } = editingNode.attachment;
+
+    try {
+      if (stored_path) {
+        const fileExists = await RNFS.exists(stored_path);
+        if (fileExists) {
+          await RNFS.unlink(stored_path);
+        }
+      }
+      if (thumbnail_path) {
+        const thumbExists = await RNFS.exists(thumbnail_path);
+        if (thumbExists) {
+          await RNFS.unlink(thumbnail_path);
+        }
+      }
+
+      setEditingNode(prev => ({
+        ...prev,
+        attachment: null,
+        attachment_deleted: true,
+        deleted_attachment_id: prev.attachment.id,
+      }));
+    } catch (err) {
+      console.error('Error removing attachment files', err);
+    }
+  };
+
+  const handleSaveEditingNode = async () => {
+    if (!editingNode) return;
+
+    try {
+      let finalAttachmentState = editingNode.attachment;
+
+      // Handle attachment changes first
+      if (editingNode.attachment_deleted && editingNode.deleted_attachment_id) {
+        await deleteAttachment(editingNode.deleted_attachment_id);
+        finalAttachmentState = null;
+      } else if (editingNode.attachment && !editingNode.attachment.id) {
+        // New attachment, insert it
+        const result = await insertAttachment(editingNode.attachment);
+        finalAttachmentState = {
+          ...editingNode.attachment,
+          id: result.insertId,
+        };
+      }
+
+      // Then, update the node data
       const dataToUpdate = {
         title: editingNode.title,
         description: editingNode.description,
         size: editingNode.size,
         color: editingNode.color,
+        attachment: finalAttachmentState,
       };
-      handleUpdateNodeData(editingNode.id, dataToUpdate, fontMgr);
+      await handleUpdateNodeData(editingNode.id, dataToUpdate, fontMgr);
+    } catch (err) {
+      console.error('Failed to save node or attachment', err);
+    } finally {
       setEditingNode(null);
     }
   };
@@ -515,54 +791,86 @@ const FlowEditorScreen = ({ route, navigation }) => {
         style={styles.container}
         edges={['bottom', 'left', 'right']}
       >
-        <View pointerEvents="box-none" style={styles.fabContainer} zIndex={100}>
-          <FAB
-            icon="magnify"
-            style={[styles.fab, styles.fabScale]}
-            small
-            onPress={() => runOnJS(resetScale)()}
-          />
-          <FAB
-            icon="target"
-            style={[styles.fab, styles.fabMove]}
-            onPress={() => runOnJS(moveToNearestCard)()}
-            small
-            visible={true}
-          />
-          <Divider style={{ height: 32, marginHorizontal: 4 }} />
-          <FAB
-            icon={isSeeThrough ? 'eye-off' : 'eye'}
-            style={[styles.fab, styles.fabEye]}
-            onPress={() => setIsSeeThrough(s => !s)}
-            disabled={linkingState.active}
-            small
-            visible={true}
-          />
-          <FAB
-            icon="arrow-up-bold"
-            style={[styles.fab, styles.fabTop]}
-            onPress={handlePressSectionUp}
-            disabled={fabDisabled}
-            small
-            visible={true}
-          />
-          <FAB
-            icon="link-variant"
-            style={[styles.fab, styles.fabMiddle]}
-            onPress={toggleLinkingMode}
-            color={linkingState.active ? '#34C759' : undefined}
-            disabled={isSeeThrough}
-            small
-            visible={true}
-          />
-          <FAB
-            icon="plus"
-            style={[styles.fab, styles.fabBottom]}
-            onPress={handleAddNode}
-            disabled={fabDisabled}
-            small
-            visible={true}
-          />
+        <View
+          pointerEvents="box-none"
+          style={styles.fabRootContainer}
+          zIndex={100}
+        >
+          {/* Global Group (Bottom Left) */}
+          <View style={styles.fabGroup}>
+            {/* 6: Reset Zoom */}
+            <FAB
+              icon="magnify"
+              style={styles.fab}
+              small
+              onPress={() => runOnJS(resetScale)()}
+            />
+            {/* 7: Pan/Move mode */}
+            <FAB
+              icon="target"
+              style={styles.fab}
+              onPress={() => runOnJS(moveToNearestCard)()}
+              small
+              visible={true}
+            />
+          </View>
+
+          {/* Right Groups */}
+          <View style={styles.fabRightColumn}>
+            {/* Reference Group (Top Right) */}
+            <View style={[styles.fabGroup, { marginBottom: 8 }]}>
+              {/* 4: Show Attachments */}
+              <FAB
+                icon="paperclip"
+                style={styles.fab}
+                onPress={() => setShowAttachmentsOnCanvas(s => !s)}
+                color={showAttachmentsOnCanvas ? '#34C759' : undefined}
+                small
+                visible={true}
+              />
+              {/* 5: See-through Mode */}
+              <FAB
+                icon={isSeeThrough ? 'eye-off' : 'eye'}
+                style={styles.fab}
+                onPress={() => setIsSeeThrough(s => !s)}
+                disabled={linkingState.active}
+                small
+                visible={true}
+              />
+            </View>
+
+            {/* Edit Group (Bottom Right) */}
+            <View style={styles.fabGroup}>
+              {/* 3: Section Up */}
+              <FAB
+                icon="arrow-up-bold"
+                style={styles.fab}
+                onPress={handlePressSectionUp}
+                disabled={fabDisabled}
+                small
+                visible={true}
+              />
+              {/* 2: Link Line Mode */}
+              <FAB
+                icon="link-variant"
+                style={styles.fab}
+                onPress={toggleLinkingMode}
+                color={linkingState.active ? '#34C759' : undefined}
+                disabled={isSeeThrough}
+                small
+                visible={true}
+              />
+              {/* 1: Add Card */}
+              <FAB
+                icon="plus"
+                style={styles.fab}
+                onPress={handleAddNode}
+                disabled={fabDisabled}
+                small
+                visible={true}
+              />
+            </View>
+          </View>
         </View>
         <GestureDetector gesture={composedGesture}>
           <View style={styles.flowArea}>
@@ -578,6 +886,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
                     isLinkSource={linkingState.sourceNodeId === node.id}
                     isEditing={editingNode && editingNode.id === node.id}
                     isSeeThroughParent={node.isSeeThroughParent}
+                    showAttachment={showAttachmentsOnCanvas}
                   />
                 ))}
                 {renderEdges()}
@@ -590,111 +899,206 @@ const FlowEditorScreen = ({ route, navigation }) => {
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             style={styles.editingOverlay}
           >
-            <View style={styles.editingContainer}>
-              <TextInput
-                value={editingNode.title}
-                onChangeText={text =>
-                  setEditingNode(prev => ({ ...prev, title: text }))
-                }
-                style={styles.input}
-                placeholder={t('title')}
-                autoFocus
-                maxLength={16}
-              />
-              <TextInput
-                value={editingNode.description}
-                onChangeText={text =>
-                  setEditingNode(prev => ({ ...prev, description: text }))
-                }
-                style={styles.input}
-                placeholder={t('description')}
-                multiline
-                maxLength={100}
-                editable={editingNode.size !== 'small'}
-              />
-              <SegmentedButtons
-                value={editingNode.size}
-                onValueChange={value =>
-                  setEditingNode(prev => ({ ...prev, size: value }))
-                }
-                buttons={[
-                  { value: 'small', label: t('sizeSmall') },
-                  { value: 'medium', label: t('sizeMedium') },
-                  { value: 'large', label: t('sizeLarge') },
-                ]}
-                style={styles.sizeSelectionContainer}
-              />
-              <TouchableOpacity
-                style={[
-                  styles.colorButton,
-                  { backgroundColor: editingNode.color },
-                ]}
-                onPress={() => setColorPickerVisible(true)}
-              >
-                <Text
-                  style={[
-                    styles.colorButtonText,
-                    { color: getTextColorForBackground(editingNode.color) },
-                  ]}
-                >
-                  {t('selectColor')}
-                </Text>
-              </TouchableOpacity>
-              <View style={styles.buttonContainer}>
-                <Button title={t('save')} onPress={handleSaveEditingNode} />
-                <Button
-                  title={t('cancel')}
-                  onPress={() => setEditingNode(null)}
-                  color="gray"
+            <Card style={styles.editingContainer}>
+              <Card.Content>
+                <TextInput
+                  value={editingNode.title}
+                  onChangeText={text =>
+                    setEditingNode(prev => ({ ...prev, title: text }))
+                  }
+                  style={styles.input}
+                  placeholder={t('title')}
+                  autoFocus
+                  maxLength={16}
                 />
-              </View>
-            </View>
+                <TextInput
+                  value={editingNode.description}
+                  onChangeText={text =>
+                    setEditingNode(prev => ({ ...prev, description: text }))
+                  }
+                  style={styles.input}
+                  placeholder={t('description')}
+                  multiline
+                  maxLength={100}
+                  editable={editingNode.size !== 'small'}
+                />
+                <SegmentedButtons
+                  value={editingNode.size}
+                  onValueChange={value =>
+                    setEditingNode(prev => ({ ...prev, size: value }))
+                  }
+                  buttons={[
+                    { value: 'small', label: t('sizeSmall') },
+                    { value: 'medium', label: t('sizeMedium') },
+                    { value: 'large', label: t('sizeLarge') },
+                  ]}
+                  style={styles.sizeSelectionContainer}
+                />
+                <TouchableOpacity
+                  style={[
+                    styles.colorButton,
+                    { backgroundColor: editingNode.color },
+                  ]}
+                  onPress={() => setColorPickerVisible(true)}
+                >
+                  <Text
+                    style={[
+                      styles.colorButtonText,
+                      { color: getTextColorForBackground(editingNode.color) },
+                    ]}
+                  >
+                    {t('selectColor')}
+                  </Text>
+                </TouchableOpacity>
+
+                <Divider style={{ marginVertical: 10 }} />
+
+                {editingNode.attachment ? (
+                  <View style={styles.attachmentContainer}>
+                    {editingNode.attachment.mime_type === 'text/url' ? (
+                      editingNode.attachment.thumbnail_path ? (
+                        <Image
+                          key={editingNode.attachment.thumbnail_path}
+                          source={{
+                            uri: `file://${editingNode.attachment.thumbnail_path}`,
+                          }}
+                          style={styles.thumbnail}
+                        />
+                      ) : (
+                        <Icon source="link-variant" size={80} />
+                      )
+                    ) : (
+                      <Image
+                        key={
+                          editingNode.attachment.thumbnail_path ||
+                          editingNode.attachment.stored_path
+                        }
+                        source={{
+                          uri: editingNode.attachment.thumbnail_path
+                            ? `file://${editingNode.attachment.thumbnail_path}`
+                            : `file://${editingNode.attachment.stored_path}`,
+                        }}
+                        style={styles.thumbnail}
+                      />
+                    )}
+                    <Text style={styles.attachmentText} numberOfLines={1}>
+                      {editingNode.attachment.filename}
+                    </Text>
+                    <View style={styles.attachmentButtons}>
+                      <Button onPress={handleOpenAttachment}>
+                        {t('open')}
+                      </Button>
+                      <Button
+                        onPress={handleRemoveAttachment}
+                        textColor={OriginalTheme.colors.error}
+                      >
+                        {t('remove')}
+                      </Button>
+                    </View>
+                  </View>
+                ) : (
+                  <View style={styles.attachmentSection}>
+                    <Title style={styles.attachmentTitle}>{t('attach')}</Title>
+                    <View style={styles.attachButtonsContainer}>
+                      <Button
+                        icon="file-document-outline"
+                        mode="outlined"
+                        onPress={handleAttachFile}
+                        style={styles.attachButton}
+                      >
+                        {t('file')}
+                      </Button>
+                      <Button
+                        icon="web"
+                        mode="outlined"
+                        onPress={() => setUrlInputVisible(true)}
+                        style={styles.attachButton}
+                      >
+                        {t('url')}
+                      </Button>
+                    </View>
+                  </View>
+                )}
+              </Card.Content>
+              <Card.Actions style={styles.buttonContainer}>
+                <Button onPress={handleSaveEditingNode}>{t('save')}</Button>
+                <Button
+                  onPress={() => setEditingNode(null)}
+                  textColor={OriginalTheme.colors.secondary}
+                >
+                  {t('cancel')}
+                </Button>
+              </Card.Actions>
+            </Card>
           </KeyboardAvoidingView>
         )}
-        {colorPickerVisible && (
+        <Portal>
           <Modal
-            transparent={true}
-            animationType="fade"
             visible={colorPickerVisible}
-            onRequestClose={() => setColorPickerVisible(false)}
+            onDismiss={() => setColorPickerVisible(false)}
+            contentContainerStyle={styles.colorPickerContainer}
           >
-            <View style={styles.colorPickerOverlay}>
-              <View style={styles.colorPickerContainer}>
-                <ColorPalette
-                  onChange={color => {
-                    setEditingNode(prev => ({ ...prev, color: color }));
-                    setColorPickerVisible(false);
-                  }}
-                  value={editingNode.color}
-                  colors={[
-                    '#FCA5A5',
-                    '#F87171',
-                    '#FDBA74',
-                    '#FB923C',
-                    '#FDE047',
-                    '#FACC15',
-                    '#86EFAC',
-                    '#4ADE80',
-                    '#5EEAD4',
-                    '#2DD4BF',
-                    '#93C5FD',
-                    '#60A5FA',
-                    '#A5B4FC',
-                    '#818CF8',
-                    '#C4B5FD',
-                    '#A78BFA',
-                    '#D1D5DB',
-                    '#9CA3AF',
-                    '#6B7280',
-                    '#FFFFFF',
-                  ]}
-                  title={t('selectCardColor')}
-                  icon={<Text>✔</Text>}
-                />
-              </View>
+            {editingNode && (
+              <ColorPalette
+                onChange={color => {
+                  setEditingNode(prev => ({ ...prev, color: color }));
+                  setColorPickerVisible(false);
+                }}
+                value={editingNode.color}
+                colors={[
+                  '#FCA5A5',
+                  '#F87171',
+                  '#FDBA74',
+                  '#FB923C',
+                  '#FDE047',
+                  '#FACC15',
+                  '#86EFAC',
+                  '#4ADE80',
+                  '#5EEAD4',
+                  '#2DD4BF',
+                  '#93C5FD',
+                  '#60A5FA',
+                  '#A5B4FC',
+                  '#818CF8',
+                  '#C4B5FD',
+                  '#A78BFA',
+                  '#D1D5DB',
+                  '#9CA3AF',
+                  '#6B7280',
+                  '#FFFFFF',
+                ]}
+                title={t('selectCardColor')}
+                icon={<Text>✔</Text>}
+              />
+            )}
+          </Modal>
+          <Modal
+            visible={urlInputVisible}
+            onDismiss={() => setUrlInputVisible(false)}
+            contentContainerStyle={styles.urlInputContainer}
+          >
+            <TextInput
+              value={attachmentUrl}
+              onChangeText={setAttachmentUrl}
+              style={styles.input}
+              placeholder="https://example.com"
+              autoCapitalize="none"
+              autoFocus
+            />
+            <View style={styles.buttonContainer}>
+              <Button onPress={handleSaveUrlAttachment}>{t('save')}</Button>
+              <Button
+                onPress={() => {
+                  setUrlInputVisible(false);
+                  setAttachmentUrl('');
+                }}
+                textColor={OriginalTheme.colors.secondary}
+              >
+                {t('cancel')}
+              </Button>
             </View>
           </Modal>
-        )}
+        </Portal>
       </SafeAreaView>
     </PaperProvider>
   );
@@ -707,27 +1111,27 @@ const styles = StyleSheet.create({
   flowArea: {
     flex: 1,
   },
-  fabContainer: {
+  fabRootContainer: {
     position: 'absolute',
     bottom: 16,
+    left: 16,
     right: 16,
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    pointerEvents: 'box-none',
+  },
+  fabRightColumn: {
+    flexDirection: 'column',
+    alignItems: 'flex-end',
+  },
+  fabGroup: {
+    flexDirection: 'row',
     alignItems: 'center',
+    pointerEvents: 'box-none',
   },
   fab: {
     marginHorizontal: 4,
-  },
-  fabEye: {
-    backgroundColor: OriginalTheme.colors.primary,
-  },
-  fabTop: {
-    backgroundColor: OriginalTheme.colors.primary,
-  },
-  fabMiddle: {
-    backgroundColor: OriginalTheme.colors.primary,
-  },
-  fabBottom: {
     backgroundColor: OriginalTheme.colors.primary,
   },
   editingOverlay: {
@@ -737,12 +1141,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   editingContainer: {
-    backgroundColor: 'white',
-    padding: 20,
-    borderRadius: 10,
-    width: '80%',
+    width: '90%',
+    padding: 8,
   },
   input: {
+    backgroundColor: 'transparent',
     borderBottomWidth: 1,
     borderColor: '#ccc',
     padding: 8,
@@ -779,12 +1182,12 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 20,
   },
-  bottomLeftControls: {
-    position: 'absolute',
-    bottom: 16,
-    left: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
+  urlInputContainer: {
+    backgroundColor: 'white',
+    padding: 20,
+    borderRadius: 10,
+    width: '80%',
+    alignSelf: 'center',
   },
   scaleIndicatorText: {
     color: 'black',
@@ -794,11 +1197,40 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 5,
   },
-  fabMove: {
-    backgroundColor: OriginalTheme.colors.primary,
+  attachmentContainer: {
+    alignItems: 'center',
   },
-  fabScale: {
-    backgroundColor: OriginalTheme.colors.primary,
+  attachmentText: {
+    marginTop: 8,
+    marginBottom: 10,
+  },
+  attachmentButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    width: '60%',
+  },
+  attachmentSection: {
+    alignItems: 'center',
+    marginVertical: 10,
+  },
+  attachmentTitle: {
+    fontSize: 16,
+    marginBottom: 10,
+  },
+  attachButtonsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    width: '100%',
+  },
+  attachButton: {
+    width: '45%',
+  },
+  thumbnail: {
+    width: 100,
+    height: 100,
+    resizeMode: 'cover',
+    marginBottom: 10,
+    borderRadius: 5,
   },
 });
 

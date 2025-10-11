@@ -140,6 +140,9 @@ const FlowListScreen = ({ navigation }) => {
   }, [navigation]);
 
   const handleAddFlowRow = () => {
+    if (flows.some(f => f.isNew)) {
+      return;
+    }
     const tempId = `temp-${Date.now()}`;
     setFlows([{ id: tempId, name: '', isNew: true }, ...flows]);
     setEditingFlowId(tempId);

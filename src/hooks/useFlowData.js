@@ -11,7 +11,9 @@ import {
   updateEdge,
   insertNode,
   deleteNode,
+  getAttachmentByNodeId,
 } from '../db';
+import RNFS from 'react-native-fs';
 import { doRectsOverlap, getRect, getClosestHandle } from '../utils/flowUtils';
 
 // 3つの固定サイズを定義
@@ -35,6 +37,15 @@ export const useFlowData = (flowId, isSeeThrough, t) => {
     try {
       const nodesData = await getNodes(flowId);
       const edgesData = await getEdges(flowId);
+
+      const attachmentPromises = nodesData.map(n => getAttachmentByNodeId(n.id));
+      const attachments = await Promise.all(attachmentPromises);
+      const attachmentsMap = attachments.reduce((acc, att) => {
+        if (att) {
+          acc[att.node_id] = att;
+        }
+        return acc;
+      }, {});
 
       const formattedNodes = Array.isArray(nodesData)
         ? nodesData.map(n => {
@@ -63,6 +74,7 @@ export const useFlowData = (flowId, isSeeThrough, t) => {
               position: { x: n.x, y: n.y },
               size: { width: n.width, height: n.height },
               color: n.color ?? '#FFFFFF',
+              attachment: attachmentsMap[n.id] || null,
             };
           })
         : [];
@@ -277,6 +289,10 @@ export const useFlowData = (flowId, isSeeThrough, t) => {
                       height: dbUpdateData.height,
                     },
                     color: newData.color,
+                    attachment:
+                      newData.attachment !== undefined
+                        ? newData.attachment
+                        : node.attachment,
                   }
                 : node,
             )
@@ -338,7 +354,26 @@ export const useFlowData = (flowId, isSeeThrough, t) => {
     findChildren(nodeId);
 
     try {
-      await Promise.all(Array.from(nodesToRemove).map(id => deleteNode(id)));
+      const deletePromises = Array.from(nodesToRemove).map(async id => {
+        const attachment = await getAttachmentByNodeId(id);
+        if (attachment) {
+          if (attachment.stored_path) {
+            const fileExists = await RNFS.exists(attachment.stored_path);
+            if (fileExists) {
+              await RNFS.unlink(attachment.stored_path);
+            }
+          }
+          if (attachment.thumbnail_path) {
+            const thumbExists = await RNFS.exists(attachment.thumbnail_path);
+            if (thumbExists) {
+              await RNFS.unlink(attachment.thumbnail_path);
+            }
+          }
+        }
+        return deleteNode(id);
+      });
+
+      await Promise.all(deletePromises);
       fetchData();
     } catch (error) {
       console.error('Failed to delete node(s):', error);

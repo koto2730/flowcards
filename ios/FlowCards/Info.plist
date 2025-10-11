@@ -33,6 +33,10 @@
 	</dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Japan</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>カードに画像や動画を添付するために写真ライブラリにアクセスします。</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>カードにファイルを添付するためにファイルアプリのドキュメントにアクセスします。</string>
 	<key>RCTNewArchEnabled</key>
 	<true/>
 	<key>UIAppFonts</key>
