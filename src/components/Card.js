@@ -76,6 +76,27 @@ const SkiaCard = ({
     24,
   );
 
+  const paperclipIconFont = useFont(
+    Platform.OS === 'ios'
+      ? require('../../ios/Fonts/MaterialCommunityIcons.ttf')
+      : 'MaterialCommunityIcons',
+    16,
+  );
+
+  const paperclipIconPath = useMemo(() => {
+    if (!paperclipIconFont || !node.attachment) return null;
+    const iconChar = String.fromCodePoint(0xf03e2); // paperclip
+    const path = paperclipIconFont.getPath(iconChar, 0, 0);
+    if (path) {
+      const bounds = path.getBounds();
+      const scale = 16 / bounds.height;
+      const matrix = Skia.Matrix();
+      matrix.preScale(scale, scale);
+      path.transform(matrix);
+    }
+    return path;
+  }, [paperclipIconFont, node.attachment]);
+
   const attachmentIconPath = useMemo(() => {
     if (!iconFont || !node.attachment) return null;
     let iconChar;
@@ -213,6 +234,7 @@ ${descriptionText}`);
           color={borderColor}
         />
       )}
+      {renderAttachment()}
       {cardParagraph && (
         <Paragraph
           paragraph={cardParagraph}
@@ -221,7 +243,16 @@ ${descriptionText}`);
           width={layoutWidth}
         />
       )}
-      {renderAttachment()}
+      {paperclipIconPath && (
+        <Path
+          path={paperclipIconPath}
+          color="#333"
+          transform={[
+            { translateX: node.position.x + node.size.width - 22 },
+            { translateY: node.position.y + 6 },
+          ]}
+        />
+      )}
       <Group>
         <Circle
           cx={deleteButtonX}

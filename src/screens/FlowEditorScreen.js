@@ -58,9 +58,37 @@ import { useFlowData } from '../hooks/useFlowData';
 import ColorPalette from 'react-native-color-palette';
 import { useTranslation } from 'react-i18next';
 import { getLinkPreview } from 'link-preview-js';
+import FileViewer from 'react-native-file-viewer';
 
 const { width, height } = Dimensions.get('window');
-const ATTACHMENT_DIR = `${RNFS.DocumentDirectoryPath}/attachments`;
+const ATTACHMENT_DIR = `${RNFS.ExternalDirectoryPath}/attachments`;
+
+const mimeTypeLookup = {
+  txt: 'text/plain',
+  csv: 'text/csv',
+  html: 'text/html',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  gif: 'image/gif',
+  bmp: 'image/bmp',
+  webp: 'image/webp',
+  svg: 'image/svg+xml',
+  mp3: 'audio/mpeg',
+  wav: 'audio/wav',
+  ogg: 'audio/ogg',
+  mp4: 'video/mp4',
+  webm: 'video/webm',
+  pdf: 'application/pdf',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  ppt: 'application/vnd.ms-powerpoint',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  zip: 'application/zip',
+  json: 'application/json',
+};
 
 const getTextColorForBackground = hexColor => {
   if (!hexColor) return 'black';
@@ -551,7 +579,17 @@ const FlowEditorScreen = ({ route, navigation }) => {
         const res = result[0];
         const originalUri = res.uri;
         const fileName = res.name;
-        const fileType = res.type;
+        let fileType = res.type;
+
+        if (fileType === 'application/octet-stream' && fileName) {
+          const extension = fileName.split('.').pop().toLowerCase();
+          if (extension) {
+            const inferredType = mimeTypeLookup[extension];
+            if (inferredType) {
+              fileType = inferredType;
+            }
+          }
+        }
 
         const uniqueFileName = `${Date.now()}-${fileName}`;
         const storedPath = `${ATTACHMENT_DIR}/${uniqueFileName}`;
@@ -662,15 +700,17 @@ const FlowEditorScreen = ({ route, navigation }) => {
         Alert.alert('Error', 'Could not open the URL.');
       });
     } else if (stored_path) {
-      const url = `file://${stored_path}`;
-      console.log(`Attempting to open attachment: ${url}`);
-      Linking.openURL(url).catch(err => {
-        console.error('Failed to open attachment', err);
-        Alert.alert(
-          'Error',
-          'Could not open the attachment. The file might be corrupted or not supported on the simulator.',
-        );
-      });
+      FileViewer.open(stored_path, { showOpenWithDialog: true })
+        .then(() => {
+          // success
+        })
+        .catch(err => {
+          console.error('Failed to open attachment', err);
+          Alert.alert(
+            'Error',
+            'Could not open the attachment. The file might be corrupted or the format is not supported.',
+          );
+        });
     }
   };
 
@@ -967,7 +1007,9 @@ const FlowEditorScreen = ({ route, navigation }) => {
                       ) : (
                         <Icon source="link-variant" size={80} />
                       )
-                    ) : (
+                    ) : editingNode.attachment.mime_type &&
+                      (editingNode.attachment.mime_type.startsWith('image/') ||
+                        editingNode.attachment.thumbnail_path) ? (
                       <Image
                         key={
                           editingNode.attachment.thumbnail_path ||
@@ -980,6 +1022,8 @@ const FlowEditorScreen = ({ route, navigation }) => {
                         }}
                         style={styles.thumbnail}
                       />
+                    ) : (
+                      <Icon source="file-document-outline" size={80} />
                     )}
                     <Text style={styles.attachmentText} numberOfLines={1}>
                       {editingNode.attachment.filename}
@@ -1023,8 +1067,9 @@ const FlowEditorScreen = ({ route, navigation }) => {
               <Card.Actions style={styles.buttonContainer}>
                 <Button onPress={handleSaveEditingNode}>{t('save')}</Button>
                 <Button
+                  mode="outlined"
                   onPress={() => setEditingNode(null)}
-                  textColor={OriginalTheme.colors.secondary}
+                  textColor={'#555'}
                 >
                   {t('cancel')}
                 </Button>
