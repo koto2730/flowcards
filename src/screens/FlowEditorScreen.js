@@ -594,7 +594,14 @@ const FlowEditorScreen = ({ route, navigation }) => {
         const uniqueFileName = `${Date.now()}-${fileName}`;
         const storedPath = `${ATTACHMENT_DIR}/${uniqueFileName}`;
 
-        await RNFS.copyFile(originalUri, storedPath);
+        if (Platform.OS === 'ios') {
+          const sourcePath = decodeURIComponent(
+            originalUri.replace(/^file:\/\//, ''),
+          );
+          await RNFS.copyFile(sourcePath, storedPath);
+        } else {
+          await RNFS.copyFile(originalUri, storedPath);
+        }
 
         let thumbnailPath = null;
         if (fileType.startsWith('video/')) {
@@ -603,6 +610,37 @@ const FlowEditorScreen = ({ route, navigation }) => {
             timeStamp: 1000, // 1 second
           });
           thumbnailPath = thumbnailRes.path;
+        } else if (!fileType.startsWith('image/')) {
+          const iconThumbnailPath = `${ATTACHMENT_DIR}/${Date.now()}-file-icon.svg`;
+          await RNFS.copyFileAssets(
+            'icons/file-outline.svg',
+            iconThumbnailPath,
+          );
+          thumbnailPath = iconThumbnailPath;
+        } else if (!fileType.startsWith('image/')) {
+          const iconThumbnailPath = `${ATTACHMENT_DIR}/${Date.now()}-file-icon.svg`;
+          await RNFS.copyFileAssets(
+            'icons/file-outline.svg',
+            iconThumbnailPath,
+          );
+          thumbnailPath = iconThumbnailPath;
+        } else if (!fileType.startsWith('image/')) {
+          const iconThumbnailPath = `${ATTACHMENT_DIR}/${Date.now()}-file-icon.svg`;
+          await RNFS.copyFileAssets(
+            'icons/file-outline.svg',
+            iconThumbnailPath,
+          );
+          thumbnailPath = iconThumbnailPath;
+        } else if (
+          !fileType.startsWith('image/') &&
+          !fileType.startsWith('video/')
+        ) {
+          const iconThumbnailPath = `${ATTACHMENT_DIR}/${Date.now()}-file-icon.svg`;
+          await RNFS.copyFileAssets(
+            'icons/file-outline.svg',
+            iconThumbnailPath,
+          );
+          thumbnailPath = iconThumbnailPath;
         }
 
         const newAttachment = {
@@ -656,6 +694,10 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
         await download.promise;
         thumbnail_path = localPath;
+      } else {
+        const iconThumbnailPath = `${ATTACHMENT_DIR}/${Date.now()}-link-icon.svg`;
+        await RNFS.copyFileAssets('icons/link-variant.svg', iconThumbnailPath);
+        thumbnail_path = iconThumbnailPath;
       }
 
       const newAttachment = {
@@ -673,6 +715,8 @@ const FlowEditorScreen = ({ route, navigation }) => {
       setEditingNode(prev => ({ ...prev, attachment: newAttachment }));
     } catch (error) {
       console.error('Could not get link preview', error);
+      const iconThumbnailPath = `${ATTACHMENT_DIR}/${Date.now()}-link-icon.svg`;
+      await RNFS.copyFileAssets('icons/link-variant.svg', iconThumbnailPath);
       // Fallback to saving just the URL
       const newAttachment = {
         node_id: editingNode.id,
@@ -680,7 +724,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
         mime_type: 'text/url',
         original_uri: attachmentUrl,
         stored_path: null,
-        thumbnail_path: null,
+        thumbnail_path: iconThumbnailPath,
       };
       setEditingNode(prev => ({ ...prev, attachment: newAttachment }));
     } finally {
@@ -1007,9 +1051,11 @@ const FlowEditorScreen = ({ route, navigation }) => {
                       ) : (
                         <Icon source="link-variant" size={80} />
                       )
-                    ) : editingNode.attachment.mime_type &&
-                      (editingNode.attachment.mime_type.startsWith('image/') ||
-                        editingNode.attachment.thumbnail_path) ? (
+                    ) : editingNode.attachment.thumbnail_path ||
+                      (editingNode.attachment.mime_type &&
+                        editingNode.attachment.mime_type.startsWith(
+                          'image/',
+                        )) ? (
                       <Image
                         key={
                           editingNode.attachment.thumbnail_path ||

@@ -60,12 +60,10 @@ const SkiaCard = ({
   const layoutWidth = (node.size.width || CARD_MIN_WIDTH) - marginRow * 2;
 
   const attachmentImage = useImage(
-    node.attachment?.thumbnail_path ||
-      (node.attachment?.mime_type?.startsWith('image/') &&
-        node.attachment?.stored_path)
-      ? `file://${
-          node.attachment.thumbnail_path || node.attachment.stored_path
-        }`
+    node.attachment?.thumbnail_path
+      ? `file://${node.attachment.thumbnail_path}`
+      : node.attachment?.mime_type?.startsWith('image/')
+      ? `file://${node.attachment.stored_path}`
       : null,
   );
 
@@ -97,7 +95,7 @@ const SkiaCard = ({
     return path;
   }, [paperclipIconFont, node.attachment]);
 
-  const attachmentIconPath = useMemo(() => {
+  const attachmentIconData = useMemo(() => {
     if (!iconFont || !node.attachment) return null;
     let iconChar;
     if (node.attachment.mime_type === 'text/url') {
@@ -112,8 +110,9 @@ const SkiaCard = ({
       const matrix = Skia.Matrix();
       matrix.preScale(scale, scale);
       path.transform(matrix);
+      return { path, bounds: path.getBounds() };
     }
-    return path;
+    return null;
   }, [iconFont, node.attachment]);
 
   const cardParagraph = useMemo(() => {
@@ -192,14 +191,19 @@ ${descriptionText}`);
       );
     }
 
-    if (attachmentIconPath) {
+    if (attachmentIconData) {
+      const { path, bounds } = attachmentIconData;
       const transform = [
-        { translateX: x },
-        { translateY: y + ICON_SIZE - PADDING },
+        {
+          translateX:
+            x + (ICON_SIZE - (bounds.x + bounds.width)) / 2 - bounds.x,
+        },
+        {
+          translateY:
+            y + (ICON_SIZE - (bounds.y + bounds.height)) / 2 - bounds.y,
+        },
       ];
-      return (
-        <Path path={attachmentIconPath} color="#666" transform={transform} />
-      );
+      return <Path path={path} color="#666" transform={transform} />;
     }
 
     return null;
