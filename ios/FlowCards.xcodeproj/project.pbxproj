@@ -12,6 +12,13 @@
 		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
 		D8037D779ACC0F7FDB21401C /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
+		09511D2C385A4E38A0DFBD3C /* NotoSansJP-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = F3C516309AD14CB9A3AFCB7C /* NotoSansJP-Bold.ttf */; };
+		6AB0E283FDB44429AC424185 /* NotoSansJP-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 36800460039D4E4BA479BC93 /* NotoSansJP-Regular.ttf */; };
+		E6067CD3357B4CBFBF6BCAEB /* NotoSansSC-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 2AE59F2BA70D49C0ACCEC314 /* NotoSansSC-Bold.ttf */; };
+		D9005DC0D25D40209C4D2A48 /* NotoSansSC-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 89D1E8F9A7224815853EEA4F /* NotoSansSC-Regular.ttf */; };
+		FD0FEB51EF194C8AAD471A7F /* file-outline.svg in Resources */ = {isa = PBXBuildFile; fileRef = 816ABC210E0B47EE9BF3EF36 /* file-outline.svg */; };
+		FFF02C54447F4D0EBC00F6D6 /* link-variant.svg in Resources */ = {isa = PBXBuildFile; fileRef = 91D53C45E0F944CC94AEF60B /* link-variant.svg */; };
+		5C713F259DCF4FEFB0578B6D /* main_icon.svg in Resources */ = {isa = PBXBuildFile; fileRef = 48DEC817556F44DF9F2847F6 /* main_icon.svg */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -44,6 +51,13 @@
 		761780EC2CA45674006654EE /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = FlowCards/AppDelegate.swift; sourceTree = "<group>"; };
 		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = FlowCards/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
+		F3C516309AD14CB9A3AFCB7C /* NotoSansJP-Bold.ttf */ = {isa = PBXFileReference; name = "NotoSansJP-Bold.ttf"; path = "../assets/fonts/Noto_Sans_JP/static/NotoSansJP-Bold.ttf"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
+		36800460039D4E4BA479BC93 /* NotoSansJP-Regular.ttf */ = {isa = PBXFileReference; name = "NotoSansJP-Regular.ttf"; path = "../assets/fonts/Noto_Sans_JP/static/NotoSansJP-Regular.ttf"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
+		2AE59F2BA70D49C0ACCEC314 /* NotoSansSC-Bold.ttf */ = {isa = PBXFileReference; name = "NotoSansSC-Bold.ttf"; path = "../assets/fonts/Noto_Sans_SC/static/NotoSansSC-Bold.ttf"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
+		89D1E8F9A7224815853EEA4F /* NotoSansSC-Regular.ttf */ = {isa = PBXFileReference; name = "NotoSansSC-Regular.ttf"; path = "../assets/fonts/Noto_Sans_SC/static/NotoSansSC-Regular.ttf"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
+		816ABC210E0B47EE9BF3EF36 /* file-outline.svg */ = {isa = PBXFileReference; name = "file-outline.svg"; path = "../assets/icons/file-outline.svg"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
+		91D53C45E0F944CC94AEF60B /* link-variant.svg */ = {isa = PBXFileReference; name = "link-variant.svg"; path = "../assets/icons/link-variant.svg"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
+		48DEC817556F44DF9F2847F6 /* main_icon.svg */ = {isa = PBXFileReference; name = "main_icon.svg"; path = "../assets/icons/main_icon.svg"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -121,6 +135,7 @@
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
 				BBD78D7AC51CEA395F1C20DB /* Pods */,
+				139FC0F0994B48A9BEFF6FE0 /* Resources */,
 			);
 			indentWidth = 2;
 			sourceTree = "<group>";
@@ -143,6 +158,21 @@
 			);
 			path = Pods;
 			sourceTree = "<group>";
+		};
+		139FC0F0994B48A9BEFF6FE0 /* Resources */ = {
+			isa = "PBXGroup";
+			children = (
+				F3C516309AD14CB9A3AFCB7C /* NotoSansJP-Bold.ttf */,
+				36800460039D4E4BA479BC93 /* NotoSansJP-Regular.ttf */,
+				2AE59F2BA70D49C0ACCEC314 /* NotoSansSC-Bold.ttf */,
+				89D1E8F9A7224815853EEA4F /* NotoSansSC-Regular.ttf */,
+				816ABC210E0B47EE9BF3EF36 /* file-outline.svg */,
+				91D53C45E0F944CC94AEF60B /* link-variant.svg */,
+				48DEC817556F44DF9F2847F6 /* main_icon.svg */,
+			);
+			name = Resources;
+			sourceTree = "<group>";
+			path = "";
 		};
 /* End PBXGroup section */
 
@@ -210,6 +240,13 @@
 				81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				D8037D779ACC0F7FDB21401C /* PrivacyInfo.xcprivacy in Resources */,
+				09511D2C385A4E38A0DFBD3C /* NotoSansJP-Bold.ttf in Resources */,
+				6AB0E283FDB44429AC424185 /* NotoSansJP-Regular.ttf in Resources */,
+				E6067CD3357B4CBFBF6BCAEB /* NotoSansSC-Bold.ttf in Resources */,
+				D9005DC0D25D40209C4D2A48 /* NotoSansSC-Regular.ttf in Resources */,
+				FD0FEB51EF194C8AAD471A7F /* file-outline.svg in Resources */,
+				FFF02C54447F4D0EBC00F6D6 /* link-variant.svg in Resources */,
+				5C713F259DCF4FEFB0578B6D /* main_icon.svg in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

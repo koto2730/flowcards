@@ -61,7 +61,7 @@ import { getLinkPreview } from 'link-preview-js';
 import FileViewer from 'react-native-file-viewer';
 
 const { width, height } = Dimensions.get('window');
-const ATTACHMENT_DIR = `${RNFS.ExternalDirectoryPath}/attachments`;
+const ATTACHMENT_DIR = `${RNFS.DocumentDirectoryPath}/attachments`;
 
 const mimeTypeLookup = {
   txt: 'text/plain',
@@ -604,40 +604,27 @@ const FlowEditorScreen = ({ route, navigation }) => {
         }
 
         let thumbnailPath = null;
-        if (fileType.startsWith('video/')) {
-          const thumbnailRes = await createThumbnail({
-            url: storedPath,
-            timeStamp: 1000, // 1 second
-          });
-          thumbnailPath = thumbnailRes.path;
-        } else if (!fileType.startsWith('image/')) {
+        if (fileType.startsWith('image/') || fileType.startsWith('video/')) {
+          try {
+            const thumbnailRes = await createThumbnail({
+              url: `file://${storedPath}`,
+              timeStamp: fileType.startsWith('video/') ? 1000 : 0,
+              format: 'jpeg',
+            });
+            thumbnailPath = thumbnailRes.path;
+          } catch (thumbError) {
+            console.error('Failed to create thumbnail', thumbError);
+            const iconThumbnailPath = `${ATTACHMENT_DIR}/${Date.now()}-file-icon.svg`;
+            await RNFS.copyFileAssets(
+              'custom/file-outline.svg',
+              iconThumbnailPath,
+            );
+            thumbnailPath = iconThumbnailPath;
+          }
+        } else {
           const iconThumbnailPath = `${ATTACHMENT_DIR}/${Date.now()}-file-icon.svg`;
           await RNFS.copyFileAssets(
-            'icons/file-outline.svg',
-            iconThumbnailPath,
-          );
-          thumbnailPath = iconThumbnailPath;
-        } else if (!fileType.startsWith('image/')) {
-          const iconThumbnailPath = `${ATTACHMENT_DIR}/${Date.now()}-file-icon.svg`;
-          await RNFS.copyFileAssets(
-            'icons/file-outline.svg',
-            iconThumbnailPath,
-          );
-          thumbnailPath = iconThumbnailPath;
-        } else if (!fileType.startsWith('image/')) {
-          const iconThumbnailPath = `${ATTACHMENT_DIR}/${Date.now()}-file-icon.svg`;
-          await RNFS.copyFileAssets(
-            'icons/file-outline.svg',
-            iconThumbnailPath,
-          );
-          thumbnailPath = iconThumbnailPath;
-        } else if (
-          !fileType.startsWith('image/') &&
-          !fileType.startsWith('video/')
-        ) {
-          const iconThumbnailPath = `${ATTACHMENT_DIR}/${Date.now()}-file-icon.svg`;
-          await RNFS.copyFileAssets(
-            'icons/file-outline.svg',
+            'custom/file-outline.svg',
             iconThumbnailPath,
           );
           thumbnailPath = iconThumbnailPath;
@@ -696,7 +683,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
         thumbnail_path = localPath;
       } else {
         const iconThumbnailPath = `${ATTACHMENT_DIR}/${Date.now()}-link-icon.svg`;
-        await RNFS.copyFileAssets('icons/link-variant.svg', iconThumbnailPath);
+        await RNFS.copyFileAssets('link-variant.svg', iconThumbnailPath);
         thumbnail_path = iconThumbnailPath;
       }
 
@@ -716,7 +703,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
     } catch (error) {
       console.error('Could not get link preview', error);
       const iconThumbnailPath = `${ATTACHMENT_DIR}/${Date.now()}-link-icon.svg`;
-      await RNFS.copyFileAssets('icons/link-variant.svg', iconThumbnailPath);
+      await RNFS.copyFileAssets('link-variant.svg', iconThumbnailPath);
       // Fallback to saving just the URL
       const newAttachment = {
         node_id: editingNode.id,
@@ -744,7 +731,10 @@ const FlowEditorScreen = ({ route, navigation }) => {
         Alert.alert('Error', 'Could not open the URL.');
       });
     } else if (stored_path) {
-      FileViewer.open(stored_path, { showOpenWithDialog: true })
+      FileViewer.open(stored_path, {
+        showOpenWithDialog: true,
+        showAppsSuggestions: true,
+      })
         .then(() => {
           // success
         })
