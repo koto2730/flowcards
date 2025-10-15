@@ -604,30 +604,27 @@ const FlowEditorScreen = ({ route, navigation }) => {
         }
 
         let thumbnailPath = null;
-        if (fileType.startsWith('image/') || fileType.startsWith('video/')) {
+        if (fileType.startsWith('image/')) {
+          try {
+            thumbnailPath = storedPath;
+          } catch (thumbError) {
+            console.error('Failed to create thumbnail', thumbError);
+            thumbnailPath = '';
+          }
+        } else if (fileType.startsWith('video/')) {
           try {
             const thumbnailRes = await createThumbnail({
               url: `file://${storedPath}`,
-              timeStamp: fileType.startsWith('video/') ? 1000 : 0,
+              timeStamp: 20,
               format: 'jpeg',
             });
             thumbnailPath = thumbnailRes.path;
           } catch (thumbError) {
             console.error('Failed to create thumbnail', thumbError);
-            const iconThumbnailPath = `${ATTACHMENT_DIR}/${Date.now()}-file-icon.svg`;
-            await RNFS.copyFileAssets(
-              'custom/file-outline.svg',
-              iconThumbnailPath,
-            );
-            thumbnailPath = iconThumbnailPath;
+            thumbnailPath = '';
           }
         } else {
-          const iconThumbnailPath = `${ATTACHMENT_DIR}/${Date.now()}-file-icon.svg`;
-          await RNFS.copyFileAssets(
-            'custom/file-outline.svg',
-            iconThumbnailPath,
-          );
-          thumbnailPath = iconThumbnailPath;
+          thumbnailPath = '';
         }
 
         const newAttachment = {
