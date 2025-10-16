@@ -12,6 +12,7 @@ import {
   insertNode,
   deleteNode,
   getAttachmentByNodeId,
+  updateAttachment,
 } from '../db';
 import RNFS from 'react-native-fs';
 import { doRectsOverlap, getRect, getClosestHandle } from '../utils/flowUtils';
@@ -38,7 +39,9 @@ export const useFlowData = (flowId, isSeeThrough, t) => {
       const nodesData = await getNodes(flowId);
       const edgesData = await getEdges(flowId);
 
-      const attachmentPromises = nodesData.map(n => getAttachmentByNodeId(n.id));
+      const attachmentPromises = nodesData.map(n =>
+        getAttachmentByNodeId(flowId, n.id),
+      );
       const attachments = await Promise.all(attachmentPromises);
       const attachmentsMap = attachments.reduce((acc, att) => {
         if (att) {
@@ -257,7 +260,7 @@ export const useFlowData = (flowId, isSeeThrough, t) => {
     return Array.isArray(finalNodes) ? finalNodes : [];
   }, [allNodes, currentParentId, isSeeThrough, edges]);
 
-  const handleUpdateNodeData = async (nodeId, newData) => {
+  const handleUpdateNodeData = async (flowId, nodeId, newData) => {
     try {
       const newDimensions = CARD_SIZES[newData.size] || CARD_SIZES.medium;
 
@@ -270,7 +273,41 @@ export const useFlowData = (flowId, isSeeThrough, t) => {
       };
 
       await updateNode(nodeId, dbUpdateData);
-
+      if (newData?.attachment) {
+        const dbAttachmentUpdateData = {
+          id: newData.attachment.id,
+          flow_id: flowId,
+          node_id: nodeId,
+          filename: newData.attachment.filename
+            ? newData.attachment.filename
+            : '',
+          mime_type: newData.attachment.mime_type
+            ? newData.attachment.mime_type
+            : '',
+          original_uri: newData.attachment.original_uri
+            ? newData.attachment.original_uri
+            : '',
+          stored_path: newData.attachment.stored_path
+            ? newData.attachment.stored_path
+            : '',
+          preview_title: newData.attachment.preview_title
+            ? newData.attachment.preview_title
+            : '',
+          preview_description: newData.attachment.preview_description
+            ? newData.attachment.preview_description
+            : '',
+          preview_image_url: newData.attachment.preview_image_url
+            ? newData.attachment.preview_image_url
+            : '',
+          thumbnail_path: newData.attachment.thumbnail_path
+            ? newData.attachment.thumbnail_path
+            : '',
+        };
+        await updateAttachment(
+          dbAttachmentUpdateData.id,
+          dbAttachmentUpdateData,
+        );
+      }
       setAllNodes(nds =>
         Array.isArray(nds)
           ? nds.map(node =>
@@ -355,7 +392,7 @@ export const useFlowData = (flowId, isSeeThrough, t) => {
 
     try {
       const deletePromises = Array.from(nodesToRemove).map(async id => {
-        const attachment = await getAttachmentByNodeId(id);
+        const attachment = await getAttachmentByNodeId(flowId, id);
         if (attachment) {
           if (attachment.stored_path) {
             const fileExists = await RNFS.exists(attachment.stored_path);

@@ -312,6 +312,7 @@ export const initDB = lang => {
                   tx.executeSql(
                     `CREATE TABLE IF NOT EXISTS attachments (
                       id INTEGER PRIMARY KEY AUTOINCREMENT,
+                      flow_id INTEGER NOT NULL,
                       node_id TEXT NOT NULL,
                       filename TEXT,
                       mime_type TEXT,
@@ -357,10 +358,11 @@ export const initDB = lang => {
 };
 
 // --- attachments CRUD ---
-export const getAttachmentByNodeId = nodeId =>
-  executeSql('SELECT * FROM attachments WHERE node_id = ?;', [nodeId]).then(
-    ({ rows }) => (rows.length > 0 ? rows.raw()[0] : null),
-  );
+export const getAttachmentByNodeId = (flowId, nodeId) =>
+  executeSql('SELECT * FROM attachments WHERE flow_id = ? and node_id = ?;', [
+    flowId,
+    nodeId,
+  ]).then(({ rows }) => (rows.length > 0 ? rows.raw()[0] : null));
 
 export const insertAttachment = data => {
   const keys = Object.keys(data);
@@ -370,6 +372,17 @@ export const insertAttachment = data => {
     `INSERT INTO attachments (${keys.join(', ')}) VALUES (${placeholders});`,
     values,
   );
+};
+
+export const updateAttachment = (id, data) => {
+  const fields = Object.keys(data)
+    .map(key => `${key} = ?`)
+    .join(', ');
+  const values = Object.values(data);
+  return executeSql(`UPDATE attachments SET ${fields} WHERE id = ?;`, [
+    ...values,
+    id,
+  ]);
 };
 
 export const deleteAttachment = id =>

@@ -441,7 +441,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
   const handleNodeLongPress = async hitNode => {
     try {
-      const attachment = await getAttachmentByNodeId(hitNode.id);
+      const attachment = await getAttachmentByNodeId(flowId, hitNode.id);
       setEditingNode({
         id: hitNode.id,
         title: hitNode.data.label,
@@ -618,7 +618,10 @@ const FlowEditorScreen = ({ route, navigation }) => {
               timeStamp: 20,
               format: 'jpeg',
             });
-            thumbnailPath = thumbnailRes.path;
+            const thumbFileName = `${Date.now()}-thumb.jpeg`;
+            const permanentThumbPath = `${ATTACHMENT_DIR}/${thumbFileName}`;
+            await RNFS.moveFile(thumbnailRes.path, permanentThumbPath);
+            thumbnailPath = permanentThumbPath;
           } catch (thumbError) {
             console.error('Failed to create thumbnail', thumbError);
             thumbnailPath = '';
@@ -636,7 +639,8 @@ const FlowEditorScreen = ({ route, navigation }) => {
           thumbnail_path: thumbnailPath,
         };
 
-        setEditingNode(prev => ({ ...prev, attachment: newAttachment }));
+        const newNode = { ...editingNode, attachment: newAttachment };
+        setEditingNode(newNode);
       }
     } catch (err) {
       if (isCancel(err)) {
@@ -679,9 +683,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
         await download.promise;
         thumbnail_path = localPath;
       } else {
-        const iconThumbnailPath = `${ATTACHMENT_DIR}/${Date.now()}-link-icon.svg`;
-        await RNFS.copyFileAssets('link-variant.svg', iconThumbnailPath);
-        thumbnail_path = iconThumbnailPath;
+        thumbnail_path = '';
       }
 
       const newAttachment = {
@@ -699,8 +701,6 @@ const FlowEditorScreen = ({ route, navigation }) => {
       setEditingNode(prev => ({ ...prev, attachment: newAttachment }));
     } catch (error) {
       console.error('Could not get link preview', error);
-      const iconThumbnailPath = `${ATTACHMENT_DIR}/${Date.now()}-link-icon.svg`;
-      await RNFS.copyFileAssets('link-variant.svg', iconThumbnailPath);
       // Fallback to saving just the URL
       const newAttachment = {
         node_id: editingNode.id,
@@ -708,7 +708,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
         mime_type: 'text/url',
         original_uri: attachmentUrl,
         stored_path: null,
-        thumbnail_path: iconThumbnailPath,
+        thumbnail_path: '',
       };
       setEditingNode(prev => ({ ...prev, attachment: newAttachment }));
     } finally {
@@ -784,10 +784,26 @@ const FlowEditorScreen = ({ route, navigation }) => {
       // Handle attachment changes first
       if (editingNode.attachment_deleted && editingNode.deleted_attachment_id) {
         await deleteAttachment(editingNode.deleted_attachment_id);
-        finalAttachmentState = null;
-      } else if (editingNode.attachment && !editingNode.attachment.id) {
+        if (!editingNode.attachment) {
+          finalAttachmentState = null;
+        }
+      }
+
+      if (editingNode.attachment && !editingNode.attachment.id) {
         // New attachment, insert it
-        const result = await insertAttachment(editingNode.attachment);
+        const insertData = {
+          flow_id: flowId,
+          node_id: editingNode.id,
+          filename: editingNode.attachment.filename,
+          mime_type: editingNode.attachment.mime_type,
+          original_uri: editingNode.attachment.original_uri,
+          stored_path: editingNode.attachment.stored_path,
+          preview_title: editingNode.attachment.preview_title,
+          preview_description: editingNode.attachment.preview_description,
+          preview_image_url: editingNode.attachment.preview_image_url,
+          thumbnail_path: editingNode.attachment.thumbnail_path,
+        };
+        const result = await insertAttachment(insertData);
         finalAttachmentState = {
           ...editingNode.attachment,
           id: result.insertId,
@@ -802,7 +818,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
         color: editingNode.color,
         attachment: finalAttachmentState,
       };
-      await handleUpdateNodeData(editingNode.id, dataToUpdate, fontMgr);
+      await handleUpdateNodeData(flowId, editingNode.id, dataToUpdate, fontMgr);
     } catch (err) {
       console.error('Failed to save node or attachment', err);
     } finally {

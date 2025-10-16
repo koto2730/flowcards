@@ -13,6 +13,8 @@ import {
   useImage,
   Image,
   useFont,
+  ImageSVG,
+  useSVG,
 } from '@shopify/react-native-skia';
 
 const CARD_MIN_WIDTH = 150;
@@ -60,19 +62,15 @@ const SkiaCard = ({
   const layoutWidth = (node.size.width || CARD_MIN_WIDTH) - marginRow * 2;
 
   const attachmentImage = useImage(
-    node.attachment?.thumbnail_path
+    node.attachment?.thumbnail_path && node.attachment.thumbnail_path.length > 0
       ? `file://${node.attachment.thumbnail_path}`
       : node.attachment?.mime_type?.startsWith('image/')
       ? `file://${node.attachment.stored_path}`
       : null,
   );
 
-  const iconFont = useFont(
-    Platform.OS === 'ios'
-      ? require('../../ios/Fonts/MaterialCommunityIcons.ttf')
-      : 'MaterialCommunityIcons',
-    24,
-  );
+  const fileIconSvg = useSVG(require('../../assets/icons/file-outline.svg'));
+  const linkIconSvg = useSVG(require('../../assets/icons/link-variant.svg'));
 
   const paperclipIconFont = useFont(
     Platform.OS === 'ios'
@@ -94,26 +92,6 @@ const SkiaCard = ({
     }
     return path;
   }, [paperclipIconFont, node.attachment]);
-
-  const attachmentIconData = useMemo(() => {
-    if (!iconFont || !node.attachment) return null;
-    let iconChar;
-    if (node.attachment.mime_type === 'text/url') {
-      iconChar = String.fromCodePoint(0xf033b); // link-variant
-    } else {
-      iconChar = String.fromCodePoint(0xf021a); // file-outline
-    }
-    const path = iconFont.getPath(iconChar, 0, 0);
-    if (path) {
-      const bounds = path.getBounds();
-      const scale = 24 / bounds.height;
-      const matrix = Skia.Matrix();
-      matrix.preScale(scale, scale);
-      path.transform(matrix);
-      return { path, bounds: path.getBounds() };
-    }
-    return null;
-  }, [iconFont, node.attachment]);
 
   const cardParagraph = useMemo(() => {
     if (!fontMgr) {
@@ -191,19 +169,24 @@ ${descriptionText}`);
       );
     }
 
-    if (attachmentIconData) {
-      const { path, bounds } = attachmentIconData;
-      const transform = [
-        {
-          translateX:
-            x + (ICON_SIZE - (bounds.x + bounds.width)) / 2 - bounds.x,
-        },
-        {
-          translateY:
-            y + (ICON_SIZE - (bounds.y + bounds.height)) / 2 - bounds.y,
-        },
-      ];
-      return <Path path={path} color="#666" transform={transform} />;
+    let iconSvg = null;
+    if (node.attachment.mime_type === 'text/url') {
+      iconSvg = linkIconSvg;
+    } else {
+      iconSvg = fileIconSvg;
+    }
+
+    if (iconSvg) {
+      return (
+        <ImageSVG
+          svg={iconSvg}
+          x={x}
+          y={y}
+          width={ICON_SIZE}
+          height={ICON_SIZE}
+          fit="cover"
+        />
+      );
     }
 
     return null;
