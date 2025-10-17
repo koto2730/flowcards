@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   Image,
   Platform,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Canvas, Path, Group, useFonts } from '@shopify/react-native-skia';
@@ -179,6 +180,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
   const origin_y = useSharedValue(0);
 
   const activeNodeId = useSharedValue(null);
+  const pressState = useSharedValue({ id: null, state: 'idle' });
   const dragStartOffset = useSharedValue({ x: 0, y: 0 });
   const nodePosition = useSharedValue({ x: 0, y: 0 });
 
@@ -465,7 +467,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
   const longPressGesture = Gesture.LongPress()
     .minDuration(800)
-    .onStart(event => {
+    .onBegin(event => {
       if (isSeeThrough || linkingState.active) return;
       const worldX = (event.x - translateX.value) / scale.value;
       const worldY = (event.y - translateY.value) / scale.value;
@@ -474,8 +476,32 @@ const FlowEditorScreen = ({ route, navigation }) => {
         .reverse()
         .find(node => isPointInCard(node, worldX, worldY));
       if (hitNode) {
-        runOnJS(handleNodeLongPress)(hitNode);
+        pressState.value = { id: hitNode.id, state: 'pressing' };
       }
+    })
+    .onStart(() => {
+      if (pressState.value.id) {
+        pressState.value = {
+          id: pressState.value.id,
+          state: 'confirmed',
+        };
+      }
+    })
+    .onEnd(event => {
+      if (pressState.value.state === 'confirmed') {
+        const worldX = (event.x - translateX.value) / scale.value;
+        const worldY = (event.y - translateY.value) / scale.value;
+        if (!Array.isArray(displayNodes)) return;
+        const hitNode = [...displayNodes]
+          .reverse()
+          .find(node => isPointInCard(node, worldX, worldY));
+        if (hitNode) {
+          runOnJS(handleNodeLongPress)(hitNode);
+        }
+      }
+    })
+    .onFinalize(() => {
+      pressState.value = { id: null, state: 'idle' };
     });
 
   const doubleTapGesture = Gesture.Tap()
@@ -566,6 +592,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
   };
 
   const handleAttachFile = async () => {
+    Keyboard.dismiss();
     const hasPermission = await requestStoragePermission();
     if (!hasPermission) return;
 
@@ -699,21 +726,10 @@ const FlowEditorScreen = ({ route, navigation }) => {
       };
 
       setEditingNode(prev => ({ ...prev, attachment: newAttachment }));
-    } catch (error) {
-      console.error('Could not get link preview', error);
-      // Fallback to saving just the URL
-      const newAttachment = {
-        node_id: editingNode.id,
-        filename: attachmentUrl,
-        mime_type: 'text/url',
-        original_uri: attachmentUrl,
-        stored_path: null,
-        thumbnail_path: '',
-      };
-      setEditingNode(prev => ({ ...prev, attachment: newAttachment }));
-    } finally {
       setUrlInputVisible(false);
       setAttachmentUrl('');
+    } catch (error) {
+      Alert.alert(t('previewError'), t('previewErrorMessage'));
     }
   };
 
@@ -728,7 +744,12 @@ const FlowEditorScreen = ({ route, navigation }) => {
         Alert.alert('Error', 'Could not open the URL.');
       });
     } else if (stored_path) {
-      FileViewer.open(stored_path, {
+      let path = stored_path;
+      if (Platform.OS === 'ios') {
+        path = decodeURIComponent(path);
+      }
+
+      FileViewer.open(path, {
         showOpenWithDialog: true,
         showAppsSuggestions: true,
       })
@@ -974,6 +995,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
                     isEditing={editingNode && editingNode.id === node.id}
                     isSeeThroughParent={node.isSeeThroughParent}
                     showAttachment={showAttachmentsOnCanvas}
+                    pressState={pressState}
                   />
                 ))}
                 {renderEdges()}
@@ -1011,9 +1033,10 @@ const FlowEditorScreen = ({ route, navigation }) => {
                 />
                 <SegmentedButtons
                   value={editingNode.size}
-                  onValueChange={value =>
-                    setEditingNode(prev => ({ ...prev, size: value }))
-                  }
+                  onValueChange={value => {
+                    Keyboard.dismiss();
+                    setEditingNode(prev => ({ ...prev, size: value }));
+                  }}
                   buttons={[
                     { value: 'small', label: t('sizeSmall') },
                     { value: 'medium', label: t('sizeMedium') },
@@ -1026,7 +1049,10 @@ const FlowEditorScreen = ({ route, navigation }) => {
                     styles.colorButton,
                     { backgroundColor: editingNode.color },
                   ]}
-                  onPress={() => setColorPickerVisible(true)}
+                  onPress={() => {
+                    Keyboard.dismiss();
+                    setColorPickerVisible(true);
+                  }}
                 >
                   <Text
                     style={[
@@ -1104,7 +1130,10 @@ const FlowEditorScreen = ({ route, navigation }) => {
                       <Button
                         icon="web"
                         mode="outlined"
-                        onPress={() => setUrlInputVisible(true)}
+                        onPress={() => {
+                          Keyboard.dismiss();
+                          setUrlInputVisible(true);
+                        }}
                         style={styles.attachButton}
                       >
                         {t('url')}

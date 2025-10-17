@@ -54,6 +54,8 @@ export const resources = {
       attach: 'Attachment',
       file: 'File',
       url: 'URL',
+      previewError: 'Preview Error',
+      previewErrorMessage: 'Could not get a preview. Please check the URL.',
     },
   },
   ja: {
@@ -111,6 +113,8 @@ export const resources = {
       attach: '添付',
       file: 'ファイル',
       url: 'URL',
+      previewError: 'プレビューエラー',
+      previewErrorMessage: 'プレビューを取得できませんでした。URLを確認してください。',
     },
   },
   zh: {
@@ -167,6 +171,8 @@ export const resources = {
       attach: '附件',
       file: '文件',
       url: '网址',
+      previewError: '预览错误',
+      previewErrorMessage: '无法获取预览。请检查URL。',
     },
   },
 };

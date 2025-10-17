@@ -16,6 +16,7 @@ import {
   ImageSVG,
   useSVG,
 } from '@shopify/react-native-skia';
+import { useDerivedValue } from 'react-native-reanimated';
 
 const CARD_MIN_WIDTH = 150;
 
@@ -26,11 +27,32 @@ const SkiaCard = ({
   isLinkingMode,
   isLinkSource,
   isEditing,
+  pressState,
   isSeeThroughParent,
   showAttachment,
 }) => {
   const cardColor = isSelected ? '#E3F2FD' : node.color || 'white';
-  const borderColor = isLinkSource ? '#34C759' : '#ddd';
+
+  const borderColor = useDerivedValue(() => {
+    if (pressState.value.id === node.id) {
+      if (pressState.value.state === 'confirmed') {
+        return '#34C759'; // Green for confirmed
+      }
+      return '#60A5FA'; // Blue for pressing
+    }
+    return isLinkSource ? '#34C759' : '#ddd';
+  }, [pressState, isLinkSource, node.id]);
+
+  const borderWidth = useDerivedValue(() => {
+    if (
+      pressState.value.id === node.id &&
+      pressState.value.state === 'confirmed'
+    ) {
+      return 4;
+    }
+    return isLinkSource ? 4 : 2;
+  }, [pressState, isLinkSource, node.id]);
+
   const titleColor = Skia.Color('black');
   const descriptionColor = Skia.Color('#555');
   const deleteButtonColor = 'red';
@@ -205,7 +227,7 @@ ${descriptionText}`);
         <Path
           path={borderPath}
           style="stroke"
-          strokeWidth={2}
+          strokeWidth={borderWidth}
           color={borderColor}
         >
           <DashPathEffect intervals={[4, 4]} />
@@ -216,7 +238,7 @@ ${descriptionText}`);
           y={node.position.y}
           width={node.size.width}
           height={node.size.height + marginColumn}
-          strokeWidth={2}
+          strokeWidth={borderWidth}
           style="stroke"
           color={borderColor}
         />
