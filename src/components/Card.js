@@ -17,6 +17,7 @@ import {
   useSVG,
 } from '@shopify/react-native-skia';
 import { useDerivedValue } from 'react-native-reanimated';
+import OriginalTheme, { OriginalTehme } from '../screens/OriginalTheme';
 
 const CARD_MIN_WIDTH = 150;
 
@@ -36,11 +37,12 @@ const SkiaCard = ({
   const borderColor = useDerivedValue(() => {
     if (pressState.value.id === node.id) {
       if (pressState.value.state === 'confirmed') {
-        return '#34C759'; // Green for confirmed
+        console.log('Card confirmed:', node.id);
+        return OriginalTheme.colors.primary; // Green for confirmed
       }
       return '#60A5FA'; // Blue for pressing
     }
-    return isLinkSource ? '#34C759' : '#ddd';
+    return isLinkSource ? '#60A5FA' : '#ddd';
   }, [pressState, isLinkSource, node.id]);
 
   const borderWidth = useDerivedValue(() => {

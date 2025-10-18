@@ -280,6 +280,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
   const panGesture = Gesture.Pan()
     .onStart(event => {
+      pressState.value = { id: null, state: 'idle' };
       const worldX = (event.x - translateX.value) / scale.value;
       const worldY = (event.y - translateY.value) / scale.value;
       if (!Array.isArray(displayNodes)) return;
@@ -478,14 +479,14 @@ const FlowEditorScreen = ({ route, navigation }) => {
       if (hitNode) {
         pressState.value = { id: hitNode.id, state: 'pressing' };
       }
-    })
-    .onStart(() => {
-      if (pressState.value.id) {
-        pressState.value = {
-          id: pressState.value.id,
-          state: 'confirmed',
-        };
-      }
+      setTimeout(() => {
+        if (pressState.value.id) {
+          pressState.value = {
+            id: pressState.value.id,
+            state: 'confirmed',
+          };
+        }
+      }, 800);
     })
     .onEnd(event => {
       if (pressState.value.state === 'confirmed') {
@@ -729,6 +730,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
       setUrlInputVisible(false);
       setAttachmentUrl('');
     } catch (error) {
+      console.error('Failed to get link preview:', error);
       Alert.alert(t('previewError'), t('previewErrorMessage'));
     }
   };
@@ -1206,6 +1208,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
               style={styles.input}
               placeholder="https://example.com"
               autoCapitalize="none"
+              keyboardType="url"
               autoFocus
             />
             <View style={styles.buttonContainer}>
