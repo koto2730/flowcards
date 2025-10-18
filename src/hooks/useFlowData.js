@@ -308,33 +308,7 @@ export const useFlowData = (flowId, isSeeThrough, t) => {
           dbAttachmentUpdateData,
         );
       }
-      setAllNodes(nds =>
-        Array.isArray(nds)
-          ? nds.map(node =>
-              node.id === nodeId
-                ? {
-                    ...node,
-                    data: {
-                      ...node.data,
-                      label: newData.title ?? '',
-                      description: newData.description ?? '',
-                      size: newData.size,
-                      color: newData.color,
-                    },
-                    size: {
-                      width: dbUpdateData.width,
-                      height: dbUpdateData.height,
-                    },
-                    color: newData.color,
-                    attachment:
-                      newData.attachment !== undefined
-                        ? newData.attachment
-                        : node.attachment,
-                  }
-                : node,
-            )
-          : [],
-      );
+      await fetchData();
     } catch (error) {
       console.error('Failed to update node data:', error);
       Alert.alert('Error', 'Failed to update node data.');

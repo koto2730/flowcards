@@ -13,7 +13,14 @@ import {
   Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Canvas, Path, Group, useFonts } from '@shopify/react-native-skia';
+import {
+  Canvas,
+  Path,
+  Group,
+  useFonts,
+  useFont,
+  useSVG,
+} from '@shopify/react-native-skia';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   useSharedValue,
@@ -32,6 +39,7 @@ import { pick, types, isCancel } from '@react-native-documents/picker';
 import RNFS from 'react-native-fs';
 import { createThumbnail } from 'react-native-create-thumbnail';
 import { Linking } from 'react-native';
+import { launchImageLibrary } from 'react-native-image-picker';
 import {
   Divider,
   FAB,
@@ -194,6 +202,8 @@ const FlowEditorScreen = ({ route, navigation }) => {
       require('../../assets/fonts/Noto_Sans_SC/static/NotoSansSC-Bold.ttf'),
     ],
   });
+
+  const paperclipIconSvg = useSVG(require('../../assets/icons/paperclip.svg'));
 
   useEffect(() => {
     const ensureDirExists = async () => {
@@ -592,6 +602,69 @@ const FlowEditorScreen = ({ route, navigation }) => {
     });
   };
 
+  const processAttachment = async (originalUri, fileName, fileType) => {
+    if (fileType === 'application/octet-stream' && fileName) {
+      const extension = fileName.split('.').pop().toLowerCase();
+      if (extension) {
+        const inferredType = mimeTypeLookup[extension];
+        if (inferredType) {
+          fileType = inferredType;
+        }
+      }
+    }
+
+    const uniqueFileName = `${Date.now()}-${fileName}`;
+    const storedPath = `${ATTACHMENT_DIR}/${uniqueFileName}`;
+
+    if (Platform.OS === 'ios') {
+      const sourcePath = decodeURIComponent(
+        originalUri.replace(/^file:\/\//, ''),
+      );
+      await RNFS.copyFile(sourcePath, storedPath);
+    } else {
+      await RNFS.copyFile(originalUri, storedPath);
+    }
+
+    let thumbnailPath = null;
+    if (fileType.startsWith('image/')) {
+      try {
+        thumbnailPath = storedPath;
+      } catch (thumbError) {
+        console.error('Failed to create thumbnail', thumbError);
+        thumbnailPath = '';
+      }
+    } else if (fileType.startsWith('video/')) {
+      try {
+        const thumbnailRes = await createThumbnail({
+          url: `file://${storedPath}`,
+          timeStamp: 20,
+          format: 'jpeg',
+        });
+        const thumbFileName = `${Date.now()}-thumb.jpeg`;
+        const permanentThumbPath = `${ATTACHMENT_DIR}/${thumbFileName}`;
+        await RNFS.moveFile(thumbnailRes.path, permanentThumbPath);
+        thumbnailPath = permanentThumbPath;
+      } catch (thumbError) {
+        console.error('Failed to create thumbnail', thumbError);
+        thumbnailPath = '';
+      }
+    } else {
+      thumbnailPath = '';
+    }
+
+    const newAttachment = {
+      node_id: editingNode.id,
+      filename: fileName,
+      mime_type: fileType,
+      original_uri: originalUri,
+      stored_path: storedPath,
+      thumbnail_path: thumbnailPath,
+    };
+
+    const newNode = { ...editingNode, attachment: newAttachment };
+    setEditingNode(newNode);
+  };
+
   const handleAttachFile = async () => {
     Keyboard.dismiss();
     const hasPermission = await requestStoragePermission();
@@ -605,70 +678,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
       if (result && result.length > 0) {
         const res = result[0];
-        const originalUri = res.uri;
-        const fileName = res.name;
-        let fileType = res.type;
-
-        if (fileType === 'application/octet-stream' && fileName) {
-          const extension = fileName.split('.').pop().toLowerCase();
-          if (extension) {
-            const inferredType = mimeTypeLookup[extension];
-            if (inferredType) {
-              fileType = inferredType;
-            }
-          }
-        }
-
-        const uniqueFileName = `${Date.now()}-${fileName}`;
-        const storedPath = `${ATTACHMENT_DIR}/${uniqueFileName}`;
-
-        if (Platform.OS === 'ios') {
-          const sourcePath = decodeURIComponent(
-            originalUri.replace(/^file:\/\//, ''),
-          );
-          await RNFS.copyFile(sourcePath, storedPath);
-        } else {
-          await RNFS.copyFile(originalUri, storedPath);
-        }
-
-        let thumbnailPath = null;
-        if (fileType.startsWith('image/')) {
-          try {
-            thumbnailPath = storedPath;
-          } catch (thumbError) {
-            console.error('Failed to create thumbnail', thumbError);
-            thumbnailPath = '';
-          }
-        } else if (fileType.startsWith('video/')) {
-          try {
-            const thumbnailRes = await createThumbnail({
-              url: `file://${storedPath}`,
-              timeStamp: 20,
-              format: 'jpeg',
-            });
-            const thumbFileName = `${Date.now()}-thumb.jpeg`;
-            const permanentThumbPath = `${ATTACHMENT_DIR}/${thumbFileName}`;
-            await RNFS.moveFile(thumbnailRes.path, permanentThumbPath);
-            thumbnailPath = permanentThumbPath;
-          } catch (thumbError) {
-            console.error('Failed to create thumbnail', thumbError);
-            thumbnailPath = '';
-          }
-        } else {
-          thumbnailPath = '';
-        }
-
-        const newAttachment = {
-          node_id: editingNode.id,
-          filename: fileName,
-          mime_type: fileType,
-          original_uri: originalUri,
-          stored_path: storedPath,
-          thumbnail_path: thumbnailPath,
-        };
-
-        const newNode = { ...editingNode, attachment: newAttachment };
-        setEditingNode(newNode);
+        await processAttachment(res.uri, res.name, res.type);
       }
     } catch (err) {
       if (isCancel(err)) {
@@ -676,6 +686,24 @@ const FlowEditorScreen = ({ route, navigation }) => {
       } else {
         console.error('Error picking or copying file', err);
       }
+    }
+  };
+
+  const handleAttachImageFromLibrary = async () => {
+    Keyboard.dismiss();
+    const result = await launchImageLibrary({
+      mediaType: 'mixed',
+      quality: 1,
+    });
+
+    if (result.didCancel || result.errorCode) {
+      console.log('Image picker cancelled or failed', result.errorMessage);
+      return;
+    }
+
+    if (result.assets && result.assets.length > 0) {
+      const asset = result.assets[0];
+      await processAttachment(asset.uri, asset.fileName, asset.type);
     }
   };
 
@@ -690,7 +718,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
     }
 
     try {
-      const previewData = await getLinkPreview(attachmentUrl);
+      const previewData = await getLinkPreview(attachmentUrl, { fetch });
       let thumbnail_path = null;
       let preview_image_url = null;
 
@@ -991,6 +1019,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
                     key={node.id}
                     node={node}
                     fontMgr={fontMgr}
+                    paperclipIconSvg={paperclipIconSvg}
                     isSelected={linkingState.sourceNodeId === node.id}
                     isLinkingMode={linkingState.active}
                     isLinkSource={linkingState.sourceNodeId === node.id}
@@ -1129,6 +1158,16 @@ const FlowEditorScreen = ({ route, navigation }) => {
                       >
                         {t('file')}
                       </Button>
+                      {Platform.OS === 'ios' && (
+                        <Button
+                          icon="image-multiple"
+                          mode="outlined"
+                          onPress={handleAttachImageFromLibrary}
+                          style={styles.attachButton}
+                        >
+                          {t('photo')}
+                        </Button>
+                      )}
                       <Button
                         icon="web"
                         mode="outlined"
@@ -1347,9 +1386,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-around',
     width: '100%',
+    flexWrap: 'wrap',
   },
   attachButton: {
     width: '45%',
+    marginBottom: 10,
   },
   thumbnail: {
     width: 100,

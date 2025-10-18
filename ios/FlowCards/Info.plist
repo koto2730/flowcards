@@ -37,6 +37,10 @@
 	<string>カードに画像や動画を添付するために写真ライブラリにアクセスします。</string>
 	<key>NSDocumentsFolderUsageDescription</key>
 	<string>カードにファイルを添付するためにファイルアプリのドキュメントにアクセスします。</string>
+	<key>NSCameraUsageDescription</key>
+	<string>カードに添付する写真や動画を撮影するためにカメラにアクセスします。</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>カードに添付する動画の音声を録音するためにマイクにアクセスします。</string>
 	<key>RCTNewArchEnabled</key>
 	<true/>
 	<key>UIAppFonts</key>
