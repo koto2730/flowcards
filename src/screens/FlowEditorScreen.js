@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   Image,
   Platform,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Canvas, Path, Group, useFonts } from '@shopify/react-native-skia';
@@ -58,9 +59,37 @@ import { useFlowData } from '../hooks/useFlowData';
 import ColorPalette from 'react-native-color-palette';
 import { useTranslation } from 'react-i18next';
 import { getLinkPreview } from 'link-preview-js';
+import FileViewer from 'react-native-file-viewer';
 
 const { width, height } = Dimensions.get('window');
 const ATTACHMENT_DIR = `${RNFS.DocumentDirectoryPath}/attachments`;
+
+const mimeTypeLookup = {
+  txt: 'text/plain',
+  csv: 'text/csv',
+  html: 'text/html',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  gif: 'image/gif',
+  bmp: 'image/bmp',
+  webp: 'image/webp',
+  svg: 'image/svg+xml',
+  mp3: 'audio/mpeg',
+  wav: 'audio/wav',
+  ogg: 'audio/ogg',
+  mp4: 'video/mp4',
+  webm: 'video/webm',
+  pdf: 'application/pdf',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  ppt: 'application/vnd.ms-powerpoint',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  zip: 'application/zip',
+  json: 'application/json',
+};
 
 const getTextColorForBackground = hexColor => {
   if (!hexColor) return 'black';
@@ -151,6 +180,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
   const origin_y = useSharedValue(0);
 
   const activeNodeId = useSharedValue(null);
+  const pressState = useSharedValue({ id: null, state: 'idle' });
   const dragStartOffset = useSharedValue({ x: 0, y: 0 });
   const nodePosition = useSharedValue({ x: 0, y: 0 });
 
@@ -250,6 +280,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
   const panGesture = Gesture.Pan()
     .onStart(event => {
+      pressState.value = { id: null, state: 'idle' };
       const worldX = (event.x - translateX.value) / scale.value;
       const worldY = (event.y - translateY.value) / scale.value;
       if (!Array.isArray(displayNodes)) return;
@@ -413,7 +444,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
   const handleNodeLongPress = async hitNode => {
     try {
-      const attachment = await getAttachmentByNodeId(hitNode.id);
+      const attachment = await getAttachmentByNodeId(flowId, hitNode.id);
       setEditingNode({
         id: hitNode.id,
         title: hitNode.data.label,
@@ -437,7 +468,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
   const longPressGesture = Gesture.LongPress()
     .minDuration(800)
-    .onStart(event => {
+    .onBegin(event => {
       if (isSeeThrough || linkingState.active) return;
       const worldX = (event.x - translateX.value) / scale.value;
       const worldY = (event.y - translateY.value) / scale.value;
@@ -446,8 +477,32 @@ const FlowEditorScreen = ({ route, navigation }) => {
         .reverse()
         .find(node => isPointInCard(node, worldX, worldY));
       if (hitNode) {
-        runOnJS(handleNodeLongPress)(hitNode);
+        pressState.value = { id: hitNode.id, state: 'pressing' };
       }
+      setTimeout(() => {
+        if (pressState.value.id) {
+          pressState.value = {
+            id: pressState.value.id,
+            state: 'confirmed',
+          };
+        }
+      }, 800);
+    })
+    .onEnd(event => {
+      if (pressState.value.state === 'confirmed') {
+        const worldX = (event.x - translateX.value) / scale.value;
+        const worldY = (event.y - translateY.value) / scale.value;
+        if (!Array.isArray(displayNodes)) return;
+        const hitNode = [...displayNodes]
+          .reverse()
+          .find(node => isPointInCard(node, worldX, worldY));
+        if (hitNode) {
+          runOnJS(handleNodeLongPress)(hitNode);
+        }
+      }
+    })
+    .onFinalize(() => {
+      pressState.value = { id: null, state: 'idle' };
     });
 
   const doubleTapGesture = Gesture.Tap()
@@ -538,6 +593,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
   };
 
   const handleAttachFile = async () => {
+    Keyboard.dismiss();
     const hasPermission = await requestStoragePermission();
     if (!hasPermission) return;
 
@@ -551,20 +607,55 @@ const FlowEditorScreen = ({ route, navigation }) => {
         const res = result[0];
         const originalUri = res.uri;
         const fileName = res.name;
-        const fileType = res.type;
+        let fileType = res.type;
+
+        if (fileType === 'application/octet-stream' && fileName) {
+          const extension = fileName.split('.').pop().toLowerCase();
+          if (extension) {
+            const inferredType = mimeTypeLookup[extension];
+            if (inferredType) {
+              fileType = inferredType;
+            }
+          }
+        }
 
         const uniqueFileName = `${Date.now()}-${fileName}`;
         const storedPath = `${ATTACHMENT_DIR}/${uniqueFileName}`;
 
-        await RNFS.copyFile(originalUri, storedPath);
+        if (Platform.OS === 'ios') {
+          const sourcePath = decodeURIComponent(
+            originalUri.replace(/^file:\/\//, ''),
+          );
+          await RNFS.copyFile(sourcePath, storedPath);
+        } else {
+          await RNFS.copyFile(originalUri, storedPath);
+        }
 
         let thumbnailPath = null;
-        if (fileType.startsWith('video/')) {
-          const thumbnailRes = await createThumbnail({
-            url: storedPath,
-            timeStamp: 1000, // 1 second
-          });
-          thumbnailPath = thumbnailRes.path;
+        if (fileType.startsWith('image/')) {
+          try {
+            thumbnailPath = storedPath;
+          } catch (thumbError) {
+            console.error('Failed to create thumbnail', thumbError);
+            thumbnailPath = '';
+          }
+        } else if (fileType.startsWith('video/')) {
+          try {
+            const thumbnailRes = await createThumbnail({
+              url: `file://${storedPath}`,
+              timeStamp: 20,
+              format: 'jpeg',
+            });
+            const thumbFileName = `${Date.now()}-thumb.jpeg`;
+            const permanentThumbPath = `${ATTACHMENT_DIR}/${thumbFileName}`;
+            await RNFS.moveFile(thumbnailRes.path, permanentThumbPath);
+            thumbnailPath = permanentThumbPath;
+          } catch (thumbError) {
+            console.error('Failed to create thumbnail', thumbError);
+            thumbnailPath = '';
+          }
+        } else {
+          thumbnailPath = '';
         }
 
         const newAttachment = {
@@ -576,7 +667,8 @@ const FlowEditorScreen = ({ route, navigation }) => {
           thumbnail_path: thumbnailPath,
         };
 
-        setEditingNode(prev => ({ ...prev, attachment: newAttachment }));
+        const newNode = { ...editingNode, attachment: newAttachment };
+        setEditingNode(newNode);
       }
     } catch (err) {
       if (isCancel(err)) {
@@ -618,6 +710,8 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
         await download.promise;
         thumbnail_path = localPath;
+      } else {
+        thumbnail_path = '';
       }
 
       const newAttachment = {
@@ -633,21 +727,11 @@ const FlowEditorScreen = ({ route, navigation }) => {
       };
 
       setEditingNode(prev => ({ ...prev, attachment: newAttachment }));
-    } catch (error) {
-      console.error('Could not get link preview', error);
-      // Fallback to saving just the URL
-      const newAttachment = {
-        node_id: editingNode.id,
-        filename: attachmentUrl,
-        mime_type: 'text/url',
-        original_uri: attachmentUrl,
-        stored_path: null,
-        thumbnail_path: null,
-      };
-      setEditingNode(prev => ({ ...prev, attachment: newAttachment }));
-    } finally {
       setUrlInputVisible(false);
       setAttachmentUrl('');
+    } catch (error) {
+      console.error('Failed to get link preview:', error);
+      Alert.alert(t('previewError'), t('previewErrorMessage'));
     }
   };
 
@@ -662,15 +746,25 @@ const FlowEditorScreen = ({ route, navigation }) => {
         Alert.alert('Error', 'Could not open the URL.');
       });
     } else if (stored_path) {
-      const url = `file://${stored_path}`;
-      console.log(`Attempting to open attachment: ${url}`);
-      Linking.openURL(url).catch(err => {
-        console.error('Failed to open attachment', err);
-        Alert.alert(
-          'Error',
-          'Could not open the attachment. The file might be corrupted or not supported on the simulator.',
-        );
-      });
+      let path = stored_path;
+      if (Platform.OS === 'ios') {
+        path = decodeURIComponent(path);
+      }
+
+      FileViewer.open(path, {
+        showOpenWithDialog: true,
+        showAppsSuggestions: true,
+      })
+        .then(() => {
+          // success
+        })
+        .catch(err => {
+          console.error('Failed to open attachment', err);
+          Alert.alert(
+            'Error',
+            'Could not open the attachment. The file might be corrupted or the format is not supported.',
+          );
+        });
     }
   };
 
@@ -713,10 +807,26 @@ const FlowEditorScreen = ({ route, navigation }) => {
       // Handle attachment changes first
       if (editingNode.attachment_deleted && editingNode.deleted_attachment_id) {
         await deleteAttachment(editingNode.deleted_attachment_id);
-        finalAttachmentState = null;
-      } else if (editingNode.attachment && !editingNode.attachment.id) {
+        if (!editingNode.attachment) {
+          finalAttachmentState = null;
+        }
+      }
+
+      if (editingNode.attachment && !editingNode.attachment.id) {
         // New attachment, insert it
-        const result = await insertAttachment(editingNode.attachment);
+        const insertData = {
+          flow_id: flowId,
+          node_id: editingNode.id,
+          filename: editingNode.attachment.filename,
+          mime_type: editingNode.attachment.mime_type,
+          original_uri: editingNode.attachment.original_uri,
+          stored_path: editingNode.attachment.stored_path,
+          preview_title: editingNode.attachment.preview_title,
+          preview_description: editingNode.attachment.preview_description,
+          preview_image_url: editingNode.attachment.preview_image_url,
+          thumbnail_path: editingNode.attachment.thumbnail_path,
+        };
+        const result = await insertAttachment(insertData);
         finalAttachmentState = {
           ...editingNode.attachment,
           id: result.insertId,
@@ -731,7 +841,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
         color: editingNode.color,
         attachment: finalAttachmentState,
       };
-      await handleUpdateNodeData(editingNode.id, dataToUpdate, fontMgr);
+      await handleUpdateNodeData(flowId, editingNode.id, dataToUpdate, fontMgr);
     } catch (err) {
       console.error('Failed to save node or attachment', err);
     } finally {
@@ -887,6 +997,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
                     isEditing={editingNode && editingNode.id === node.id}
                     isSeeThroughParent={node.isSeeThroughParent}
                     showAttachment={showAttachmentsOnCanvas}
+                    pressState={pressState}
                   />
                 ))}
                 {renderEdges()}
@@ -924,9 +1035,10 @@ const FlowEditorScreen = ({ route, navigation }) => {
                 />
                 <SegmentedButtons
                   value={editingNode.size}
-                  onValueChange={value =>
-                    setEditingNode(prev => ({ ...prev, size: value }))
-                  }
+                  onValueChange={value => {
+                    Keyboard.dismiss();
+                    setEditingNode(prev => ({ ...prev, size: value }));
+                  }}
                   buttons={[
                     { value: 'small', label: t('sizeSmall') },
                     { value: 'medium', label: t('sizeMedium') },
@@ -939,7 +1051,10 @@ const FlowEditorScreen = ({ route, navigation }) => {
                     styles.colorButton,
                     { backgroundColor: editingNode.color },
                   ]}
-                  onPress={() => setColorPickerVisible(true)}
+                  onPress={() => {
+                    Keyboard.dismiss();
+                    setColorPickerVisible(true);
+                  }}
                 >
                   <Text
                     style={[
@@ -967,7 +1082,11 @@ const FlowEditorScreen = ({ route, navigation }) => {
                       ) : (
                         <Icon source="link-variant" size={80} />
                       )
-                    ) : (
+                    ) : editingNode.attachment.thumbnail_path ||
+                      (editingNode.attachment.mime_type &&
+                        editingNode.attachment.mime_type.startsWith(
+                          'image/',
+                        )) ? (
                       <Image
                         key={
                           editingNode.attachment.thumbnail_path ||
@@ -980,6 +1099,8 @@ const FlowEditorScreen = ({ route, navigation }) => {
                         }}
                         style={styles.thumbnail}
                       />
+                    ) : (
+                      <Icon source="file-document-outline" size={80} />
                     )}
                     <Text style={styles.attachmentText} numberOfLines={1}>
                       {editingNode.attachment.filename}
@@ -1011,7 +1132,10 @@ const FlowEditorScreen = ({ route, navigation }) => {
                       <Button
                         icon="web"
                         mode="outlined"
-                        onPress={() => setUrlInputVisible(true)}
+                        onPress={() => {
+                          Keyboard.dismiss();
+                          setUrlInputVisible(true);
+                        }}
                         style={styles.attachButton}
                       >
                         {t('url')}
@@ -1023,8 +1147,9 @@ const FlowEditorScreen = ({ route, navigation }) => {
               <Card.Actions style={styles.buttonContainer}>
                 <Button onPress={handleSaveEditingNode}>{t('save')}</Button>
                 <Button
+                  mode="outlined"
                   onPress={() => setEditingNode(null)}
-                  textColor={OriginalTheme.colors.secondary}
+                  textColor={'#555'}
                 >
                   {t('cancel')}
                 </Button>
@@ -1083,6 +1208,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
               style={styles.input}
               placeholder="https://example.com"
               autoCapitalize="none"
+              keyboardType="url"
               autoFocus
             />
             <View style={styles.buttonContainer}>

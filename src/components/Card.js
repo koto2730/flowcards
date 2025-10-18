@@ -13,7 +13,11 @@ import {
   useImage,
   Image,
   useFont,
+  ImageSVG,
+  useSVG,
 } from '@shopify/react-native-skia';
+import { useDerivedValue } from 'react-native-reanimated';
+import OriginalTheme, { OriginalTehme } from '../screens/OriginalTheme';
 
 const CARD_MIN_WIDTH = 150;
 
@@ -24,11 +28,33 @@ const SkiaCard = ({
   isLinkingMode,
   isLinkSource,
   isEditing,
+  pressState,
   isSeeThroughParent,
   showAttachment,
 }) => {
   const cardColor = isSelected ? '#E3F2FD' : node.color || 'white';
-  const borderColor = isLinkSource ? '#34C759' : '#ddd';
+
+  const borderColor = useDerivedValue(() => {
+    if (pressState.value.id === node.id) {
+      if (pressState.value.state === 'confirmed') {
+        console.log('Card confirmed:', node.id);
+        return OriginalTheme.colors.primary; // Green for confirmed
+      }
+      return '#60A5FA'; // Blue for pressing
+    }
+    return isLinkSource ? '#60A5FA' : '#ddd';
+  }, [pressState, isLinkSource, node.id]);
+
+  const borderWidth = useDerivedValue(() => {
+    if (
+      pressState.value.id === node.id &&
+      pressState.value.state === 'confirmed'
+    ) {
+      return 4;
+    }
+    return isLinkSource ? 4 : 2;
+  }, [pressState, isLinkSource, node.id]);
+
   const titleColor = Skia.Color('black');
   const descriptionColor = Skia.Color('#555');
   const deleteButtonColor = 'red';
@@ -60,40 +86,36 @@ const SkiaCard = ({
   const layoutWidth = (node.size.width || CARD_MIN_WIDTH) - marginRow * 2;
 
   const attachmentImage = useImage(
-    node.attachment?.thumbnail_path ||
-      (node.attachment?.mime_type?.startsWith('image/') &&
-        node.attachment?.stored_path)
-      ? `file://${
-          node.attachment.thumbnail_path || node.attachment.stored_path
-        }`
+    node.attachment?.thumbnail_path && node.attachment.thumbnail_path.length > 0
+      ? `file://${node.attachment.thumbnail_path}`
+      : node.attachment?.mime_type?.startsWith('image/')
+      ? `file://${node.attachment.stored_path}`
       : null,
   );
 
-  const iconFont = useFont(
+  const fileIconSvg = useSVG(require('../../assets/icons/file-outline.svg'));
+  const linkIconSvg = useSVG(require('../../assets/icons/link-variant.svg'));
+
+  const paperclipIconFont = useFont(
     Platform.OS === 'ios'
       ? require('../../ios/Fonts/MaterialCommunityIcons.ttf')
       : 'MaterialCommunityIcons',
-    24,
+    16,
   );
 
-  const attachmentIconPath = useMemo(() => {
-    if (!iconFont || !node.attachment) return null;
-    let iconChar;
-    if (node.attachment.mime_type === 'text/url') {
-      iconChar = String.fromCodePoint(0xf033b); // link-variant
-    } else {
-      iconChar = String.fromCodePoint(0xf021a); // file-outline
-    }
-    const path = iconFont.getPath(iconChar, 0, 0);
+  const paperclipIconPath = useMemo(() => {
+    if (!paperclipIconFont || !node.attachment) return null;
+    const iconChar = String.fromCodePoint(0xf03e2); // paperclip
+    const path = paperclipIconFont.getPath(iconChar, 0, 0);
     if (path) {
       const bounds = path.getBounds();
-      const scale = 24 / bounds.height;
+      const scale = 16 / bounds.height;
       const matrix = Skia.Matrix();
       matrix.preScale(scale, scale);
       path.transform(matrix);
     }
     return path;
-  }, [iconFont, node.attachment]);
+  }, [paperclipIconFont, node.attachment]);
 
   const cardParagraph = useMemo(() => {
     if (!fontMgr) {
@@ -171,13 +193,23 @@ ${descriptionText}`);
       );
     }
 
-    if (attachmentIconPath) {
-      const transform = [
-        { translateX: x },
-        { translateY: y + ICON_SIZE - PADDING },
-      ];
+    let iconSvg = null;
+    if (node.attachment.mime_type === 'text/url') {
+      iconSvg = linkIconSvg;
+    } else {
+      iconSvg = fileIconSvg;
+    }
+
+    if (iconSvg) {
       return (
-        <Path path={attachmentIconPath} color="#666" transform={transform} />
+        <ImageSVG
+          svg={iconSvg}
+          x={x}
+          y={y}
+          width={ICON_SIZE}
+          height={ICON_SIZE}
+          fit="cover"
+        />
       );
     }
 
@@ -197,7 +229,7 @@ ${descriptionText}`);
         <Path
           path={borderPath}
           style="stroke"
-          strokeWidth={2}
+          strokeWidth={borderWidth}
           color={borderColor}
         >
           <DashPathEffect intervals={[4, 4]} />
@@ -208,11 +240,12 @@ ${descriptionText}`);
           y={node.position.y}
           width={node.size.width}
           height={node.size.height + marginColumn}
-          strokeWidth={2}
+          strokeWidth={borderWidth}
           style="stroke"
           color={borderColor}
         />
       )}
+      {renderAttachment()}
       {cardParagraph && (
         <Paragraph
           paragraph={cardParagraph}
@@ -221,7 +254,16 @@ ${descriptionText}`);
           width={layoutWidth}
         />
       )}
-      {renderAttachment()}
+      {paperclipIconPath && (
+        <Path
+          path={paperclipIconPath}
+          color="#333"
+          transform={[
+            { translateX: node.position.x + node.size.width - 22 },
+            { translateY: node.position.y + 6 },
+          ]}
+        />
+      )}
       <Group>
         <Circle
           cx={deleteButtonX}
