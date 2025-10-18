@@ -56,6 +56,24 @@ jobs:
           tag_name: build-${{ github.run_number }}
           files: android/app/build/outputs/bundle/release/app-release.aab
 
+      - name: Upload to Google Play
+        uses: r0adkll/upload-google-play@v1
+        with:
+          # サービスアカウントのJSONキー（Secretsから読み込む）
+          serviceAccountJsonPlainText: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          
+          # アプリのパッケージ名
+          packageName: com.flowcards
+          
+          # アップロードするAABファイルのパス
+          releaseFiles: app/build/outputs/bundle/release/app-release.aab
+          
+          # ★★★リリーストラックを「内部テスト」に指定★★★
+          track: internal
+          
+          # ロールアウトの割合（内部テストなら100%でOK）
+          userFraction: 1.0
+
 #  build-ios:
 #    name: Build iOS App
 #    runs-on: macos-latest  # Use latest for Xcode 16.1+
