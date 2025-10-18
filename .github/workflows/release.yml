@@ -71,9 +71,6 @@ jobs:
           # ★★★リリーストラックを「内部テスト」に指定★★★
           track: internal
           
-          # ロールアウトの割合（内部テストなら100%でOK）
-          userFraction: 1.0
-
 #  build-ios:
 #    name: Build iOS App
 #    runs-on: macos-latest  # Use latest for Xcode 16.1+
