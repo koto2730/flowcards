@@ -1751,6 +1751,34 @@ PODS:
     - Yoga
   - react-native-get-random-values (1.11.0):
     - React-Core
+  - react-native-image-picker (8.2.1):
+    - boost
+    - DoubleConversion
+    - fast_float
+    - fmt
+    - glog
+    - hermes-engine
+    - RCT-Folly
+    - RCT-Folly/Fabric
+    - RCTRequired
+    - RCTTypeSafety
+    - React-Core
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - SocketRocket
+    - Yoga
   - react-native-safe-area-context (5.6.1):
     - boost
     - DoubleConversion
@@ -2747,6 +2775,7 @@ DEPENDENCIES:
   - react-native-create-thumbnail (from `../node_modules/react-native-create-thumbnail`)
   - "react-native-document-picker (from `../node_modules/@react-native-documents/picker`)"
   - react-native-get-random-values (from `../node_modules/react-native-get-random-values`)
+  - react-native-image-picker (from `../node_modules/react-native-image-picker`)
   - react-native-safe-area-context (from `../node_modules/react-native-safe-area-context`)
   - "react-native-skia (from `../node_modules/@shopify/react-native-skia`)"
   - react-native-sqlite-storage (from `../node_modules/react-native-sqlite-storage`)
@@ -2883,6 +2912,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/@react-native-documents/picker"
   react-native-get-random-values:
     :path: "../node_modules/react-native-get-random-values"
+  react-native-image-picker:
+    :path: "../node_modules/react-native-image-picker"
   react-native-safe-area-context:
     :path: "../node_modules/react-native-safe-area-context"
   react-native-skia:
@@ -3012,6 +3043,7 @@ SPEC CHECKSUMS:
   react-native-create-thumbnail: daaa5d465360c5015b02026bd0978abf16b36ea9
   react-native-document-picker: ca6edbcee0abb1b92a06d34fc42ee31e9d559534
   react-native-get-random-values: 21325b2244dfa6b58878f51f9aa42821e7ba3d06
+  react-native-image-picker: 43e6cd4231e670030fe09b079d696fa5a634ccfc
   react-native-safe-area-context: 6d8a7b750e496e37bda47c938320bf2c734d441f
   react-native-skia: 4df548eb44d05ce5e35679b15a9d765e5724126e
   react-native-sqlite-storage: f6d515e1c446d1e6d026aa5352908a25d4de3261

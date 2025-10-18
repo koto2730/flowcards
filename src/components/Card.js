@@ -24,6 +24,7 @@ const CARD_MIN_WIDTH = 150;
 const SkiaCard = ({
   node,
   fontMgr,
+  paperclipIconSvg,
   isSelected,
   isLinkingMode,
   isLinkSource,
@@ -95,27 +96,6 @@ const SkiaCard = ({
 
   const fileIconSvg = useSVG(require('../../assets/icons/file-outline.svg'));
   const linkIconSvg = useSVG(require('../../assets/icons/link-variant.svg'));
-
-  const paperclipIconFont = useFont(
-    Platform.OS === 'ios'
-      ? require('../../ios/Fonts/MaterialCommunityIcons.ttf')
-      : 'MaterialCommunityIcons',
-    16,
-  );
-
-  const paperclipIconPath = useMemo(() => {
-    if (!paperclipIconFont || !node.attachment) return null;
-    const iconChar = String.fromCodePoint(0xf03e2); // paperclip
-    const path = paperclipIconFont.getPath(iconChar, 0, 0);
-    if (path) {
-      const bounds = path.getBounds();
-      const scale = 16 / bounds.height;
-      const matrix = Skia.Matrix();
-      matrix.preScale(scale, scale);
-      path.transform(matrix);
-    }
-    return path;
-  }, [paperclipIconFont, node.attachment]);
 
   const cardParagraph = useMemo(() => {
     if (!fontMgr) {
@@ -213,7 +193,17 @@ ${descriptionText}`);
       );
     }
 
-    return null;
+    return (
+      <ImageSVG
+        svg={paperclipIconSvg}
+        x={x}
+        y={y}
+        width={ICON_SIZE}
+        height={ICON_SIZE}
+        fit="cover"
+        color="#333"
+      />
+    );
   };
 
   return (
@@ -252,16 +242,6 @@ ${descriptionText}`);
           x={node.position.x + marginRow}
           y={titleY}
           width={layoutWidth}
-        />
-      )}
-      {paperclipIconPath && (
-        <Path
-          path={paperclipIconPath}
-          color="#333"
-          transform={[
-            { translateX: node.position.x + node.size.width - 22 },
-            { translateY: node.position.y + 6 },
-          ]}
         />
       )}
       <Group>
