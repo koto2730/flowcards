@@ -478,6 +478,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
   const longPressGesture = Gesture.LongPress()
     .minDuration(800)
+    .maxDistance(10)
     .onBegin(event => {
       if (isSeeThrough || linkingState.active) return;
       const worldX = (event.x - translateX.value) / scale.value;
@@ -489,6 +490,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
       if (hitNode) {
         pressState.value = { id: hitNode.id, state: 'pressing' };
       }
+      // Start a timer to confirm the long press
       setTimeout(() => {
         if (pressState.value.id) {
           pressState.value = {
