@@ -38,7 +38,6 @@ const SkiaCard = ({
   const borderColor = useDerivedValue(() => {
     if (pressState.value.id === node.id) {
       if (pressState.value.state === 'confirmed') {
-        console.log('Card confirmed:', node.id);
         return OriginalTheme.colors.primary; // Green for confirmed
       }
       return '#60A5FA'; // Blue for pressing
