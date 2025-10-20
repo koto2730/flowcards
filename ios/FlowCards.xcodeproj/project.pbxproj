@@ -26,10 +26,10 @@
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = FlowCards/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = FlowCards/Info.plist; sourceTree = "<group>"; };
 		13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = PrivacyInfo.xcprivacy; path = FlowCards/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
-		2AE59F2BA70D49C0ACCEC314 /* NotoSansSC-Bold.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = "NotoSansSC-Bold.ttf"; path = "../assets/fonts/Noto_Sans_SC/static/NotoSansSC-Bold.ttf"; sourceTree = "<group>"; };
-		36800460039D4E4BA479BC93 /* NotoSansJP-Regular.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = "NotoSansJP-Regular.ttf"; path = "../assets/fonts/Noto_Sans_JP/static/NotoSansJP-Regular.ttf"; sourceTree = "<group>"; };
+		2AE59F2BA70D49C0ACCEC314 /* NotoSansSC-Bold.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "NotoSansSC-Bold.ttf"; path = "../assets/fonts/Noto_Sans_SC/static/NotoSansSC-Bold.ttf"; sourceTree = "<group>"; };
+		36800460039D4E4BA479BC93 /* NotoSansJP-Regular.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "NotoSansJP-Regular.ttf"; path = "../assets/fonts/Noto_Sans_JP/static/NotoSansJP-Regular.ttf"; sourceTree = "<group>"; };
 		3B4392A12AC88292D35C810B /* Pods-FlowCards.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-FlowCards.debug.xcconfig"; path = "Target Support Files/Pods-FlowCards/Pods-FlowCards.debug.xcconfig"; sourceTree = "<group>"; };
-		48DEC817556F44DF9F2847F6 /* main_icon.svg */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = main_icon.svg; path = ../assets/icons/main_icon.svg; sourceTree = "<group>"; };
+		48DEC817556F44DF9F2847F6 /* main_icon.svg */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = main_icon.svg; path = ../assets/icons/main_icon.svg; sourceTree = "<group>"; };
 		52E46FDD2E56C60600D84D05 /* AntDesign.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = AntDesign.ttf; sourceTree = "<group>"; };
 		52E46FDE2E56C60600D84D05 /* Entypo.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = Entypo.ttf; sourceTree = "<group>"; };
 		52E46FDF2E56C60600D84D05 /* EvilIcons.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = EvilIcons.ttf; sourceTree = "<group>"; };
@@ -52,12 +52,12 @@
 		5709B34CF0A7D63546082F79 /* Pods-FlowCards.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-FlowCards.release.xcconfig"; path = "Target Support Files/Pods-FlowCards/Pods-FlowCards.release.xcconfig"; sourceTree = "<group>"; };
 		5DCACB8F33CDC322A6C60F78 /* libPods-FlowCards.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-FlowCards.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		761780EC2CA45674006654EE /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = FlowCards/AppDelegate.swift; sourceTree = "<group>"; };
-		816ABC210E0B47EE9BF3EF36 /* file-outline.svg */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = "file-outline.svg"; path = "../assets/icons/file-outline.svg"; sourceTree = "<group>"; };
+		816ABC210E0B47EE9BF3EF36 /* file-outline.svg */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "file-outline.svg"; path = "../assets/icons/file-outline.svg"; sourceTree = "<group>"; };
 		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = FlowCards/LaunchScreen.storyboard; sourceTree = "<group>"; };
-		89D1E8F9A7224815853EEA4F /* NotoSansSC-Regular.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = "NotoSansSC-Regular.ttf"; path = "../assets/fonts/Noto_Sans_SC/static/NotoSansSC-Regular.ttf"; sourceTree = "<group>"; };
-		91D53C45E0F944CC94AEF60B /* link-variant.svg */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = "link-variant.svg"; path = "../assets/icons/link-variant.svg"; sourceTree = "<group>"; };
+		89D1E8F9A7224815853EEA4F /* NotoSansSC-Regular.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "NotoSansSC-Regular.ttf"; path = "../assets/fonts/Noto_Sans_SC/static/NotoSansSC-Regular.ttf"; sourceTree = "<group>"; };
+		91D53C45E0F944CC94AEF60B /* link-variant.svg */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "link-variant.svg"; path = "../assets/icons/link-variant.svg"; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
-		F3C516309AD14CB9A3AFCB7C /* NotoSansJP-Bold.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = "NotoSansJP-Bold.ttf"; path = "../assets/fonts/Noto_Sans_JP/static/NotoSansJP-Bold.ttf"; sourceTree = "<group>"; };
+		F3C516309AD14CB9A3AFCB7C /* NotoSansJP-Bold.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "NotoSansJP-Bold.ttf"; path = "../assets/fonts/Noto_Sans_JP/static/NotoSansJP-Bold.ttf"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -84,7 +84,6 @@
 				48DEC817556F44DF9F2847F6 /* main_icon.svg */,
 			);
 			name = Resources;
-			path = "";
 			sourceTree = "<group>";
 		};
 		13B07FAE1A68108700A75B9A /* FlowCards */ = {
@@ -277,9 +276,13 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-FlowCards/Pods-FlowCards-frameworks-${CONFIGURATION}-input-files.xcfilelist",
 			);
+			inputPaths = (
+			);
 			name = "[CP] Embed Pods Frameworks";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-FlowCards/Pods-FlowCards-frameworks-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -294,9 +297,13 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-FlowCards/Pods-FlowCards-resources-${CONFIGURATION}-input-files.xcfilelist",
 			);
+			inputPaths = (
+			);
 			name = "[CP] Copy Pods Resources";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-FlowCards/Pods-FlowCards-resources-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -356,7 +363,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.0.0;
+				MARKETING_VERSION = 2.1.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
@@ -387,7 +394,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.0.0;
+				MARKETING_VERSION = 2.1.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",

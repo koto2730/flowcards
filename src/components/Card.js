@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Platform } from 'react-native';
 import {
   Skia,
@@ -12,12 +12,24 @@ import {
   FontWeight,
   useImage,
   Image,
-  useFont,
   ImageSVG,
   useSVG,
+  useVideo,
+  SKImage,
 } from '@shopify/react-native-skia';
-import { useDerivedValue } from 'react-native-reanimated';
+import {
+  useDerivedValue,
+  useSharedValue,
+  configureReanimatedLogger,
+  ReanimatedLogLevel,
+} from 'react-native-reanimated';
 import OriginalTheme, { OriginalTehme } from '../screens/OriginalTheme';
+import RNFS from 'react-native-fs';
+
+configureReanimatedLogger({
+  level: ReanimatedLogLevel.warn,
+  strict: false,
+});
 
 const CARD_MIN_WIDTH = 150;
 
@@ -85,13 +97,32 @@ const SkiaCard = ({
   const cardSize = node.data.size || 'medium';
   const layoutWidth = (node.size.width || CARD_MIN_WIDTH) - marginRow * 2;
 
-  const attachmentImage = useImage(
-    node.attachment?.thumbnail_path && node.attachment.thumbnail_path.length > 0
-      ? `file://${node.attachment.thumbnail_path}`
-      : node.attachment?.mime_type?.startsWith('image/')
-      ? `file://${node.attachment.stored_path}`
-      : null,
-  );
+  if (node.attachment?.mime_type?.startsWith('image/')) {
+    const attachmentImage = useImage(
+      node.attachment?.thumbnail_path &&
+        node.attachment.thumbnail_path.length > 0
+        ? `file://${node.attachment.thumbnail_path}`
+        : node.attachment?.mime_type?.startsWith('image/')
+        ? `file://${node.attachment.stored_path}`
+        : null,
+    );
+  }
+
+  if (node.attachment?.mime_type?.startsWith('video/')) {
+    const seek = useSharedValue(1000);
+    const volume = useSharedValue(0);
+    const paused = useSharedValue(false);
+    const looping = useSharedValue(false);
+    const thumbnail = useVideo(
+      node.attachment?.thumbnail_path &&
+        node.attachment.thumbnail_path.length > 0
+        ? `file://${node.attachment.thumbnail_path}`
+        : node.attachment?.mime_type?.startsWith('video/')
+        ? `file://${node.attachment.stored_path}`
+        : null,
+      { paused, volume, looping },
+    );
+  }
 
   const fileIconSvg = useSVG(require('../../assets/icons/file-outline.svg'));
   const linkIconSvg = useSVG(require('../../assets/icons/link-variant.svg'));
@@ -108,7 +139,7 @@ const SkiaCard = ({
     const titleStyle = {
       color: titleColor,
       fontFamilies: ['NotoSansJP', 'NotoSansSC'],
-      fontSize: 16,
+      ontSize: 16,
       fontStyle: { weight: FontWeight.Bold },
     };
 
@@ -158,6 +189,19 @@ ${descriptionText}`);
     const PADDING = 5;
     const x = node.position.x + node.size.width - ICON_SIZE - PADDING;
     const y = node.position.y + node.size.height - ICON_SIZE - PADDING;
+
+    if (thumbnail?.currentFrame && thumbnail.currentFrame?.value !== null) {
+      return (
+        <Image
+          image={thumbnail.currentFrame}
+          x={x}
+          y={y}
+          width={ICON_SIZE}
+          height={ICON_SIZE}
+          fit="cover"
+        />
+      );
+    }
 
     if (attachmentImage) {
       return (
