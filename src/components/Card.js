@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect, use } from 'react';
 import { Platform } from 'react-native';
 import {
   Skia,
@@ -12,12 +12,25 @@ import {
   FontWeight,
   useImage,
   Image,
-  useFont,
   ImageSVG,
   useSVG,
+  useVideo,
+  SKImage,
 } from '@shopify/react-native-skia';
-import { useDerivedValue } from 'react-native-reanimated';
+import {
+  useDerivedValue,
+  useSharedValue,
+  configureReanimatedLogger,
+  ReanimatedLogLevel,
+  runOnJS,
+} from 'react-native-reanimated';
 import OriginalTheme, { OriginalTehme } from '../screens/OriginalTheme';
+import RNFS from 'react-native-fs';
+
+configureReanimatedLogger({
+  level: ReanimatedLogLevel.warn,
+  strict: false,
+});
 
 const CARD_MIN_WIDTH = 150;
 
@@ -85,13 +98,69 @@ const SkiaCard = ({
   const cardSize = node.data.size || 'medium';
   const layoutWidth = (node.size.width || CARD_MIN_WIDTH) - marginRow * 2;
 
-  const attachmentImage = useImage(
-    node.attachment?.thumbnail_path && node.attachment.thumbnail_path.length > 0
-      ? `file://${node.attachment.thumbnail_path}`
-      : node.attachment?.mime_type?.startsWith('image/')
-      ? `file://${node.attachment.stored_path}`
-      : null,
+  const getAttachmentByNodeId = node => {
+    if (
+      node.attachment?.mime_type?.startsWith('image/') ||
+      node.attachment?.mime_type?.startsWith('text/url')
+    ) {
+      const attachmentImage = useImage(
+        node.attachment?.thumbnail_path &&
+          node.attachment.thumbnail_path.length > 0
+          ? `file://${node.attachment.thumbnail_path}`
+          : node.attachment?.mime_type?.startsWith('image/')
+          ? `file://${node.attachment.stored_path}`
+          : null,
+      );
+      return attachmentImage;
+    }
+    return useImage(null);
+  };
+  const attachmentImage = getAttachmentByNodeId(node);
+
+  const videoPath = useMemo(() => {
+    const attachment = node.attachment;
+    if (attachment?.mime_type?.startsWith('video/')) {
+      if (attachment.thumbnail_path && attachment.thumbnail_path.length > 0) {
+        return `file://${attachment.thumbnail_path}`;
+      }
+      if (attachment.stored_path) {
+        return `file://${attachment.stored_path}`;
+      }
+    }
+    return null;
+  }, [node.attachment]);
+
+  // Define video options and call useVideo at the top level
+  const paused = useSharedValue(true);
+  const volume = useSharedValue(0);
+  const looping = useSharedValue(false);
+  const videoOptions = useMemo(
+    () => ({ paused, volume, looping }),
+    [paused, volume, looping],
   );
+  const thumbnail = useVideo(videoPath, videoOptions);
+
+  const [videoThumbnailSkImage, setVideoThumbnailSkImage] = useState(null);
+  const frameCaptured = useSharedValue(false);
+
+  // This function will be called from the UI thread to update the JS state
+  const setThumbnailOnJS = image => {
+    setVideoThumbnailSkImage(image);
+  };
+
+  useDerivedValue(() => {
+    'worklet';
+    const frame = thumbnail?.currentFrame?.value;
+    if (frame && !frameCaptured.value) {
+      frameCaptured.value = true;
+      runOnJS(setThumbnailOnJS)(frame);
+    }
+    // Reset if the video source changes and becomes null
+    if (thumbnail === null && frameCaptured.value) {
+      frameCaptured.value = false;
+      runOnJS(setThumbnailOnJS)(null);
+    }
+  }, [thumbnail, frameCaptured]);
 
   const fileIconSvg = useSVG(require('../../assets/icons/file-outline.svg'));
   const linkIconSvg = useSVG(require('../../assets/icons/link-variant.svg'));
@@ -108,7 +177,7 @@ const SkiaCard = ({
     const titleStyle = {
       color: titleColor,
       fontFamilies: ['NotoSansJP', 'NotoSansSC'],
-      fontSize: 16,
+      ontSize: 16,
       fontStyle: { weight: FontWeight.Bold },
     };
 
@@ -158,6 +227,22 @@ ${descriptionText}`);
     const PADDING = 5;
     const x = node.position.x + node.size.width - ICON_SIZE - PADDING;
     const y = node.position.y + node.size.height - ICON_SIZE - PADDING;
+
+    if (
+      videoThumbnailSkImage?.currentFrame &&
+      videoThumbnailSkImage.currentFrame.value !== null
+    ) {
+      return (
+        <Image
+          image={videoThumbnailSkImage.currentFrame}
+          x={x}
+          y={y}
+          width={ICON_SIZE}
+          height={ICON_SIZE}
+          fit="cover"
+        />
+      );
+    }
 
     if (attachmentImage) {
       return (

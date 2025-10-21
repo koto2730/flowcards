@@ -27,6 +27,8 @@ import Animated, {
   runOnJS,
   useDerivedValue,
   withTiming,
+  configureReanimatedLogger,
+  ReanimatedLogLevel,
 } from 'react-native-reanimated';
 import {
   updateFlow,
@@ -37,7 +39,7 @@ import {
 } from '../db';
 import { pick, types, isCancel } from '@react-native-documents/picker';
 import RNFS from 'react-native-fs';
-import { createThumbnail } from 'react-native-create-thumbnail';
+import Video from 'react-native-video';
 import { Linking } from 'react-native';
 import { launchImageLibrary } from 'react-native-image-picker';
 import {
@@ -68,6 +70,11 @@ import ColorPalette from 'react-native-color-palette';
 import { useTranslation } from 'react-i18next';
 import { getLinkPreview } from 'link-preview-js';
 import FileViewer from 'react-native-file-viewer';
+
+configureReanimatedLogger({
+  level: ReanimatedLogLevel.warn,
+  strict: false,
+});
 
 const { width, height } = Dimensions.get('window');
 const ATTACHMENT_DIR = `${RNFS.DocumentDirectoryPath}/attachments`;
@@ -628,30 +635,8 @@ const FlowEditorScreen = ({ route, navigation }) => {
     }
 
     let thumbnailPath = null;
-    if (fileType.startsWith('image/')) {
-      try {
-        thumbnailPath = storedPath;
-      } catch (thumbError) {
-        console.error('Failed to create thumbnail', thumbError);
-        thumbnailPath = '';
-      }
-    } else if (fileType.startsWith('video/')) {
-      try {
-        const thumbnailRes = await createThumbnail({
-          url: `file://${storedPath}`,
-          timeStamp: 20,
-          format: 'jpeg',
-        });
-        const thumbFileName = `${Date.now()}-thumb.jpeg`;
-        const permanentThumbPath = `${ATTACHMENT_DIR}/${thumbFileName}`;
-        await RNFS.moveFile(thumbnailRes.path, permanentThumbPath);
-        thumbnailPath = permanentThumbPath;
-      } catch (thumbError) {
-        console.error('Failed to create thumbnail', thumbError);
-        thumbnailPath = '';
-      }
-    } else {
-      thumbnailPath = '';
+    if (fileType.startsWith('image/') || fileType.startsWith('video/')) {
+      thumbnailPath = storedPath;
     }
 
     const newAttachment = {
@@ -674,7 +659,18 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
     try {
       const result = await pick({
-        type: [types.allFiles],
+        type: [
+          types.images,
+          types.audio,
+          types.pdf,
+          types.doc,
+          types.docx,
+          types.xls,
+          types.xlsx,
+          types.ppt,
+          types.pptx,
+          types.plainText,
+        ],
         allowMultiSelection: false,
       });
 
@@ -1113,6 +1109,17 @@ const FlowEditorScreen = ({ route, navigation }) => {
                       ) : (
                         <Icon source="link-variant" size={80} />
                       )
+                    ) : editingNode.attachment.mime_type.startsWith(
+                        'video/',
+                      ) ? (
+                      <Video
+                        source={{
+                          uri: `file://${editingNode.attachment.stored_path}`,
+                        }}
+                        style={styles.thumbnail}
+                        controls={false}
+                        repeat={false}
+                      />
                     ) : editingNode.attachment.thumbnail_path ||
                       (editingNode.attachment.mime_type &&
                         editingNode.attachment.mime_type.startsWith(
@@ -1160,16 +1167,14 @@ const FlowEditorScreen = ({ route, navigation }) => {
                       >
                         {t('file')}
                       </Button>
-                      {Platform.OS === 'ios' && (
-                        <Button
-                          icon="image-multiple"
-                          mode="outlined"
-                          onPress={handleAttachImageFromLibrary}
-                          style={styles.attachButton}
-                        >
-                          {t('photo')}
-                        </Button>
-                      )}
+                      <Button
+                        icon="image-multiple"
+                        mode="outlined"
+                        onPress={handleAttachImageFromLibrary}
+                        style={styles.attachButton}
+                      >
+                        {t('photo')}
+                      </Button>
                       <Button
                         icon="web"
                         mode="outlined"
