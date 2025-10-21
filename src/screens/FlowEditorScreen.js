@@ -116,47 +116,6 @@ const getTextColorForBackground = hexColor => {
   return luminance > 186 ? 'black' : 'white';
 };
 
-const requestStoragePermission = async () => {
-  if (Platform.OS !== 'android') {
-    return true;
-  }
-
-  try {
-    let permissionsToRequest;
-    if (Platform.Version >= 33) {
-      permissionsToRequest = [
-        PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
-        PermissionsAndroid.PERMISSIONS.READ_MEDIA_VIDEO,
-      ];
-    } else {
-      permissionsToRequest = [
-        PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
-      ];
-    }
-
-    const statuses = await PermissionsAndroid.requestMultiple(
-      permissionsToRequest,
-    );
-
-    const allGranted = Object.values(statuses).every(
-      status => status === PermissionsAndroid.RESULTS.GRANTED,
-    );
-
-    if (allGranted) {
-      return true;
-    } else {
-      Alert.alert(
-        'Permission Denied',
-        'Storage permission is required to attach files.',
-      );
-      return false;
-    }
-  } catch (err) {
-    console.warn(err);
-    return false;
-  }
-};
-
 const FlowEditorScreen = ({ route, navigation }) => {
   const { flowId, flowName } = route.params;
   const { t } = useTranslation();
@@ -654,8 +613,6 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
   const handleAttachFile = async () => {
     Keyboard.dismiss();
-    const hasPermission = await requestStoragePermission();
-    if (!hasPermission) return;
 
     try {
       const result = await pick({
