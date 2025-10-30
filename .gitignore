@@ -90,3 +90,6 @@ GoogleService-Info.plist
 *.log
 *.p12
 cert
+
+# Misc
+GEMINI.md
