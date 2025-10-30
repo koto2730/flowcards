@@ -118,49 +118,22 @@ const SkiaCard = ({
   const attachmentImage = getAttachmentByNodeId(node);
 
   const videoPath = useMemo(() => {
+    // ビデオが表示されるべき時だけパスを返すように修正
+    if (!showAttachment || !node.attachment?.mime_type?.startsWith('video/')) {
+      return null;
+    }
+
     const attachment = node.attachment;
-    if (attachment?.mime_type?.startsWith('video/')) {
-      if (attachment.thumbnail_path && attachment.thumbnail_path.length > 0) {
-        return `file://${attachment.thumbnail_path}`;
-      }
-      if (attachment.stored_path) {
-        return `file://${attachment.stored_path}`;
-      }
+    if (attachment.thumbnail_path && attachment.thumbnail_path.length > 0) {
+      return `file://${attachment.thumbnail_path}`;
+    }
+    if (attachment.stored_path) {
+      return `file://${attachment.stored_path}`;
     }
     return null;
-  }, [node.attachment]);
+  }, [node.attachment, showAttachment]); // 依存配列にshowAttachmentを追加
 
-  // Define video options and call useVideo at the top level
-  const paused = useSharedValue(true);
-  const volume = useSharedValue(0);
-  const looping = useSharedValue(false);
-  const videoOptions = useMemo(
-    () => ({ paused, volume, looping }),
-    [paused, volume, looping],
-  );
-  const thumbnail = useVideo(videoPath, videoOptions);
-
-  const [videoThumbnailSkImage, setVideoThumbnailSkImage] = useState(null);
-  const frameCaptured = useSharedValue(false);
-
-  // This function will be called from the UI thread to update the JS state
-  const setThumbnailOnJS = image => {
-    setVideoThumbnailSkImage(image);
-  };
-
-  useDerivedValue(() => {
-    'worklet';
-    const frame = thumbnail?.currentFrame?.value;
-    if (frame && !frameCaptured.value) {
-      frameCaptured.value = true;
-      runOnJS(setThumbnailOnJS)(frame);
-    }
-    // Reset if the video source changes and becomes null
-    if (thumbnail === null && frameCaptured.value) {
-      frameCaptured.value = false;
-      runOnJS(setThumbnailOnJS)(null);
-    }
-  }, [thumbnail, frameCaptured]);
+  const { currentFrame } = useVideo(videoPath);
 
   const fileIconSvg = useSVG(require('../../assets/icons/file-outline.svg'));
   const linkIconSvg = useSVG(require('../../assets/icons/link-variant.svg'));
@@ -228,13 +201,10 @@ ${descriptionText}`);
     const x = node.position.x + node.size.width - ICON_SIZE - PADDING;
     const y = node.position.y + node.size.height - ICON_SIZE - PADDING;
 
-    if (
-      videoThumbnailSkImage?.currentFrame &&
-      videoThumbnailSkImage.currentFrame.value !== null
-    ) {
+    if (videoPath && currentFrame) {
       return (
         <Image
-          image={videoThumbnailSkImage.currentFrame}
+          image={currentFrame}
           x={x}
           y={y}
           width={ICON_SIZE}
