@@ -6,6 +6,7 @@ import {
   Alert,
   RefreshControl,
   ActivityIndicator,
+  Text,
 } from 'react-native';
 import {
   Provider as PaperProvider,
@@ -30,6 +31,7 @@ import {
   deleteNodesByFlowId,
   deleteEdgesByFlowId,
   resetDB,
+  getFlowDiskUsage,
 } from '../db';
 import OriginalTheme from './OriginalTheme';
 import { useTranslation } from 'react-i18next';
@@ -81,14 +83,21 @@ const FlowListScreen = ({ navigation }) => {
           setHasMore(false);
         }
 
+        const flowsWithDiskUsage = await Promise.all(
+          flowsData.map(async flow => {
+            const diskUsage = await getFlowDiskUsage(flow.id);
+            return { ...flow, diskUsage };
+          }),
+        );
+
         if (isRefresh) {
-          setFlows(flowsData);
+          setFlows(flowsWithDiskUsage);
           setPage(1);
           if (flowsData.length >= PAGE_SIZE) {
             setHasMore(true);
           }
         } else if (hasMore) {
-          setFlows(prevFlows => [...prevFlows, ...flowsData]);
+          setFlows(prevFlows => [...prevFlows, ...flowsWithDiskUsage]);
           setPage(prevPage => prevPage + 1);
         }
       } catch (error) {
@@ -288,6 +297,17 @@ const FlowListScreen = ({ navigation }) => {
     return <ActivityIndicator style={{ marginVertical: 20 }} />;
   };
 
+  const formatDiskUsage = bytes => {
+    if (!bytes || bytes === 0) {
+      return null; // or '0.0 GB'
+    }
+    const gigabytes = bytes / (1024 * 1024 * 1024);
+    if (gigabytes < 0.1) {
+      return null; // 0.1GB未満は表示しない
+    }
+    return `${gigabytes.toFixed(1)} GB`;
+  };
+
   const renderItem = ({ item }) => {
     if (item.isNew && item.id === editingFlowId) {
       return (
@@ -348,6 +368,9 @@ const FlowListScreen = ({ navigation }) => {
         </View>
       );
     }
+
+    const diskUsageText = formatDiskUsage(item.diskUsage);
+
     return (
       <Card
         style={{ flex: 1, marginVertical: 4, marginHorizontal: 8 }}
@@ -383,15 +406,22 @@ const FlowListScreen = ({ navigation }) => {
             ) : null
           }
           right={props => (
-            <Button
-              mode="text"
-              onPress={() => handleDeleteFlow(item.id)}
-              compact
-              style={{ marginRight: 8 }}
-              icon="delete"
-            >
-              {t('delete')}
-            </Button>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              {diskUsageText && (
+                <Text style={{ marginRight: 8, color: 'gray' }}>
+                  {diskUsageText}
+                </Text>
+              )}
+              <Button
+                mode="text"
+                onPress={() => handleDeleteFlow(item.id)}
+                compact
+                style={{ marginRight: 8 }}
+                icon="delete"
+              >
+                {t('delete')}
+              </Button>
+            </View>
           )}
         />
       </Card>
