@@ -181,3 +181,50 @@ export const getClosestHandle = (sourceNode, targetNode) => {
     });
     return closestHandle;
   };
+
+export const convertFlowToJSONCanvas = (flow, nodes, edges, attachments) => {
+  const jsonCanvasNodes = nodes.map(node => {
+    const attachment = attachments[node.id];
+    if (attachment) {
+      return {
+        id: node.id,
+        x: node.x,
+        y: node.y,
+        width: node.width,
+        height: node.height,
+        type: 'file',
+        file: attachment.filename, // Assuming the file will be in the same directory
+      };
+    } else {
+      return {
+        id: node.id,
+        x: node.x,
+        y: node.y,
+        width: node.width,
+        height: node.height,
+        type: 'text',
+        text: `${node.label}\n${node.description || ''}`.trim(),
+      };
+    }
+  });
+
+  const normalizeHandle = handleName => {
+    if (!handleName) return undefined;
+    return handleName.replace('handle', '').toLowerCase();
+  };
+
+  const jsonCanvasEdges = edges.map(edge => {
+    return {
+      id: edge.id,
+      fromNode: edge.source,
+      fromSide: normalizeHandle(edge.sourceHandle),
+      toNode: edge.target,
+      toSide: normalizeHandle(edge.targetHandle),
+    };
+  });
+
+  return {
+    nodes: jsonCanvasNodes,
+    edges: jsonCanvasEdges,
+  };
+};
