@@ -181,3 +181,81 @@ export const getClosestHandle = (sourceNode, targetNode) => {
     });
     return closestHandle;
   };
+
+export const convertFlowToJSONCanvas = (flow, nodes, edges, attachments) => {
+  const jsonCanvasNodes = nodes.map(node => {
+    const attachment = attachments[node.id];
+
+    const baseNode = {
+      id: String(node.id),
+      x: node.x,
+      y: node.y,
+      width: node.width,
+      height: node.height,
+    };
+    if (node.color) {
+      baseNode.color = node.color;
+    }
+
+    if (attachment && attachment.stored_path) {
+      const filename = attachment.stored_path.split('/').pop();
+      return {
+        ...baseNode,
+        type: 'file',
+        file: filename,
+      };
+    }
+
+    if (node.type === 'url' && node.url) {
+      return {
+        ...baseNode,
+        type: 'link',
+        url: node.url,
+      };
+    }
+
+    return {
+      ...baseNode,
+      type: 'text',
+      text: `${node.label || ''}\n${node.description || ''}`.trim(),
+    };
+  });
+
+  const normalizeHandle = handleName => {
+    if (!handleName) return undefined;
+    return handleName.replace('handle', '').toLowerCase();
+  };
+
+  const jsonCanvasEdges = edges.map(edge => {
+    const jsonEdge = {
+      id: String(edge.id),
+      fromNode: String(edge.source),
+      toNode: String(edge.target),
+    };
+
+    const fromSide = normalizeHandle(edge.sourceHandle);
+    if (fromSide) {
+      jsonEdge.fromSide = fromSide;
+    }
+
+    const toSide = normalizeHandle(edge.targetHandle);
+    if (toSide) {
+      jsonEdge.toSide = toSide;
+    }
+
+    if (edge.color) {
+      jsonEdge.color = edge.color;
+    }
+
+    if (edge.label) {
+      jsonEdge.label = edge.label;
+    }
+
+    return jsonEdge;
+  });
+
+  return {
+    nodes: jsonCanvasNodes,
+    edges: jsonCanvasEdges,
+  };
+};

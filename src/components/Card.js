@@ -160,6 +160,12 @@ const SkiaCard = ({
       fontSize: 14,
     };
 
+    const urlStyle = {
+      color: Skia.Color('blue'),
+      fontFamilies: ['NotoSansJP', 'NotoSansSC'],
+      fontSize: 12,
+    };
+
     const builder = Skia.ParagraphBuilder.Make(
       paragraphStyle,
       fontMgr,
@@ -178,6 +184,17 @@ ${descriptionText}`);
       builder.pop();
     }
 
+    if (node.data.type === 'url' && node.data.url) {
+      let urlText = node.data.url;
+      if (urlText.length > 40) {
+        urlText = urlText.substring(0, 40) + '...';
+      }
+      builder.pushStyle(urlStyle);
+      builder.addText(`
+${urlText}`);
+      builder.pop();
+    }
+
     const paragraph = builder.build();
     paragraph.layout(layoutWidth);
     return paragraph;
@@ -185,6 +202,8 @@ ${descriptionText}`);
     fontMgr,
     node.data.label,
     node.data.description,
+    node.data.type,
+    node.data.url,
     layoutWidth,
     titleColor,
     descriptionColor,

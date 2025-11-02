@@ -388,6 +388,37 @@ export const updateAttachment = (id, data) => {
 export const deleteAttachment = id =>
   executeSql('DELETE FROM attachments WHERE id = ?;', [id]);
 
+export const getFlowDiskUsage = async flowId => {
+  try {
+    const attachments = await executeSql(
+      'SELECT stored_path FROM attachments WHERE flow_id = ?;',
+      [flowId],
+    ).then(({ rows }) => rows.raw());
+
+    let totalSize = 0;
+    for (const attachment of attachments) {
+      if (attachment.stored_path) {
+        try {
+          const fileExists = await RNFS.exists(attachment.stored_path);
+          if (fileExists) {
+            const stat = await RNFS.stat(attachment.stored_path);
+            totalSize += stat.size;
+          }
+        } catch (error) {
+          console.error(
+            `Could not get size for file: ${attachment.stored_path}`,
+            error,
+          );
+        }
+      }
+    }
+    return totalSize;
+  } catch (error) {
+    console.error(`Failed to get disk usage for flow ${flowId}:`, error);
+    return 0;
+  }
+};
+
 // --- flows CRUD ---
 export const getFlows = (options = {}) => {
   const { limit, offset, searchQuery, sortBy, sortOrder = 'DESC' } = options;

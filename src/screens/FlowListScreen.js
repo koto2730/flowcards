@@ -6,6 +6,8 @@ import {
   Alert,
   RefreshControl,
   ActivityIndicator,
+  Text,
+  TouchableOpacity,
 } from 'react-native';
 import {
   Provider as PaperProvider,
@@ -22,6 +24,8 @@ import {
   Menu,
   Divider,
 } from 'react-native-paper';
+import Share from 'react-native-share';
+import RNFS from 'react-native-fs';
 import {
   getFlows,
   insertFlow,
@@ -30,9 +34,15 @@ import {
   deleteNodesByFlowId,
   deleteEdgesByFlowId,
   resetDB,
+  getFlowDiskUsage,
+  getNodes,
+  getEdges,
+  getAttachmentByNodeId,
 } from '../db';
 import OriginalTheme from './OriginalTheme';
 import { useTranslation } from 'react-i18next';
+import { convertFlowToJSONCanvas } from '../utils/flowUtils';
+import { zip } from 'react-native-zip-archive';
 
 const PAGE_SIZE = 15;
 
@@ -44,6 +54,7 @@ const FlowListScreen = ({ navigation }) => {
   const [selectedFlows, setSelectedFlows] = useState([]);
   const [editingExistingName, setEditingExistingName] = useState('');
   const [menuVisible, setMenuVisible] = useState(false);
+  const [fabOpen, setFabOpen] = useState(false);
 
   // Pagination and loading state
   const [refreshing, setRefreshing] = useState(false);
@@ -81,14 +92,21 @@ const FlowListScreen = ({ navigation }) => {
           setHasMore(false);
         }
 
+        const flowsWithDiskUsage = await Promise.all(
+          flowsData.map(async flow => {
+            const diskUsage = await getFlowDiskUsage(flow.id);
+            return { ...flow, diskUsage };
+          }),
+        );
+
         if (isRefresh) {
-          setFlows(flowsData);
+          setFlows(flowsWithDiskUsage);
           setPage(1);
           if (flowsData.length >= PAGE_SIZE) {
             setHasMore(true);
           }
         } else if (hasMore) {
-          setFlows(prevFlows => [...prevFlows, ...flowsData]);
+          setFlows(prevFlows => [...prevFlows, ...flowsWithDiskUsage]);
           setPage(prevPage => prevPage + 1);
         }
       } catch (error) {
@@ -231,6 +249,193 @@ const FlowListScreen = ({ navigation }) => {
     );
   };
 
+  const handleExportFlows = async () => {
+    if (selectedFlows.length !== 1) {
+      Alert.alert(t('exportError'), t('exportSingleFlowOnly'));
+      return;
+    }
+
+    const exportFlow = async format => {
+      const flowId = selectedFlows[0];
+      const flow = flows.find(f => f.id === flowId);
+      if (!flow) return;
+
+      const exportTempDir = `${
+        RNFS.TemporaryDirectoryPath
+      }/export_${flow.id}_${Date.now()}`;
+      const zipPath = `${RNFS.TemporaryDirectoryPath}/${flow.name.replace(
+        /\s/g,
+        '_',
+      )}.zip`;
+
+      try {
+        const allNodes = await getNodes(flowId);
+        const allEdges = await getEdges(flowId);
+
+        const nodesByParent = allNodes.reduce((acc, node) => {
+          const parentId = node.parentId || 'root';
+          if (!acc[parentId]) {
+            acc[parentId] = [];
+          }
+          acc[parentId].push(node);
+          return acc;
+        }, {});
+
+        if (format === 'zip') {
+          await RNFS.mkdir(exportTempDir);
+
+          const allAttachments = new Map();
+          for (const node of allNodes) {
+            const attachment = await getAttachmentByNodeId(flow.id, node.id);
+            if (attachment && attachment.stored_path) {
+              const filename = attachment.stored_path.split('/').pop();
+              const destPath = `${exportTempDir}/${filename}`;
+              await RNFS.copyFile(attachment.stored_path, destPath);
+              allAttachments.set(node.id, attachment);
+            }
+          }
+
+          for (const parentId in nodesByParent) {
+            const sectionNodes = [...nodesByParent[parentId]];
+            const sectionNodeIds = new Set(sectionNodes.map(n => n.id));
+
+            if (parentId !== 'root') {
+              const parentNode = allNodes.find(n => n.id === parentId);
+              if (parentNode) {
+                sectionNodes.push(parentNode);
+                sectionNodeIds.add(parentNode.id);
+              }
+            }
+
+            const sectionEdges = allEdges.filter(
+              e =>
+                sectionNodeIds.has(e.source) && sectionNodeIds.has(e.target),
+            );
+
+            const sectionAttachments = {};
+            for (const node of sectionNodes) {
+              if (allAttachments.has(node.id)) {
+                sectionAttachments[node.id] = allAttachments.get(node.id);
+              }
+            }
+
+            const parentNode = allNodes.find(n => n.id === parentId);
+            const sectionName = parentNode ? parentNode.label : '';
+            const canvasName =
+              parentId === 'root'
+                ? flow.name
+                : `${flow.name}-${sectionName}`;
+
+            const jsonCanvas = convertFlowToJSONCanvas(
+              flow,
+              sectionNodes,
+              sectionEdges,
+              sectionAttachments,
+            );
+
+            const canvasData = JSON.stringify(jsonCanvas, null, 2);
+            const fileName = `${canvasName.replace(/\s/g, '_')}.canvas`;
+            const filePath = `${exportTempDir}/${fileName}`;
+            await RNFS.writeFile(filePath, canvasData, 'utf8');
+          }
+
+          await zip(exportTempDir, zipPath);
+
+          await Share.open({
+            title: t('exportFlow', { count: 1 }),
+            url: `file://${zipPath}`,
+            type: 'application/zip',
+            failOnCancel: false,
+          });
+        } else {
+          // canvas only
+          const filesToShare = [];
+          for (const parentId in nodesByParent) {
+            const sectionNodes = [...nodesByParent[parentId]];
+            const sectionNodeIds = new Set(sectionNodes.map(n => n.id));
+
+            if (parentId !== 'root') {
+              const parentNode = allNodes.find(n => n.id === parentId);
+              if (parentNode) {
+                sectionNodes.push(parentNode);
+                sectionNodeIds.add(parentNode.id);
+              }
+            }
+
+            const sectionEdges = allEdges.filter(
+              e =>
+                sectionNodeIds.has(e.source) && sectionNodeIds.has(e.target),
+            );
+
+            const parentNode = allNodes.find(n => n.id === parentId);
+            const sectionName = parentNode ? parentNode.label : '';
+            const canvasName =
+              parentId === 'root'
+                ? flow.name
+                : `${flow.name}-${sectionName}`;
+
+            const jsonCanvas = convertFlowToJSONCanvas(
+              flow,
+              sectionNodes,
+              sectionEdges,
+              {},
+            );
+
+            const canvasData = JSON.stringify(jsonCanvas, null, 2);
+            const fileName = `${canvasName.replace(/\s/g, '_')}.canvas`;
+            const filePath = `${RNFS.TemporaryDirectoryPath}/${fileName}`;
+            await RNFS.writeFile(filePath, canvasData, 'utf8');
+            filesToShare.push(`file://${filePath}`);
+          }
+
+          await Share.open({
+            title: t('exportFlow', { count: filesToShare.length }),
+            urls: filesToShare,
+            failOnCancel: false,
+          });
+        }
+
+        setSelectionMode(false);
+        setSelectedFlows([]);
+      } catch (error) {
+        console.error('Export failed:', error);
+        if (error.message !== 'User did not share') {
+          Alert.alert(t('exportFailedTitle'), t('exportFailedMessage'));
+        }
+      } finally {
+        // Clean up temp files and dirs
+        const tempDirExists = await RNFS.exists(exportTempDir);
+        if (tempDirExists) {
+          await RNFS.unlink(exportTempDir);
+        }
+        const zipFileExists = await RNFS.exists(zipPath);
+        if (zipFileExists) {
+          await RNFS.unlink(zipPath);
+        }
+      }
+    };
+
+    Alert.alert(
+      t('exportConfirmTitle'),
+      t('exportOptionsMessage'),
+      [
+        {
+          text: t('exportOptionCanvas'),
+          onPress: () => exportFlow('canvas'),
+        },
+        {
+          text: t('exportOptionZip'),
+          onPress: () => exportFlow('zip'),
+        },
+        {
+          text: t('cancel'),
+          style: 'cancel',
+        },
+      ],
+      { cancelable: true },
+    );
+  };
+
   const handleDeleteFlows = async () => {
     Alert.alert(
       t('deleteConfirmTitle'),
@@ -286,6 +491,17 @@ const FlowListScreen = ({ navigation }) => {
   const renderFooter = () => {
     if (!loadingMore) return null;
     return <ActivityIndicator style={{ marginVertical: 20 }} />;
+  };
+
+  const formatDiskUsage = bytes => {
+    if (!bytes || bytes === 0) {
+      return null; // or '0.0 GB'
+    }
+    const gigabytes = bytes / (1024 * 1024 * 1024);
+    if (gigabytes < 0.1) {
+      return null; // 0.1GB未満は表示しない
+    }
+    return `${gigabytes.toFixed(1)} GB`;
   };
 
   const renderItem = ({ item }) => {
@@ -348,50 +564,61 @@ const FlowListScreen = ({ navigation }) => {
         </View>
       );
     }
+
+    const diskUsageText = formatDiskUsage(item.diskUsage);
+
+    const CheckboxArea = () => (
+      <TouchableOpacity
+        onPress={() => {
+          if (!selectionMode) {
+            setSelectionMode(true);
+          }
+          toggleSelection(item.id);
+        }}
+        style={styles.checkboxContainer}
+      >
+        <View pointerEvents="none">
+          <Checkbox
+            status={selectedFlows.includes(item.id) ? 'checked' : 'unchecked'}
+          />
+        </View>
+      </TouchableOpacity>
+    );
+
     return (
       <Card
         style={{ flex: 1, marginVertical: 4, marginHorizontal: 8 }}
         onPress={() => {
           if (selectionMode) {
-            toggleSelection(item.id);
-          } else {
-            navigation.navigate('FlowEditor', {
-              flowId: item.id,
-              flowName: item.name,
-            });
+            return;
           }
+          navigation.navigate('FlowEditor', {
+            flowId: item.id,
+            flowName: item.name,
+          });
         }}
-        onLongPress={() => {
-          if (!selectionMode) {
-            handleEditExistingFlow(item);
-          } else {
-            setSelectionMode(true);
-            toggleSelection(item.id);
-          }
-        }}
+        onLongPress={() => handleEditExistingFlow(item)}
       >
         <Card.Title
           title={item.name}
-          left={props =>
-            selectionMode ? (
-              <Checkbox
-                status={
-                  selectedFlows.includes(item.id) ? 'checked' : 'unchecked'
-                }
-                onPress={() => toggleSelection(item.id)}
-              />
-            ) : null
-          }
+          left={props => <CheckboxArea {...props} />}
           right={props => (
-            <Button
-              mode="text"
-              onPress={() => handleDeleteFlow(item.id)}
-              compact
-              style={{ marginRight: 8 }}
-              icon="delete"
-            >
-              {t('delete')}
-            </Button>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              {diskUsageText && (
+                <Text style={{ marginRight: 8, color: 'gray' }}>
+                  {diskUsageText}
+                </Text>
+              )}
+              <Button
+                mode="text"
+                onPress={() => handleDeleteFlow(item.id)}
+                compact
+                style={{ marginRight: 8 }}
+                icon="delete"
+              >
+                {t('delete')}
+              </Button>
+            </View>
           )}
         />
       </Card>
@@ -414,51 +641,68 @@ const FlowListScreen = ({ navigation }) => {
             />
           ) : (
             <>
-              <Appbar.Action
-                icon="menu"
-                onPress={() => setMenuVisible(true)}
-              />
-              <Appbar.Content title={t('flowCards')} />
-              <Menu
-                visible={sortMenuVisible}
-                onDismiss={() => setSortMenuVisible(false)}
-                anchor={
+              {selectionMode ? (
+                <>
                   <Appbar.Action
-                    icon="sort"
-                    onPress={() => setSortMenuVisible(true)}
+                    icon="close"
+                    onPress={() => {
+                      setSelectionMode(false);
+                      setSelectedFlows([]);
+                    }}
                   />
-                }
-              >
-                <Menu.Item
-                  onPress={() => {
-                    setSort({ sortBy: 'name', sortOrder: 'ASC' });
-                    setSortMenuVisible(false);
-                  }}
-                  title={t('sortNameAsc')}
-                />
-                <Menu.Item
-                  onPress={() => {
-                    setSort({ sortBy: 'name', sortOrder: 'DESC' });
-                    setSortMenuVisible(false);
-                  }}
-                  title={t('sortNameDesc')}
-                />
-                <Divider />
-                <Menu.Item
-                  onPress={() => {
-                    setSort({ sortBy: 'createdAt', sortOrder: 'DESC' });
-                    setSortMenuVisible(false);
-                  }}
-                  title={t('sortDateDesc')}
-                />
-                <Menu.Item
-                  onPress={() => {
-                    setSort({ sortBy: 'createdAt', sortOrder: 'ASC' });
-                    setSortMenuVisible(false);
-                  }}
-                  title={t('sortDateAsc')}
-                />
-              </Menu>
+                  <Appbar.Content
+                    title={t('selected', { count: selectedFlows.length })}
+                  />
+                </>
+              ) : (
+                <>
+                  <Appbar.Action
+                    icon="menu"
+                    onPress={() => setMenuVisible(true)}
+                  />
+                  <Appbar.Content title={t('flowCards')} />
+                  <Menu
+                    visible={sortMenuVisible}
+                    onDismiss={() => setSortMenuVisible(false)}
+                    anchor={
+                      <Appbar.Action
+                        icon="sort"
+                        onPress={() => setSortMenuVisible(true)}
+                      />
+                    }
+                  >
+                    <Menu.Item
+                      onPress={() => {
+                        setSort({ sortBy: 'name', sortOrder: 'ASC' });
+                        setSortMenuVisible(false);
+                      }}
+                      title={t('sortNameAsc')}
+                    />
+                    <Menu.Item
+                      onPress={() => {
+                        setSort({ sortBy: 'name', sortOrder: 'DESC' });
+                        setSortMenuVisible(false);
+                      }}
+                      title={t('sortNameDesc')}
+                    />
+                    <Divider />
+                    <Menu.Item
+                      onPress={() => {
+                        setSort({ sortBy: 'createdAt', sortOrder: 'DESC' });
+                        setSortMenuVisible(false);
+                      }}
+                      title={t('sortDateDesc')}
+                    />
+                    <Menu.Item
+                      onPress={() => {
+                        setSort({ sortBy: 'createdAt', sortOrder: 'ASC' });
+                        setSortMenuVisible(false);
+                      }}
+                      title={t('sortDateAsc')}
+                    />
+                  </Menu>
+                </>
+              )}
             </>
           )}
           <Appbar.Action
@@ -470,25 +714,6 @@ const FlowListScreen = ({ navigation }) => {
               setSearchVisible(!searchVisible);
             }}
           />
-          {selectionMode && !searchVisible ? (
-            <>
-              <Appbar.Action
-                icon="close"
-                onPress={() => {
-                  setSelectionMode(false);
-                  setSelectedFlows([]);
-                }}
-              />
-              <Appbar.Content
-                title={t('selected', { count: selectedFlows.length })}
-              />
-              <Appbar.Action
-                icon="delete"
-                onPress={handleDeleteFlows}
-                disabled={selectedFlows.length === 0}
-              />
-            </>
-          ) : null}
         </Appbar.Header>
         <Portal>
           <Modal
@@ -535,6 +760,33 @@ const FlowListScreen = ({ navigation }) => {
               </Button>
             </View>
           </Modal>
+          {selectionMode ? (
+            <FAB.Group
+              open={fabOpen}
+              visible={selectedFlows.length > 0}
+              icon={fabOpen ? 'close' : 'dots-vertical'}
+              actions={[
+                {
+                  icon: 'export-variant',
+                  label: t('export'),
+                  onPress: handleExportFlows,
+                },
+                {
+                  icon: 'delete',
+                  label: t('delete'),
+                  onPress: handleDeleteFlows,
+                },
+              ]}
+              onStateChange={({ open }) => setFabOpen(open)}
+              onPress={() => {
+                if (fabOpen) {
+                  // do something if the speed dial is open
+                }
+              }}
+            />
+          ) : (
+            <FAB style={styles.fab} icon="plus" onPress={handleAddFlowRow} />
+          )}
         </Portal>
         <FlatList
           data={flows}
@@ -548,7 +800,6 @@ const FlowListScreen = ({ navigation }) => {
           onEndReachedThreshold={0.5}
           ListFooterComponent={renderFooter}
         />
-        <FAB style={styles.fab} icon="plus" onPress={handleAddFlowRow} />
       </View>
     </PaperProvider>
   );
@@ -585,6 +836,13 @@ const styles = StyleSheet.create({
     bottom: 0,
     width: 220,
     justifyContent: 'flex-start',
+  },
+  checkboxContainer: {
+    paddingLeft: 16,
+    paddingRight: 8,
+    paddingVertical: 16,
+    alignSelf: 'stretch',
+    justifyContent: 'center',
   },
 });
 
