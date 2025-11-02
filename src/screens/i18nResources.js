@@ -67,8 +67,10 @@ export const resources = {
       exportError: 'Export Error',
       exportSingleFlowOnly: 'Please select only one flow to export.',
       exportConfirmTitle: 'Export Confirmation',
-      exportConfirmMessage:
-        'This will export the Flow as a .canvas file, which can be used with apps like Obsidian. Proceed?',
+      exportOptionsMessage:
+        'Choose an export format:\n\n- Share with App (.canvas): Best for opening directly in apps like Obsidian (attachments not included).\n- Save as File (.zip): Saves everything, including attachments, as a single .zip file.',
+      exportOptionCanvas: 'Share with App (.canvas)',
+      exportOptionZip: 'Save as File (.zip)',
       rename: 'Rename',
       select: 'Select',
     },
@@ -139,8 +141,10 @@ export const resources = {
       exportError: 'エクスポートエラー',
       exportSingleFlowOnly: 'エクスポートするフローは1つだけ選択してください。',
       exportConfirmTitle: 'エクスポートの確認',
-      exportConfirmMessage:
-        'このFlowをObsidianなどで利用できる.canvas形式のファイルとしてエクスポートします。よろしいですか？',
+      exportOptionsMessage:
+        'エクスポート形式を選択してください:\n\n- アプリで共有 (.canvas): 添付ファイルを含めず、Obsidian等のアプリで直接開くのに適しています。\n- ファイルとして保存 (.zip): 添付ファイルを含む全てを、1つの.zipファイルとして保存します。',
+      exportOptionCanvas: 'アプリで共有 (.canvas)',
+      exportOptionZip: 'ファイルとして保存 (.zip)',
       rename: 'リネーム',
       select: '選択',
     },
@@ -210,8 +214,10 @@ export const resources = {
       exportError: '导出错误',
       exportSingleFlowOnly: '请只选择一个流程进行导出。',
       exportConfirmTitle: '导出确认',
-      exportConfirmMessage:
-        '这将把流程导出为.canvas文件，可以与Obsidian等应用程序一起使用。要继续吗？',
+      exportOptionsMessage:
+        '请选择导出格式：\n\n- 在应用中共享 (.canvas): 最适合在Obsidian等应用中直接打开（不包括附件）。\n- 保存为文件 (.zip): 将所有内容（包括附件）保存为单个.zip文件。',
+      exportOptionCanvas: '在应用中共享 (.canvas)',
+      exportOptionZip: '保存为文件 (.zip)',
       rename: '改名',
       select: '选择',
     },

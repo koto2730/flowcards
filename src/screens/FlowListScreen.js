@@ -7,6 +7,7 @@ import {
   RefreshControl,
   ActivityIndicator,
   Text,
+  TouchableOpacity,
 } from 'react-native';
 import {
   Provider as PaperProvider,
@@ -41,6 +42,7 @@ import {
 import OriginalTheme from './OriginalTheme';
 import { useTranslation } from 'react-i18next';
 import { convertFlowToJSONCanvas } from '../utils/flowUtils';
+import { zip } from 'react-native-zip-archive';
 
 const PAGE_SIZE = 15;
 
@@ -53,11 +55,6 @@ const FlowListScreen = ({ navigation }) => {
   const [editingExistingName, setEditingExistingName] = useState('');
   const [menuVisible, setMenuVisible] = useState(false);
   const [fabOpen, setFabOpen] = useState(false);
-
-  // Context Menu State
-  const [contextMenuVisible, setContextMenuVisible] = useState(false);
-  const [contextMenuAnchor, setContextMenuAnchor] = useState({ x: 0, y: 0 });
-  const [contextMenuItem, setContextMenuItem] = useState(null);
 
   // Pagination and loading state
   const [refreshing, setRefreshing] = useState(false);
@@ -258,118 +255,181 @@ const FlowListScreen = ({ navigation }) => {
       return;
     }
 
-    Alert.alert(
-      t('exportConfirmTitle'),
-      t('exportConfirmMessage'),
-      [
-        { text: t('cancel'), style: 'cancel' },
-        {
-          text: t('export'),
-          onPress: async () => {
-            const flowId = selectedFlows[0];
-            try {
-              const flow = flows.find(f => f.id === flowId);
-              if (!flow) return;
+    const exportFlow = async format => {
+      const flowId = selectedFlows[0];
+      const flow = flows.find(f => f.id === flowId);
+      if (!flow) return;
 
-              const allNodes = await getNodes(flowId);
-              const allEdges = await getEdges(flowId);
+      const exportTempDir = `${
+        RNFS.TemporaryDirectoryPath
+      }/export_${flow.id}_${Date.now()}`;
+      const zipPath = `${RNFS.TemporaryDirectoryPath}/${flow.name.replace(
+        /\s/g,
+        '_',
+      )}.zip`;
 
-              const nodesByParent = allNodes.reduce((acc, node) => {
-                const parentId = node.parentId || 'root';
-                if (!acc[parentId]) {
-                  acc[parentId] = [];
-                }
-                acc[parentId].push(node);
-                return acc;
-              }, {});
+      try {
+        const allNodes = await getNodes(flowId);
+        const allEdges = await getEdges(flowId);
 
-              const filesToShare = [];
-              const allAttachments = new Map();
+        const nodesByParent = allNodes.reduce((acc, node) => {
+          const parentId = node.parentId || 'root';
+          if (!acc[parentId]) {
+            acc[parentId] = [];
+          }
+          acc[parentId].push(node);
+          return acc;
+        }, {});
 
-              for (const parentId in nodesByParent) {
-                const sectionNodes = [...nodesByParent[parentId]];
-                const sectionNodeIds = new Set(sectionNodes.map(n => n.id));
+        if (format === 'zip') {
+          await RNFS.mkdir(exportTempDir);
 
-                if (parentId !== 'root') {
-                  const parentNode = allNodes.find(n => n.id === parentId);
-                  if (parentNode) {
-                    sectionNodes.push(parentNode);
-                    sectionNodeIds.add(parentNode.id);
-                  }
-                }
+          const allAttachments = new Map();
+          for (const node of allNodes) {
+            const attachment = await getAttachmentByNodeId(flow.id, node.id);
+            if (attachment && attachment.stored_path) {
+              const filename = attachment.stored_path.split('/').pop();
+              const destPath = `${exportTempDir}/${filename}`;
+              await RNFS.copyFile(attachment.stored_path, destPath);
+              allAttachments.set(node.id, attachment);
+            }
+          }
 
-                const sectionEdges = allEdges.filter(
-                  e =>
-                    sectionNodeIds.has(e.source) &&
-                    sectionNodeIds.has(e.target),
-                );
+          for (const parentId in nodesByParent) {
+            const sectionNodes = [...nodesByParent[parentId]];
+            const sectionNodeIds = new Set(sectionNodes.map(n => n.id));
 
-                const sectionAttachments = {};
-                for (const node of sectionNodes) {
-                  if (!allAttachments.has(node.id)) {
-                    const attachment = await getAttachmentByNodeId(
-                      flowId,
-                      node.id,
-                    );
-                    if (attachment && attachment.stored_path) {
-                      allAttachments.set(node.id, attachment);
-                    }
-                  }
-                  if (allAttachments.has(node.id)) {
-                    sectionAttachments[node.id] = allAttachments.get(node.id);
-                  }
-                }
-
-                const parentNode = allNodes.find(n => n.id === parentId);
-                const sectionName = parentNode ? parentNode.label : '';
-                const canvasName =
-                  parentId === 'root'
-                    ? flow.name
-                    : `${flow.name}-${sectionName}`;
-
-                const jsonCanvas = convertFlowToJSONCanvas(
-                  flow,
-                  sectionNodes,
-                  sectionEdges,
-                  sectionAttachments,
-                );
-
-                const canvasData = JSON.stringify(jsonCanvas, null, 2);
-                const fileName = `${canvasName.replace(/\s/g, '_')}.canvas`;
-                const filePath = `${RNFS.TemporaryDirectoryPath}/${fileName}`;
-
-                await RNFS.writeFile(filePath, canvasData, 'utf8');
-                filesToShare.push(`file://${filePath}`);
-              }
-
-              for (const attachment of allAttachments.values()) {
-                filesToShare.push(`file://${attachment.stored_path}`);
-              }
-
-              if (filesToShare.length > 0) {
-                const shareOptions = {
-                  title: t('exportFlow', { count: 1 }),
-                  urls: filesToShare,
-                  failOnCancel: false,
-                };
-                const shareResponse = await Share.open(shareOptions);
-                if (shareResponse.success) {
-                  Alert.alert(
-                    t('exportSuccessTitle'),
-                    t('exportSuccessMessage'),
-                  );
-                }
-              }
-
-              setSelectionMode(false);
-              setSelectedFlows([]);
-            } catch (error) {
-              console.error('Export failed:', error);
-              if (error.message !== 'User did not share') {
-                Alert.alert(t('exportFailedTitle'), t('exportFailedMessage'));
+            if (parentId !== 'root') {
+              const parentNode = allNodes.find(n => n.id === parentId);
+              if (parentNode) {
+                sectionNodes.push(parentNode);
+                sectionNodeIds.add(parentNode.id);
               }
             }
-          },
+
+            const sectionEdges = allEdges.filter(
+              e =>
+                sectionNodeIds.has(e.source) && sectionNodeIds.has(e.target),
+            );
+
+            const sectionAttachments = {};
+            for (const node of sectionNodes) {
+              if (allAttachments.has(node.id)) {
+                sectionAttachments[node.id] = allAttachments.get(node.id);
+              }
+            }
+
+            const parentNode = allNodes.find(n => n.id === parentId);
+            const sectionName = parentNode ? parentNode.label : '';
+            const canvasName =
+              parentId === 'root'
+                ? flow.name
+                : `${flow.name}-${sectionName}`;
+
+            const jsonCanvas = convertFlowToJSONCanvas(
+              flow,
+              sectionNodes,
+              sectionEdges,
+              sectionAttachments,
+            );
+
+            const canvasData = JSON.stringify(jsonCanvas, null, 2);
+            const fileName = `${canvasName.replace(/\s/g, '_')}.canvas`;
+            const filePath = `${exportTempDir}/${fileName}`;
+            await RNFS.writeFile(filePath, canvasData, 'utf8');
+          }
+
+          await zip(exportTempDir, zipPath);
+
+          await Share.open({
+            title: t('exportFlow', { count: 1 }),
+            url: `file://${zipPath}`,
+            type: 'application/zip',
+            failOnCancel: false,
+          });
+        } else {
+          // canvas only
+          const filesToShare = [];
+          for (const parentId in nodesByParent) {
+            const sectionNodes = [...nodesByParent[parentId]];
+            const sectionNodeIds = new Set(sectionNodes.map(n => n.id));
+
+            if (parentId !== 'root') {
+              const parentNode = allNodes.find(n => n.id === parentId);
+              if (parentNode) {
+                sectionNodes.push(parentNode);
+                sectionNodeIds.add(parentNode.id);
+              }
+            }
+
+            const sectionEdges = allEdges.filter(
+              e =>
+                sectionNodeIds.has(e.source) && sectionNodeIds.has(e.target),
+            );
+
+            const parentNode = allNodes.find(n => n.id === parentId);
+            const sectionName = parentNode ? parentNode.label : '';
+            const canvasName =
+              parentId === 'root'
+                ? flow.name
+                : `${flow.name}-${sectionName}`;
+
+            const jsonCanvas = convertFlowToJSONCanvas(
+              flow,
+              sectionNodes,
+              sectionEdges,
+              {},
+            );
+
+            const canvasData = JSON.stringify(jsonCanvas, null, 2);
+            const fileName = `${canvasName.replace(/\s/g, '_')}.canvas`;
+            const filePath = `${RNFS.TemporaryDirectoryPath}/${fileName}`;
+            await RNFS.writeFile(filePath, canvasData, 'utf8');
+            filesToShare.push(`file://${filePath}`);
+          }
+
+          await Share.open({
+            title: t('exportFlow', { count: filesToShare.length }),
+            urls: filesToShare,
+            failOnCancel: false,
+          });
+        }
+
+        setSelectionMode(false);
+        setSelectedFlows([]);
+      } catch (error) {
+        console.error('Export failed:', error);
+        if (error.message !== 'User did not share') {
+          Alert.alert(t('exportFailedTitle'), t('exportFailedMessage'));
+        }
+      } finally {
+        // Clean up temp files and dirs
+        const tempDirExists = await RNFS.exists(exportTempDir);
+        if (tempDirExists) {
+          await RNFS.unlink(exportTempDir);
+        }
+        const zipFileExists = await RNFS.exists(zipPath);
+        if (zipFileExists) {
+          await RNFS.unlink(zipPath);
+        }
+      }
+    };
+
+    Alert.alert(
+      t('exportConfirmTitle'),
+      t('exportOptionsMessage'),
+      [
+        {
+          text: t('exportOptionCanvas'),
+          onPress: () => exportFlow('canvas'),
+        },
+        {
+          text: t('exportOptionZip'),
+          onPress: () => exportFlow('zip'),
+        },
+        {
+          text: t('cancel'),
+          style: 'cancel',
         },
       ],
       { cancelable: true },
@@ -426,13 +486,6 @@ const FlowListScreen = ({ navigation }) => {
       ],
       { cancelable: true },
     );
-  };
-
-  const onCardLongPress = (event, item) => {
-    const { pageX, pageY } = event.nativeEvent;
-    setContextMenuAnchor({ x: pageX, y: pageY });
-    setContextMenuItem(item);
-    setContextMenuVisible(true);
   };
 
   const renderFooter = () => {
@@ -514,33 +567,41 @@ const FlowListScreen = ({ navigation }) => {
 
     const diskUsageText = formatDiskUsage(item.diskUsage);
 
+    const CheckboxArea = () => (
+      <TouchableOpacity
+        onPress={() => {
+          if (!selectionMode) {
+            setSelectionMode(true);
+          }
+          toggleSelection(item.id);
+        }}
+        style={styles.checkboxContainer}
+      >
+        <View pointerEvents="none">
+          <Checkbox
+            status={selectedFlows.includes(item.id) ? 'checked' : 'unchecked'}
+          />
+        </View>
+      </TouchableOpacity>
+    );
+
     return (
       <Card
         style={{ flex: 1, marginVertical: 4, marginHorizontal: 8 }}
         onPress={() => {
           if (selectionMode) {
-            toggleSelection(item.id);
-          } else {
-            navigation.navigate('FlowEditor', {
-              flowId: item.id,
-              flowName: item.name,
-            });
+            return;
           }
+          navigation.navigate('FlowEditor', {
+            flowId: item.id,
+            flowName: item.name,
+          });
         }}
-        onLongPress={event => onCardLongPress(event, item)}
+        onLongPress={() => handleEditExistingFlow(item)}
       >
         <Card.Title
           title={item.name}
-          left={props =>
-            selectionMode ? (
-              <Checkbox
-                status={
-                  selectedFlows.includes(item.id) ? 'checked' : 'unchecked'
-                }
-                onPress={() => toggleSelection(item.id)}
-              />
-            ) : null
-          }
+          left={props => <CheckboxArea {...props} />}
           right={props => (
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               {diskUsageText && (
@@ -655,30 +716,6 @@ const FlowListScreen = ({ navigation }) => {
           />
         </Appbar.Header>
         <Portal>
-          <Menu
-            visible={contextMenuVisible}
-            onDismiss={() => setContextMenuVisible(false)}
-            anchor={contextMenuAnchor}
-          >
-            <Menu.Item
-              onPress={() => {
-                if (!contextMenuItem) return;
-                handleEditExistingFlow(contextMenuItem);
-                setContextMenuVisible(false);
-              }}
-              title={t('rename')}
-            />
-            <Menu.Item
-              onPress={() => {
-                if (!contextMenuItem) return;
-                setSelectionMode(true);
-                toggleSelection(contextMenuItem.id);
-                setContextMenuVisible(false);
-              }}
-              title={t('select')}
-            />
-          </Menu>
-
           <Modal
             visible={menuVisible}
             onDismiss={() => setMenuVisible(false)}
@@ -799,6 +836,13 @@ const styles = StyleSheet.create({
     bottom: 0,
     width: 220,
     justifyContent: 'flex-start',
+  },
+  checkboxContainer: {
+    paddingLeft: 16,
+    paddingRight: 8,
+    paddingVertical: 16,
+    alignSelf: 'stretch',
+    justifyContent: 'center',
   },
 });
 
