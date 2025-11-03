@@ -24,7 +24,7 @@ const CARD_SIZES = {
   large: { width: 180, height: 254 },
 };
 
-export const useFlowData = (flowId, isSeeThrough, t) => {
+export const useFlowData = (flowId, isSeeThrough, alignModeOpen, t) => {
   const [allNodes, setAllNodes] = useState([]);
   const [edges, setEdges] = useState([]);
   const [currentParentId, setCurrentParentId] = useState('root');
@@ -32,6 +32,7 @@ export const useFlowData = (flowId, isSeeThrough, t) => {
   const [linkingState, setLinkingState] = useState({
     active: false,
     sourceNodeId: null,
+    selectedNodeIds: new Set(),
   });
 
   const fetchData = useCallback(async () => {
@@ -436,8 +437,25 @@ export const useFlowData = (flowId, isSeeThrough, t) => {
     }
   };
 
+  const toggleNodeSelection = nodeId => {
+    setLinkingState(prev => {
+      const newSelectedIds = new Set(prev.selectedNodeIds);
+      if (newSelectedIds.has(nodeId)) {
+        newSelectedIds.delete(nodeId);
+      } else {
+        newSelectedIds.add(nodeId);
+      }
+      return { ...prev, selectedNodeIds: newSelectedIds };
+    });
+  };
+
   const toggleLinkingMode = () => {
-    setLinkingState(prev => ({ active: !prev.active, sourceNodeId: null }));
+    setLinkingState(prev => ({
+      ...prev,
+      active: !prev.active,
+      sourceNodeId: null,
+      selectedNodeIds: new Set(), // Clear selection when toggling linking mode
+    }));
   };
 
   const handleDeleteEdge = async edgeId => {
@@ -450,13 +468,18 @@ export const useFlowData = (flowId, isSeeThrough, t) => {
   };
 
   const handleCardTap = async nodeId => {
+    if (alignModeOpen) {
+      toggleNodeSelection(nodeId);
+      return;
+    }
+
     if (!linkingState.active) return;
 
     if (!linkingState.sourceNodeId) {
-      setLinkingState({ active: true, sourceNodeId: nodeId });
+      setLinkingState(prev => ({ ...prev, sourceNodeId: nodeId }));
     } else {
       if (linkingState.sourceNodeId === nodeId) {
-        setLinkingState({ active: true, sourceNodeId: null });
+        setLinkingState(prev => ({ ...prev, sourceNodeId: null }));
         return;
       }
 
@@ -470,7 +493,7 @@ export const useFlowData = (flowId, isSeeThrough, t) => {
         );
 
         if (forwardEdge) {
-          setLinkingState({ active: true, sourceNodeId: null });
+          setLinkingState(prev => ({ ...prev, sourceNodeId: null }));
           return;
         }
 
@@ -510,7 +533,7 @@ export const useFlowData = (flowId, isSeeThrough, t) => {
             console.error('Failed to add edge:', error);
           }
         }
-        setLinkingState({ active: true, sourceNodeId: null });
+        setLinkingState(prev => ({ ...prev, sourceNodeId: null }));
       }
     }
   };
@@ -531,6 +554,7 @@ export const useFlowData = (flowId, isSeeThrough, t) => {
     handleDoubleClick,
     handleSectionUp,
     linkingState,
+    setLinkingState,
     toggleLinkingMode,
     handleCardTap,
     handleDeleteEdge,
