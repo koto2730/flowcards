@@ -662,18 +662,26 @@ const FlowEditorScreen = ({ route, navigation }) => {
     }
   };
 
+  const handleUrlInputChange = text => {
+    let processedText = text;
+    if (processedText.startsWith('https://')) {
+      processedText = processedText.substring('https://'.length);
+    } else if (processedText.startsWith('http://')) {
+      processedText = processedText.substring('http://'.length);
+    }
+    setAttachmentUrl(processedText);
+  };
+
   const handleSaveUrlAttachment = async () => {
-    if (
-      !attachmentUrl ||
-      (!attachmentUrl.startsWith('http://') &&
-        !attachmentUrl.startsWith('https://'))
-    ) {
+    if (!attachmentUrl) {
       Alert.alert(t('invalidUrl'), t('invalidUrlMessage'));
       return;
     }
 
+    const fullUrl = `https://` + attachmentUrl;
+
     try {
-      const previewData = await getLinkPreview(attachmentUrl, { fetch });
+      const previewData = await getLinkPreview(fullUrl, { fetch });
       let thumbnail_path = null;
       let preview_image_url = null;
 
@@ -699,9 +707,9 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
       const newAttachment = {
         node_id: editingNode.id,
-        filename: previewData.title || attachmentUrl,
+        filename: previewData.title || fullUrl,
         mime_type: 'text/url',
-        original_uri: attachmentUrl,
+        original_uri: fullUrl,
         stored_path: null,
         thumbnail_path: thumbnail_path,
         preview_title: previewData.title,
@@ -1205,15 +1213,18 @@ const FlowEditorScreen = ({ route, navigation }) => {
             onDismiss={() => setUrlInputVisible(false)}
             contentContainerStyle={styles.urlInputContainer}
           >
-            <TextInput
-              value={attachmentUrl}
-              onChangeText={setAttachmentUrl}
-              style={styles.input}
-              placeholder="https://example.com"
-              autoCapitalize="none"
-              keyboardType="url"
-              autoFocus
-            />
+            <View style={styles.urlInputWrapper}>
+              <Text style={styles.urlInputLabel}>https://</Text>
+              <TextInput
+                value={attachmentUrl}
+                onChangeText={handleUrlInputChange}
+                style={styles.urlInputField}
+                placeholder="example.com"
+                autoCapitalize="none"
+                keyboardType="url"
+                autoFocus
+              />
+            </View>
             <View style={styles.buttonContainer}>
               <Button onPress={handleSaveUrlAttachment}>{t('save')}</Button>
               <Button
@@ -1317,6 +1328,22 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     width: '80%',
     alignSelf: 'center',
+  },
+  urlInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderColor: '#ccc',
+    marginBottom: 10,
+  },
+  urlInputLabel: {
+    paddingHorizontal: 8,
+    color: '#555',
+  },
+  urlInputField: {
+    flex: 1,
+    backgroundColor: 'transparent',
+    padding: 8,
   },
   scaleIndicatorText: {
     color: 'black',
