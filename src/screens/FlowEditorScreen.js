@@ -541,12 +541,16 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
   const handleAlign = async alignment => {
     const selectedIds = Array.from(linkingState.selectedNodeIds);
-    if (selectedIds.length < 2) return;
+    if (selectedIds.length === 0) return;
+    if (alignment !== 'spread' && selectedIds.length < 2) return;
 
     const selectedNodes = allNodes.filter(node =>
       selectedIds.includes(node.id),
     );
 
+    const originalNodesMap = new Map(
+      allNodes.map(n => [n.id, JSON.stringify(n.position)]),
+    );
     let newNodes = [...allNodes];
 
     switch (alignment) {
@@ -635,29 +639,88 @@ const FlowEditorScreen = ({ route, navigation }) => {
         break;
       }
       case 'spread': {
-        let tempNodes = JSON.parse(JSON.stringify(selectedNodes));
+        let tempAllNodes = JSON.parse(JSON.stringify(allNodes));
         const MAX_ITERATIONS = 100;
         let iterations = 0;
         let moved = false;
+        const selectedIdsSet = new Set(selectedIds);
 
+        // Step 1: Resolve overlaps between selected nodes
+        if (selectedNodes.length > 1) {
+          iterations = 0;
+          do {
+            moved = false;
+            const currentSelectedNodes = tempAllNodes.filter(n =>
+              selectedIdsSet.has(n.id),
+            );
+            for (let i = 0; i < currentSelectedNodes.length; i++) {
+              for (let j = i + 1; j < currentSelectedNodes.length; j++) {
+                const nodeA = currentSelectedNodes[i];
+                const nodeB = currentSelectedNodes[j];
+                const rectA = { ...nodeA.position, ...nodeA.size };
+                const rectB = { ...nodeB.position, ...nodeB.size };
+
+                const overlapX = Math.max(
+                  0,
+                  Math.min(rectA.x + rectA.width, rectB.x + rectB.width) -
+                    Math.max(rectA.x, rectB.x),
+                );
+                const overlapY = Math.max(
+                  0,
+                  Math.min(rectA.y + rectA.height, rectB.y + rectB.height) -
+                    Math.max(rectA.y, rectB.y),
+                );
+
+                if (overlapX > 0 && overlapY > 0) {
+                  moved = true;
+                  const centerA = {
+                    x: rectA.x + rectA.width / 2,
+                    y: rectA.y + rectA.height / 2,
+                  };
+                  const centerB = {
+                    x: rectB.x + rectB.width / 2,
+                    y: rectB.y + rectB.height / 2,
+                  };
+                  let dx = centerB.x - centerA.x;
+                  let dy = centerB.y - centerA.y;
+
+                  if (dx === 0 && dy === 0) {
+                    dx = (Math.random() - 0.5) * 2;
+                    dy = (Math.random() - 0.5) * 2;
+                  }
+
+                  const angle = Math.atan2(dy, dx);
+                  const moveX = (overlapX / 2) * Math.cos(angle);
+                  const moveY = (overlapY / 2) * Math.sin(angle);
+
+                  nodeA.position.x -= moveX;
+                  nodeA.position.y -= moveY;
+                  nodeB.position.x += moveX;
+                  nodeB.position.y += moveY;
+                }
+              }
+            }
+            iterations++;
+          } while (moved && iterations < MAX_ITERATIONS);
+        }
+
+        // Step 2: Resolve overlaps between selected and unselected nodes
+        iterations = 0;
         do {
           moved = false;
-          for (let i = 0; i < tempNodes.length; i++) {
-            for (let j = i + 1; j < tempNodes.length; j++) {
-              const nodeA = tempNodes[i];
-              const nodeB = tempNodes[j];
+          const currentSelectedNodes = tempAllNodes.filter(n =>
+            selectedIdsSet.has(n.id),
+          );
+          const unselectedNodes = tempAllNodes.filter(
+            n => !selectedIdsSet.has(n.id),
+          );
 
-              const rectA = {
-                x: nodeA.position.x,
-                y: nodeA.position.y,
-                width: nodeA.size.width,
-                height: nodeA.size.height,
-              };
+          for (const selectedNode of currentSelectedNodes) {
+            for (const unselectedNode of unselectedNodes) {
+              const rectA = { ...selectedNode.position, ...selectedNode.size };
               const rectB = {
-                x: nodeB.position.x,
-                y: nodeB.position.y,
-                width: nodeB.size.width,
-                height: nodeB.size.height,
+                ...unselectedNode.position,
+                ...unselectedNode.size,
               };
 
               const overlapX = Math.max(
@@ -681,40 +744,41 @@ const FlowEditorScreen = ({ route, navigation }) => {
                   x: rectB.x + rectB.width / 2,
                   y: rectB.y + rectB.height / 2,
                 };
-                const dx = centerB.x - centerA.x;
-                const dy = centerB.y - centerA.y;
+                let dx = centerB.x - centerA.x;
+                let dy = centerB.y - centerA.y;
+
+                if (dx === 0 && dy === 0) {
+                  dx = (Math.random() - 0.5) * 2;
+                  dy = (Math.random() - 0.5) * 2;
+                }
+
                 const angle = Math.atan2(dy, dx);
+                const moveX = overlapX * Math.cos(angle);
+                const moveY = overlapY * Math.sin(angle);
 
-                const moveX = (overlapX / 2) * Math.cos(angle);
-                const moveY = (overlapY / 2) * Math.sin(angle);
-
-                nodeA.position.x -= moveX;
-                nodeA.position.y -= moveY;
-                nodeB.position.x += moveX;
-                nodeB.position.y += moveY;
+                unselectedNode.position.x += moveX;
+                unselectedNode.position.y += moveY;
               }
             }
           }
           iterations++;
         } while (moved && iterations < MAX_ITERATIONS);
 
-        const tempNodeMap = new Map(tempNodes.map(n => [n.id, n]));
-        newNodes = allNodes.map(node => {
-          if (tempNodeMap.has(node.id)) {
-            return { ...node, position: tempNodeMap.get(node.id).position };
-          }
-          return node;
-        });
-
+        newNodes = tempAllNodes;
         break;
       }
     }
 
     setAllNodes(newNodes);
 
-    const updates = newNodes
-      .filter(node => selectedIds.includes(node.id))
-      .map(node => handleUpdateNodePosition(node.id, node.position));
+    const nodesToUpdate = newNodes.filter(
+      node =>
+        JSON.stringify(node.position) !== originalNodesMap.get(node.id),
+    );
+
+    const updates = nodesToUpdate.map(node =>
+      handleUpdateNodePosition(node.id, node.position),
+    );
 
     await Promise.all(updates);
   };
