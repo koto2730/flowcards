@@ -281,31 +281,29 @@ const FlowListScreen = ({ navigation }) => {
           return acc;
         }, {});
 
+        const allAttachments = new Map();
+        for (const node of allNodes) {
+          const attachment = await getAttachmentByNodeId(flow.id, node.id);
+          if (attachment) {
+            allAttachments.set(node.id, attachment);
+          }
+        }
+
         if (format === 'zip') {
           await RNFS.mkdir(exportTempDir);
 
-          const allAttachments = new Map();
           for (const node of allNodes) {
-            const attachment = await getAttachmentByNodeId(flow.id, node.id);
+            const attachment = allAttachments.get(node.id);
             if (attachment && attachment.stored_path) {
               const filename = attachment.stored_path.split('/').pop();
               const destPath = `${exportTempDir}/${filename}`;
               await RNFS.copyFile(attachment.stored_path, destPath);
-              allAttachments.set(node.id, attachment);
             }
           }
 
           for (const parentId in nodesByParent) {
             const sectionNodes = [...nodesByParent[parentId]];
             const sectionNodeIds = new Set(sectionNodes.map(n => n.id));
-
-            if (parentId !== 'root') {
-              const parentNode = allNodes.find(n => n.id === parentId);
-              if (parentNode) {
-                sectionNodes.push(parentNode);
-                sectionNodeIds.add(parentNode.id);
-              }
-            }
 
             const sectionEdges = allEdges.filter(
               e =>
@@ -322,9 +320,7 @@ const FlowListScreen = ({ navigation }) => {
             const parentNode = allNodes.find(n => n.id === parentId);
             const sectionName = parentNode ? parentNode.label : '';
             const canvasName =
-              parentId === 'root'
-                ? flow.name
-                : `${flow.name}-${sectionName}`;
+              parentId === 'root' ? flow.name : sectionName;
 
             const jsonCanvas = convertFlowToJSONCanvas(
               flow,
@@ -354,31 +350,28 @@ const FlowListScreen = ({ navigation }) => {
             const sectionNodes = [...nodesByParent[parentId]];
             const sectionNodeIds = new Set(sectionNodes.map(n => n.id));
 
-            if (parentId !== 'root') {
-              const parentNode = allNodes.find(n => n.id === parentId);
-              if (parentNode) {
-                sectionNodes.push(parentNode);
-                sectionNodeIds.add(parentNode.id);
-              }
-            }
-
             const sectionEdges = allEdges.filter(
               e =>
                 sectionNodeIds.has(e.source) && sectionNodeIds.has(e.target),
             );
 
+            const sectionAttachments = {};
+            for (const node of sectionNodes) {
+              if (allAttachments.has(node.id)) {
+                sectionAttachments[node.id] = allAttachments.get(node.id);
+              }
+            }
+
             const parentNode = allNodes.find(n => n.id === parentId);
             const sectionName = parentNode ? parentNode.label : '';
             const canvasName =
-              parentId === 'root'
-                ? flow.name
-                : `${flow.name}-${sectionName}`;
+              parentId === 'root' ? flow.name : sectionName;
 
             const jsonCanvas = convertFlowToJSONCanvas(
               flow,
               sectionNodes,
               sectionEdges,
-              {},
+              sectionAttachments,
             );
 
             const canvasData = JSON.stringify(jsonCanvas, null, 2);
