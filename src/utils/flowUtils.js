@@ -197,15 +197,26 @@ export const convertFlowToJSONCanvas = (flow, nodes, edges, attachments) => {
       baseNode.color = node.color;
     }
 
-    if (attachment && attachment.stored_path) {
-      const filename = attachment.stored_path.split('/').pop();
-      return {
-        ...baseNode,
-        type: 'file',
-        file: filename,
-      };
+    if (attachment) {
+      if (attachment.stored_path) {
+        const filename = attachment.stored_path.split('/').pop();
+        return {
+          ...baseNode,
+          type: 'file',
+          file: filename,
+        };
+      }
+      if (attachment.original_uri) {
+        return {
+          ...baseNode,
+          type: 'link',
+          url: attachment.original_uri,
+        };
+      }
     }
 
+    // This check for node.type === 'url' is likely legacy and may not be hit
+    // if URL information is primarily in attachments. Keeping for now.
     if (node.type === 'url' && node.url) {
       return {
         ...baseNode,
