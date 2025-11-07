@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Text,
   TouchableOpacity,
+  Platform,
 } from 'react-native';
 import {
   Provider as PaperProvider,
@@ -157,6 +158,12 @@ const FlowListScreen = ({ navigation }) => {
     return unsubscribe;
   }, [navigation]);
 
+  useEffect(() => {
+    if (selectionMode && selectedFlows.length === 0) {
+      setSelectionMode(false);
+    }
+  }, [selectedFlows, selectionMode]);
+
   const handleAddFlowRow = () => {
     if (flows.some(f => f.isNew)) {
       return;
@@ -295,9 +302,23 @@ const FlowListScreen = ({ navigation }) => {
           for (const node of allNodes) {
             const attachment = allAttachments.get(node.id);
             if (attachment && attachment.stored_path) {
-              const filename = attachment.stored_path.split('/').pop();
-              const destPath = `${exportTempDir}/${filename}`;
-              await RNFS.copyFile(attachment.stored_path, destPath);
+              let sourcePath = attachment.stored_path;
+              if (Platform.OS === 'ios') {
+                sourcePath = decodeURIComponent(
+                  sourcePath.replace(/^file:\/\//, ''),
+                );
+              }
+
+              const fileExists = await RNFS.exists(sourcePath);
+              if (fileExists) {
+                const filename = sourcePath.split('/').pop();
+                const destPath = `${exportTempDir}/${filename}`;
+                await RNFS.copyFile(sourcePath, destPath);
+              } else {
+                console.warn(
+                  `Attachment file not found, skipping: ${sourcePath}`,
+                );
+              }
             }
           }
 
@@ -346,6 +367,7 @@ const FlowListScreen = ({ navigation }) => {
         } else {
           // canvas only
           const filesToShare = [];
+          const fileNames = [];
           for (const parentId in nodesByParent) {
             const sectionNodes = [...nodesByParent[parentId]];
             const sectionNodeIds = new Set(sectionNodes.map(n => n.id));
@@ -376,6 +398,7 @@ const FlowListScreen = ({ navigation }) => {
 
             const canvasData = JSON.stringify(jsonCanvas, null, 2);
             const fileName = `${canvasName.replace(/\s/g, '_')}.canvas`;
+            fileNames.push(fileName);
             const filePath = `${RNFS.TemporaryDirectoryPath}/${fileName}`;
             await RNFS.writeFile(filePath, canvasData, 'utf8');
             filesToShare.push(`file://${filePath}`);
@@ -384,6 +407,8 @@ const FlowListScreen = ({ navigation }) => {
           await Share.open({
             title: t('exportFlow', { count: filesToShare.length }),
             urls: filesToShare,
+            type: 'text/plain', // Add type for better compatibility
+            subject: fileNames.join(', '), // Add subject for context
             failOnCancel: false,
           });
         }
@@ -392,8 +417,13 @@ const FlowListScreen = ({ navigation }) => {
         setSelectedFlows([]);
       } catch (error) {
         console.error('Export failed:', error);
-        if (error.message !== 'User did not share') {
-          Alert.alert(t('exportFailedTitle'), t('exportFailedMessage'));
+        if (error.message.includes('Cancel')) {
+          // Handle user cancellation
+        } else if (error.message !== 'User did not share') {
+          Alert.alert(
+            t('exportFailedTitle'),
+            t('exportFailedMessage') + ': ' + error.message,
+          );
         }
       } finally {
         // Clean up temp files and dirs
@@ -560,29 +590,15 @@ const FlowListScreen = ({ navigation }) => {
 
     const diskUsageText = formatDiskUsage(item.diskUsage);
 
-    const CheckboxArea = () => (
-      <TouchableOpacity
-        onPress={() => {
-          if (!selectionMode) {
-            setSelectionMode(true);
-          }
-          toggleSelection(item.id);
-        }}
-        style={styles.checkboxContainer}
-      >
-        <View pointerEvents="none">
-          <Checkbox
-            status={selectedFlows.includes(item.id) ? 'checked' : 'unchecked'}
-          />
-        </View>
-      </TouchableOpacity>
-    );
-
     return (
       <Card
         style={{ flex: 1, marginVertical: 4, marginHorizontal: 8 }}
         onPress={() => {
           if (selectionMode) {
+            if (!selectionMode) {
+              setSelectionMode(true);
+            }
+            toggleSelection(item.id);
             return;
           }
           navigation.navigate('FlowEditor', {
@@ -590,11 +606,29 @@ const FlowListScreen = ({ navigation }) => {
             flowName: item.name,
           });
         }}
-        onLongPress={() => handleEditExistingFlow(item)}
+        onLongPress={() => {
+          if (!selectionMode) {
+            setSelectionMode(true);
+            setSelectedFlows([item.id]);
+          }
+        }}
       >
         <Card.Title
           title={item.name}
-          left={props => <CheckboxArea {...props} />}
+          left={props => (
+            <Checkbox
+              {...props}
+              status={
+                selectedFlows.includes(item.id) ? 'checked' : 'unchecked'
+              }
+              onPress={() => {
+                if (!selectionMode) {
+                  setSelectionMode(true);
+                }
+                toggleSelection(item.id);
+              }}
+            />
+          )}
           right={props => (
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               {diskUsageText && (
@@ -642,6 +676,7 @@ const FlowListScreen = ({ navigation }) => {
                       setSelectionMode(false);
                       setSelectedFlows([]);
                     }}
+                    iconColor={'#fff'}
                   />
                   <Appbar.Content
                     title={t('selected', { count: selectedFlows.length })}
@@ -652,6 +687,7 @@ const FlowListScreen = ({ navigation }) => {
                   <Appbar.Action
                     icon="menu"
                     onPress={() => setMenuVisible(true)}
+                    iconColor={'#fff'}
                   />
                   <Appbar.Content title={t('flowCards')} />
                   <Menu
@@ -661,6 +697,7 @@ const FlowListScreen = ({ navigation }) => {
                       <Appbar.Action
                         icon="sort"
                         onPress={() => setSortMenuVisible(true)}
+                        iconColor={'#fff'}
                       />
                     }
                   >
@@ -706,6 +743,7 @@ const FlowListScreen = ({ navigation }) => {
               }
               setSearchVisible(!searchVisible);
             }}
+            iconColor={'#fff'}
           />
         </Appbar.Header>
         <Portal>
