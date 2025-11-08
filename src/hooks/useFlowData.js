@@ -13,6 +13,7 @@ import {
   deleteNode,
   getAttachmentByNodeId,
   updateAttachment,
+  updateAttachmentPaths,
 } from '../db';
 import RNFS from 'react-native-fs';
 import { doRectsOverlap, getRect, getClosestHandle } from '../utils/flowUtils';
@@ -43,7 +44,41 @@ export const useFlowData = (flowId, isSeeThrough, alignModeOpen, t) => {
       const attachmentPromises = nodesData.map(n =>
         getAttachmentByNodeId(flowId, n.id),
       );
-      const attachments = await Promise.all(attachmentPromises);
+      let attachments = await Promise.all(attachmentPromises);
+
+      // Lazy migration
+      const documentPath = RNFS.DocumentDirectoryPath;
+      for (const attachment of attachments) {
+        if (attachment) {
+          let needsUpdate = false;
+          let { stored_path, thumbnail_path } = attachment;
+
+          if (stored_path && stored_path.startsWith(documentPath)) {
+            stored_path = stored_path.substring(documentPath.length + 1);
+            needsUpdate = true;
+          }
+
+          if (thumbnail_path && thumbnail_path.startsWith(documentPath)) {
+            thumbnail_path = thumbnail_path.substring(documentPath.length + 1);
+            needsUpdate = true;
+          }
+
+          if (needsUpdate) {
+            await updateAttachmentPaths(
+              attachment.id,
+              stored_path,
+              thumbnail_path,
+            );
+          }
+        }
+      }
+
+      // Re-fetch attachments after migration
+      const migratedAttachmentPromises = nodesData.map(n =>
+        getAttachmentByNodeId(flowId, n.id),
+      );
+      attachments = await Promise.all(migratedAttachmentPromises);
+
       const attachmentsMap = attachments.reduce((acc, att) => {
         if (att) {
           acc[att.node_id] = att;

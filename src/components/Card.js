@@ -45,6 +45,7 @@ const SkiaCard = ({
   pressState,
   isSeeThroughParent,
   showAttachment,
+  resolveAttachmentPath,
 }) => {
   const cardColor = isSelected ? '#E3F2FD' : node.color || 'white';
 
@@ -103,35 +104,34 @@ const SkiaCard = ({
       node.attachment?.mime_type?.startsWith('image/') ||
       node.attachment?.mime_type?.startsWith('text/url')
     ) {
-      const attachmentImage = useImage(
+      const path =
         node.attachment?.thumbnail_path &&
-          node.attachment.thumbnail_path.length > 0
-          ? `file://${node.attachment.thumbnail_path}`
+        node.attachment.thumbnail_path.length > 0
+          ? resolveAttachmentPath(node.attachment.thumbnail_path)
           : node.attachment?.mime_type?.startsWith('image/')
-          ? `file://${node.attachment.stored_path}`
-          : null,
-      );
-      return attachmentImage;
+          ? resolveAttachmentPath(node.attachment.stored_path)
+          : null;
+      return useImage(path ? `file://${path}` : null);
     }
     return useImage(null);
   };
   const attachmentImage = getAttachmentByNodeId(node);
 
   const videoPath = useMemo(() => {
-    // ビデオが表示されるべき時だけパスを返すように修正
     if (!showAttachment || !node.attachment?.mime_type?.startsWith('video/')) {
       return null;
     }
 
     const attachment = node.attachment;
+    let path = null;
     if (attachment.thumbnail_path && attachment.thumbnail_path.length > 0) {
-      return `file://${attachment.thumbnail_path}`;
+      path = resolveAttachmentPath(attachment.thumbnail_path);
+    } else if (attachment.stored_path) {
+      path = resolveAttachmentPath(attachment.stored_path);
     }
-    if (attachment.stored_path) {
-      return `file://${attachment.stored_path}`;
-    }
-    return null;
-  }, [node.attachment, showAttachment]); // 依存配列にshowAttachmentを追加
+
+    return path ? `file://${path}` : null;
+  }, [node.attachment, showAttachment, resolveAttachmentPath]);
 
   const { currentFrame } = useVideo(videoPath);
 

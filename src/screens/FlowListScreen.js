@@ -267,9 +267,9 @@ const FlowListScreen = ({ navigation }) => {
       const flow = flows.find(f => f.id === flowId);
       if (!flow) return;
 
-      const exportTempDir = `${
-        RNFS.TemporaryDirectoryPath
-      }/export_${flow.id}_${Date.now()}`;
+      const exportTempDir = `${RNFS.TemporaryDirectoryPath}/export_${
+        flow.id
+      }_${Date.now()}`;
       const zipPath = `${RNFS.TemporaryDirectoryPath}/${flow.name.replace(
         /\s/g,
         '_',
@@ -327,8 +327,7 @@ const FlowListScreen = ({ navigation }) => {
             const sectionNodeIds = new Set(sectionNodes.map(n => n.id));
 
             const sectionEdges = allEdges.filter(
-              e =>
-                sectionNodeIds.has(e.source) && sectionNodeIds.has(e.target),
+              e => sectionNodeIds.has(e.source) && sectionNodeIds.has(e.target),
             );
 
             const sectionAttachments = {};
@@ -340,8 +339,7 @@ const FlowListScreen = ({ navigation }) => {
 
             const parentNode = allNodes.find(n => n.id === parentId);
             const sectionName = parentNode ? parentNode.label : '';
-            const canvasName =
-              parentId === 'root' ? flow.name : sectionName;
+            const canvasName = parentId === 'root' ? flow.name : sectionName;
 
             const jsonCanvas = convertFlowToJSONCanvas(
               flow,
@@ -373,8 +371,7 @@ const FlowListScreen = ({ navigation }) => {
             const sectionNodeIds = new Set(sectionNodes.map(n => n.id));
 
             const sectionEdges = allEdges.filter(
-              e =>
-                sectionNodeIds.has(e.source) && sectionNodeIds.has(e.target),
+              e => sectionNodeIds.has(e.source) && sectionNodeIds.has(e.target),
             );
 
             const sectionAttachments = {};
@@ -386,8 +383,7 @@ const FlowListScreen = ({ navigation }) => {
 
             const parentNode = allNodes.find(n => n.id === parentId);
             const sectionName = parentNode ? parentNode.label : '';
-            const canvasName =
-              parentId === 'root' ? flow.name : sectionName;
+            const canvasName = parentId === 'root' ? flow.name : sectionName;
 
             const jsonCanvas = convertFlowToJSONCanvas(
               flow,
@@ -615,20 +611,33 @@ const FlowListScreen = ({ navigation }) => {
       >
         <Card.Title
           title={item.name}
-          left={props => (
-            <Checkbox
-              {...props}
-              status={
-                selectedFlows.includes(item.id) ? 'checked' : 'unchecked'
-              }
-              onPress={() => {
-                if (!selectionMode) {
-                  setSelectionMode(true);
-                }
-                toggleSelection(item.id);
-              }}
-            />
-          )}
+          left={props => {
+            const isSelected = selectedFlows.includes(item.id);
+            const status = isSelected ? 'checked' : 'unchecked';
+            const isUncheckedIOS =
+              Platform.OS === 'ios' && status === 'unchecked';
+
+            return (
+              <TouchableOpacity
+                style={props.style} // Card.Titleからのマージンなどを適用
+                onPress={() => {
+                  if (!selectionMode) {
+                    setSelectionMode(true);
+                  }
+                  toggleSelection(item.id);
+                }}
+              >
+                <View style={styles.checkboxContainer}>
+                  {isUncheckedIOS && (
+                    <View style={styles.iosCheckboxBackground} />
+                  )}
+                  <View pointerEvents="none">
+                    <Checkbox status={status} />
+                  </View>
+                </View>
+              </TouchableOpacity>
+            );
+          }}
           right={props => (
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               {diskUsageText && (
@@ -869,11 +878,17 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
   },
   checkboxContainer: {
-    paddingLeft: 16,
-    paddingRight: 8,
-    paddingVertical: 16,
-    alignSelf: 'stretch',
+    width: 40,
+    height: 40,
     justifyContent: 'center',
+    alignItems: 'center',
+  },
+  iosCheckboxBackground: {
+    position: 'absolute',
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: OriginalTheme.colors.surfaceVariant,
   },
 });
 

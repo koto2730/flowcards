@@ -77,7 +77,9 @@ configureReanimatedLogger({
 });
 
 const { width, height } = Dimensions.get('window');
-const ATTACHMENT_DIR = `${RNFS.DocumentDirectoryPath}/attachments`;
+const ATTACHMENT_BASE_PATH = RNFS.DocumentDirectoryPath;
+const ATTACHMENT_DIR_NAME = 'attachments';
+const ATTACHMENT_DIR = `${ATTACHMENT_BASE_PATH}/${ATTACHMENT_DIR_NAME}`;
 
 const mimeTypeLookup = {
   txt: 'text/plain',
@@ -422,7 +424,38 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
   const handleNodeLongPress = async hitNode => {
     try {
-      const attachment = await getAttachmentByNodeId(flowId, hitNode.id);
+      let attachment = await getAttachmentByNodeId(flowId, hitNode.id);
+
+      if (attachment) {
+        let needsUpdate = false;
+        let { stored_path, thumbnail_path } = attachment;
+        const documentPath = RNFS.DocumentDirectoryPath;
+
+        if (stored_path && stored_path.startsWith(documentPath)) {
+          stored_path = stored_path.substring(documentPath.length + 1);
+          needsUpdate = true;
+        }
+
+        if (thumbnail_path && thumbnail_path.startsWith(documentPath)) {
+          thumbnail_path = thumbnail_path.substring(documentPath.length + 1);
+          needsUpdate = true;
+        }
+
+        if (needsUpdate) {
+          console.log(
+            `Lazy migrating paths for attachment ID: ${attachment.id}`,
+          );
+          await updateAttachmentPaths(
+            attachment.id,
+            stored_path,
+            thumbnail_path,
+          );
+          // Update the local attachment object with the new relative paths
+          attachment.stored_path = stored_path;
+          attachment.thumbnail_path = thumbnail_path;
+        }
+      }
+
       setEditingNode({
         id: hitNode.id,
         title: hitNode.data.label,
@@ -432,7 +465,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
         attachment: attachment,
       });
     } catch (e) {
-      console.error('Failed to fetch attachment', e);
+      console.error('Failed to fetch or migrate attachment', e);
       setEditingNode({
         id: hitNode.id,
         title: hitNode.data.label,
@@ -828,20 +861,21 @@ const FlowEditorScreen = ({ route, navigation }) => {
     }
 
     const uniqueFileName = `${Date.now()}-${fileName}`;
-    const storedPath = `${ATTACHMENT_DIR}/${uniqueFileName}`;
+    const absoluteStoredPath = `${ATTACHMENT_DIR}/${uniqueFileName}`;
+    const relativeStoredPath = `${ATTACHMENT_DIR_NAME}/${uniqueFileName}`;
 
     if (Platform.OS === 'ios') {
       const sourcePath = decodeURIComponent(
         originalUri.replace(/^file:\/\//, ''),
       );
-      await RNFS.copyFile(sourcePath, storedPath);
+      await RNFS.copyFile(sourcePath, absoluteStoredPath);
     } else {
-      await RNFS.copyFile(originalUri, storedPath);
+      await RNFS.copyFile(originalUri, absoluteStoredPath);
     }
 
-    let thumbnailPath = null;
+    let relativeThumbnailPath = null;
     if (fileType.startsWith('image/') || fileType.startsWith('video/')) {
-      thumbnailPath = storedPath;
+      relativeThumbnailPath = relativeStoredPath;
     }
 
     const newAttachment = {
@@ -849,8 +883,8 @@ const FlowEditorScreen = ({ route, navigation }) => {
       filename: fileName,
       mime_type: fileType,
       original_uri: originalUri,
-      stored_path: storedPath,
-      thumbnail_path: thumbnailPath,
+      stored_path: relativeStoredPath,
+      thumbnail_path: relativeThumbnailPath,
     };
 
     const newNode = { ...editingNode, attachment: newAttachment };
@@ -928,27 +962,25 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
     try {
       const previewData = await getLinkPreview(fullUrl, { fetch });
-      let thumbnail_path = null;
+      let relative_thumbnail_path = null;
       let preview_image_url = null;
 
       if (previewData.images && previewData.images.length > 0) {
         const imageUrl = previewData.images[0];
         preview_image_url = imageUrl;
-        // Basic extension extraction, might not be perfect
         const fileExtension = (imageUrl.split('.').pop() || 'jpg').split(
           '?',
         )[0];
-        const localPath = `${ATTACHMENT_DIR}/${Date.now()}.${fileExtension}`;
+        const uniqueFileName = `${Date.now()}.${fileExtension}`;
+        const absoluteLocalPath = `${ATTACHMENT_DIR}/${uniqueFileName}`;
+        relative_thumbnail_path = `${ATTACHMENT_DIR_NAME}/${uniqueFileName}`;
 
         const download = RNFS.downloadFile({
           fromUrl: imageUrl,
-          toFile: localPath,
+          toFile: absoluteLocalPath,
         });
 
         await download.promise;
-        thumbnail_path = localPath;
-      } else {
-        thumbnail_path = '';
       }
 
       const newAttachment = {
@@ -957,7 +989,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
         mime_type: 'text/url',
         original_uri: fullUrl,
         stored_path: null,
-        thumbnail_path: thumbnail_path,
+        thumbnail_path: relative_thumbnail_path,
         preview_title: previewData.title,
         preview_description: previewData.description,
         preview_image_url: preview_image_url,
@@ -983,12 +1015,8 @@ const FlowEditorScreen = ({ route, navigation }) => {
         Alert.alert('Error', 'Could not open the URL.');
       });
     } else if (stored_path) {
-      let path = stored_path;
-      if (Platform.OS === 'ios') {
-        path = decodeURIComponent(path);
-      }
-
-      FileViewer.open(path, {
+      const absolutePath = `${ATTACHMENT_BASE_PATH}/${stored_path}`;
+      FileViewer.open(absolutePath, {
         showOpenWithDialog: true,
         showAppsSuggestions: true,
       })
@@ -1012,15 +1040,17 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
     try {
       if (stored_path) {
-        const fileExists = await RNFS.exists(stored_path);
+        const absolutePath = `${ATTACHMENT_BASE_PATH}/${stored_path}`;
+        const fileExists = await RNFS.exists(absolutePath);
         if (fileExists) {
-          await RNFS.unlink(stored_path);
+          await RNFS.unlink(absolutePath);
         }
       }
       if (thumbnail_path) {
-        const thumbExists = await RNFS.exists(thumbnail_path);
+        const absoluteThumbPath = `${ATTACHMENT_BASE_PATH}/${thumbnail_path}`;
+        const thumbExists = await RNFS.exists(absoluteThumbPath);
         if (thumbExists) {
-          await RNFS.unlink(thumbnail_path);
+          await RNFS.unlink(absoluteThumbPath);
         }
       }
 
@@ -1130,6 +1160,21 @@ const FlowEditorScreen = ({ route, navigation }) => {
       savedTranslateX.value = newTranslateX;
       savedTranslateY.value = newTranslateY;
     }
+  };
+
+  const resolveAttachmentPath = relativePath => {
+    if (!relativePath) {
+      return null;
+    }
+    // Check if the path is already an absolute path or a URL
+    if (
+      relativePath.startsWith('/') ||
+      relativePath.startsWith('http') ||
+      relativePath.startsWith('file:')
+    ) {
+      return relativePath;
+    }
+    return `${ATTACHMENT_BASE_PATH}/${relativePath}`;
   };
 
   return (
@@ -1304,6 +1349,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
                     isSeeThroughParent={node.isSeeThroughParent}
                     showAttachment={showAttachmentsOnCanvas}
                     pressState={pressState}
+                    resolveAttachmentPath={resolveAttachmentPath}
                   />
                 ))}
                 {renderEdges()}
@@ -1381,7 +1427,9 @@ const FlowEditorScreen = ({ route, navigation }) => {
                         <Image
                           key={editingNode.attachment.thumbnail_path}
                           source={{
-                            uri: `file://${editingNode.attachment.thumbnail_path}`,
+                            uri: `file://${resolveAttachmentPath(
+                              editingNode.attachment.thumbnail_path,
+                            )}`,
                           }}
                           style={styles.thumbnail}
                         />
@@ -1393,7 +1441,9 @@ const FlowEditorScreen = ({ route, navigation }) => {
                       ) ? (
                       <Video
                         source={{
-                          uri: `file://${editingNode.attachment.stored_path}`,
+                          uri: `file://${resolveAttachmentPath(
+                            editingNode.attachment.stored_path,
+                          )}`,
                         }}
                         style={styles.thumbnail}
                         controls={false}
@@ -1410,9 +1460,10 @@ const FlowEditorScreen = ({ route, navigation }) => {
                           editingNode.attachment.stored_path
                         }
                         source={{
-                          uri: editingNode.attachment.thumbnail_path
-                            ? `file://${editingNode.attachment.thumbnail_path}`
-                            : `file://${editingNode.attachment.stored_path}`,
+                          uri: `file://${resolveAttachmentPath(
+                            editingNode.attachment.thumbnail_path ||
+                              editingNode.attachment.stored_path,
+                          )}`,
                         }}
                         style={styles.thumbnail}
                       />
