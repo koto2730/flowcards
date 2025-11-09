@@ -99,41 +99,53 @@ const SkiaCard = ({
   const cardSize = node.data.size || 'medium';
   const layoutWidth = (node.size.width || CARD_MIN_WIDTH) - marginRow * 2;
 
-  const getAttachmentByNodeId = node => {
-    if (
-      node.attachment?.mime_type?.startsWith('image/') ||
-      node.attachment?.mime_type?.startsWith('text/url')
-    ) {
-      const path =
-        node.attachment?.thumbnail_path &&
-        node.attachment.thumbnail_path.length > 0
-          ? resolveAttachmentPath(node.attachment.thumbnail_path)
-          : node.attachment?.mime_type?.startsWith('image/')
-          ? resolveAttachmentPath(node.attachment.stored_path)
-          : null;
-      return useImage(path ? `file://${path}` : null);
-    }
-    return useImage(null);
-  };
-  const attachmentImage = getAttachmentByNodeId(node);
-
-  const videoPath = useMemo(() => {
-    if (!showAttachment || !node.attachment?.mime_type?.startsWith('video/')) {
+  const imagePath = useMemo(() => {
+    if (!showAttachment || !node.attachment) {
       return null;
     }
-
-    const attachment = node.attachment;
-    let path = null;
-    if (attachment.thumbnail_path && attachment.thumbnail_path.length > 0) {
-      path = resolveAttachmentPath(attachment.thumbnail_path);
-    } else if (attachment.stored_path) {
-      path = resolveAttachmentPath(attachment.stored_path);
+    const { mime_type, thumbnail_path, stored_path } = node.attachment;
+    if (
+      mime_type?.startsWith('image/') ||
+      (mime_type === 'text/url' && thumbnail_path)
+    ) {
+      const path =
+        thumbnail_path && thumbnail_path.length > 0
+          ? thumbnail_path
+          : stored_path;
+      return path ? `file://${resolveAttachmentPath(path)}` : null;
     }
-
-    return path ? `file://${path}` : null;
+    return null;
   }, [node.attachment, showAttachment, resolveAttachmentPath]);
 
-  const { currentFrame } = useVideo(videoPath);
+  const attachmentImage = useImage(imagePath);
+
+  // const videoPath = useMemo(() => {
+  //   if (!showAttachment || !node.attachment?.mime_type?.startsWith('video/')) {
+  //     return null;
+  //   }
+
+  //   const attachment = node.attachment;
+  //   let path = null;
+  //   if (attachment.thumbnail_path && attachment.thumbnail_path.length > 0) {
+  //     path = resolveAttachmentPath(attachment.thumbnail_path);
+  //   } else if (attachment.stored_path) {
+  //     path = resolveAttachmentPath(attachment.stored_path);
+  //   }
+
+  //   const finalPath = path ? `file://${path}` : null;
+  //   console.log(`[Debug] Video Path for node ${node.id}:`, {
+  //     stored_path: attachment.stored_path,
+  //     thumbnail_path: attachment.thumbnail_path,
+  //     resolved_path: path,
+  //     final_path_for_useVideo: finalPath,
+  //   });
+
+  //   return finalPath;
+  // }, [node.attachment, showAttachment, resolveAttachmentPath]);
+
+  // const { currentFrame } = useVideo(videoPath);
+  const currentFrame = null;
+  const videoPath = null;
 
   const fileIconSvg = useSVG(require('../../assets/icons/file-outline.svg'));
   const linkIconSvg = useSVG(require('../../assets/icons/link-variant.svg'));

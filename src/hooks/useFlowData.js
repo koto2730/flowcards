@@ -46,38 +46,29 @@ export const useFlowData = (flowId, isSeeThrough, alignModeOpen, t) => {
       );
       let attachments = await Promise.all(attachmentPromises);
 
-      // Lazy migration
+      // Lazy migration for display
       const documentPath = RNFS.DocumentDirectoryPath;
-      for (const attachment of attachments) {
+      attachments = attachments.map(attachment => {
         if (attachment) {
-          let needsUpdate = false;
           let { stored_path, thumbnail_path } = attachment;
+          let updated = false;
 
           if (stored_path && stored_path.startsWith(documentPath)) {
             stored_path = stored_path.substring(documentPath.length + 1);
-            needsUpdate = true;
+            updated = true;
           }
 
           if (thumbnail_path && thumbnail_path.startsWith(documentPath)) {
             thumbnail_path = thumbnail_path.substring(documentPath.length + 1);
-            needsUpdate = true;
+            updated = true;
           }
 
-          if (needsUpdate) {
-            await updateAttachmentPaths(
-              attachment.id,
-              stored_path,
-              thumbnail_path,
-            );
+          if (updated) {
+            return { ...attachment, stored_path, thumbnail_path };
           }
         }
-      }
-
-      // Re-fetch attachments after migration
-      const migratedAttachmentPromises = nodesData.map(n =>
-        getAttachmentByNodeId(flowId, n.id),
-      );
-      attachments = await Promise.all(migratedAttachmentPromises);
+        return attachment;
+      });
 
       const attachmentsMap = attachments.reduce((acc, att) => {
         if (att) {

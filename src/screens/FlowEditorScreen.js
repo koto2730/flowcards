@@ -424,38 +424,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
   const handleNodeLongPress = async hitNode => {
     try {
-      let attachment = await getAttachmentByNodeId(flowId, hitNode.id);
-
-      if (attachment) {
-        let needsUpdate = false;
-        let { stored_path, thumbnail_path } = attachment;
-        const documentPath = RNFS.DocumentDirectoryPath;
-
-        if (stored_path && stored_path.startsWith(documentPath)) {
-          stored_path = stored_path.substring(documentPath.length + 1);
-          needsUpdate = true;
-        }
-
-        if (thumbnail_path && thumbnail_path.startsWith(documentPath)) {
-          thumbnail_path = thumbnail_path.substring(documentPath.length + 1);
-          needsUpdate = true;
-        }
-
-        if (needsUpdate) {
-          console.log(
-            `Lazy migrating paths for attachment ID: ${attachment.id}`,
-          );
-          await updateAttachmentPaths(
-            attachment.id,
-            stored_path,
-            thumbnail_path,
-          );
-          // Update the local attachment object with the new relative paths
-          attachment.stored_path = stored_path;
-          attachment.thumbnail_path = thumbnail_path;
-        }
-      }
-
+      const attachment = await getAttachmentByNodeId(flowId, hitNode.id);
       setEditingNode({
         id: hitNode.id,
         title: hitNode.data.label,
@@ -465,7 +434,8 @@ const FlowEditorScreen = ({ route, navigation }) => {
         attachment: attachment,
       });
     } catch (e) {
-      console.error('Failed to fetch or migrate attachment', e);
+      console.error('Failed to fetch attachment', e);
+      // Even if fetching attachment fails, open the editor without it
       setEditingNode({
         id: hitNode.id,
         title: hitNode.data.label,
@@ -1068,6 +1038,14 @@ const FlowEditorScreen = ({ route, navigation }) => {
   const handleSaveEditingNode = async () => {
     if (!editingNode) return;
 
+    const documentPath = RNFS.DocumentDirectoryPath;
+    const convertToRelativePath = path => {
+      if (path && path.startsWith(documentPath)) {
+        return path.substring(documentPath.length + 1);
+      }
+      return path;
+    };
+
     try {
       let finalAttachmentState = editingNode.attachment;
 
@@ -1087,16 +1065,33 @@ const FlowEditorScreen = ({ route, navigation }) => {
           filename: editingNode.attachment.filename,
           mime_type: editingNode.attachment.mime_type,
           original_uri: editingNode.attachment.original_uri,
-          stored_path: editingNode.attachment.stored_path,
+          stored_path: convertToRelativePath(
+            editingNode.attachment.stored_path,
+          ),
           preview_title: editingNode.attachment.preview_title,
           preview_description: editingNode.attachment.preview_description,
           preview_image_url: editingNode.attachment.preview_image_url,
-          thumbnail_path: editingNode.attachment.thumbnail_path,
+          thumbnail_path: convertToRelativePath(
+            editingNode.attachment.thumbnail_path,
+          ),
         };
         const result = await insertAttachment(insertData);
         finalAttachmentState = {
           ...editingNode.attachment,
           id: result.insertId,
+          stored_path: insertData.stored_path,
+          thumbnail_path: insertData.thumbnail_path,
+        };
+      }
+
+      // For existing attachments, ensure paths are relative before saving.
+      if (finalAttachmentState && finalAttachmentState.id) {
+        finalAttachmentState = {
+          ...finalAttachmentState,
+          stored_path: convertToRelativePath(finalAttachmentState.stored_path),
+          thumbnail_path: convertToRelativePath(
+            finalAttachmentState.thumbnail_path,
+          ),
         };
       }
 
