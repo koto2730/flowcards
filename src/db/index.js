@@ -388,6 +388,13 @@ export const updateAttachment = (id, data) => {
 export const deleteAttachment = id =>
   executeSql('DELETE FROM attachments WHERE id = ?;', [id]);
 
+export const updateAttachmentPaths = (id, stored_path, thumbnail_path) => {
+  return executeSql(
+    'UPDATE attachments SET stored_path = ?, thumbnail_path = ? WHERE id = ?;',
+    [stored_path, thumbnail_path, id],
+  );
+};
+
 export const getFlowDiskUsage = async flowId => {
   try {
     const attachments = await executeSql(

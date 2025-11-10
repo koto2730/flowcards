@@ -199,11 +199,10 @@ export const convertFlowToJSONCanvas = (flow, nodes, edges, attachments) => {
 
     if (attachment) {
       if (attachment.stored_path) {
-        const filename = attachment.stored_path.split('/').pop();
         return {
           ...baseNode,
           type: 'file',
-          file: filename,
+          file: attachment.stored_path,
         };
       }
       if (attachment.original_uri) {

@@ -267,9 +267,9 @@ const FlowListScreen = ({ navigation }) => {
       const flow = flows.find(f => f.id === flowId);
       if (!flow) return;
 
-      const exportTempDir = `${
-        RNFS.TemporaryDirectoryPath
-      }/export_${flow.id}_${Date.now()}`;
+      const exportTempDir = `${RNFS.TemporaryDirectoryPath}/export_${
+        flow.id
+      }_${Date.now()}`;
       const zipPath = `${RNFS.TemporaryDirectoryPath}/${flow.name.replace(
         /\s/g,
         '_',
@@ -297,28 +297,43 @@ const FlowListScreen = ({ navigation }) => {
         }
 
         if (format === 'zip') {
+          const attachmentsDir = `${exportTempDir}/attachments`;
           await RNFS.mkdir(exportTempDir);
+          await RNFS.mkdir(attachmentsDir); // Create attachments subdirectory
+
+          const updatedAttachments = new Map();
 
           for (const node of allNodes) {
             const attachment = allAttachments.get(node.id);
             if (attachment && attachment.stored_path) {
-              let sourcePath = attachment.stored_path;
-              if (Platform.OS === 'ios') {
-                sourcePath = decodeURIComponent(
-                  sourcePath.replace(/^file:\/\//, ''),
-                );
-              }
+              // 1. Resolve source path
+              const sourcePath = `${RNFS.DocumentDirectoryPath}/${attachment.stored_path}`;
 
               const fileExists = await RNFS.exists(sourcePath);
               if (fileExists) {
-                const filename = sourcePath.split('/').pop();
-                const destPath = `${exportTempDir}/${filename}`;
+                const filename = attachment.stored_path.split('/').pop();
+                // 2. Copy to a structured directory
+                const destPath = `${attachmentsDir}/${filename}`;
                 await RNFS.copyFile(sourcePath, destPath);
+
+                // 3. Create updated attachment info with relative path for the zip
+                const updatedAttachment = { ...attachment };
+                updatedAttachment.stored_path = `attachments/${filename}`; // New relative path
+                if (updatedAttachment.thumbnail_path) {
+                  // Also update thumbnail path if it exists and is the same
+                  const thumbFilename =
+                    attachment.thumbnail_path.split('/').pop();
+                  updatedAttachment.thumbnail_path = `attachments/${thumbFilename}`;
+                }
+                updatedAttachments.set(node.id, updatedAttachment);
               } else {
                 console.warn(
                   `Attachment file not found, skipping: ${sourcePath}`,
                 );
               }
+            } else if (attachment) {
+              // For attachments without stored_path (like URLs), just pass them through
+              updatedAttachments.set(node.id, attachment);
             }
           }
 
@@ -327,21 +342,19 @@ const FlowListScreen = ({ navigation }) => {
             const sectionNodeIds = new Set(sectionNodes.map(n => n.id));
 
             const sectionEdges = allEdges.filter(
-              e =>
-                sectionNodeIds.has(e.source) && sectionNodeIds.has(e.target),
+              e => sectionNodeIds.has(e.source) && sectionNodeIds.has(e.target),
             );
 
             const sectionAttachments = {};
             for (const node of sectionNodes) {
-              if (allAttachments.has(node.id)) {
-                sectionAttachments[node.id] = allAttachments.get(node.id);
+              if (updatedAttachments.has(node.id)) {
+                sectionAttachments[node.id] = updatedAttachments.get(node.id);
               }
             }
 
             const parentNode = allNodes.find(n => n.id === parentId);
             const sectionName = parentNode ? parentNode.label : '';
-            const canvasName =
-              parentId === 'root' ? flow.name : sectionName;
+            const canvasName = parentId === 'root' ? flow.name : sectionName;
 
             const jsonCanvas = convertFlowToJSONCanvas(
               flow,
@@ -373,8 +386,7 @@ const FlowListScreen = ({ navigation }) => {
             const sectionNodeIds = new Set(sectionNodes.map(n => n.id));
 
             const sectionEdges = allEdges.filter(
-              e =>
-                sectionNodeIds.has(e.source) && sectionNodeIds.has(e.target),
+              e => sectionNodeIds.has(e.source) && sectionNodeIds.has(e.target),
             );
 
             const sectionAttachments = {};
@@ -386,8 +398,7 @@ const FlowListScreen = ({ navigation }) => {
 
             const parentNode = allNodes.find(n => n.id === parentId);
             const sectionName = parentNode ? parentNode.label : '';
-            const canvasName =
-              parentId === 'root' ? flow.name : sectionName;
+            const canvasName = parentId === 'root' ? flow.name : sectionName;
 
             const jsonCanvas = convertFlowToJSONCanvas(
               flow,
@@ -615,20 +626,33 @@ const FlowListScreen = ({ navigation }) => {
       >
         <Card.Title
           title={item.name}
-          left={props => (
-            <Checkbox
-              {...props}
-              status={
-                selectedFlows.includes(item.id) ? 'checked' : 'unchecked'
-              }
-              onPress={() => {
-                if (!selectionMode) {
-                  setSelectionMode(true);
-                }
-                toggleSelection(item.id);
-              }}
-            />
-          )}
+          left={props => {
+            const isSelected = selectedFlows.includes(item.id);
+            const status = isSelected ? 'checked' : 'unchecked';
+            const isUncheckedIOS =
+              Platform.OS === 'ios' && status === 'unchecked';
+
+            return (
+              <TouchableOpacity
+                style={props.style} // Card.Titleからのマージンなどを適用
+                onPress={() => {
+                  if (!selectionMode) {
+                    setSelectionMode(true);
+                  }
+                  toggleSelection(item.id);
+                }}
+              >
+                <View style={styles.checkboxContainer}>
+                  {isUncheckedIOS && (
+                    <View style={styles.iosCheckboxBackground} />
+                  )}
+                  <View pointerEvents="none">
+                    <Checkbox status={status} />
+                  </View>
+                </View>
+              </TouchableOpacity>
+            );
+          }}
           right={props => (
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               {diskUsageText && (
@@ -869,11 +893,17 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
   },
   checkboxContainer: {
-    paddingLeft: 16,
-    paddingRight: 8,
-    paddingVertical: 16,
-    alignSelf: 'stretch',
+    width: 40,
+    height: 40,
     justifyContent: 'center',
+    alignItems: 'center',
+  },
+  iosCheckboxBackground: {
+    position: 'absolute',
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: OriginalTheme.colors.surfaceVariant,
   },
 });
 

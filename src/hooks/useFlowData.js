@@ -13,6 +13,7 @@ import {
   deleteNode,
   getAttachmentByNodeId,
   updateAttachment,
+  updateAttachmentPaths,
 } from '../db';
 import RNFS from 'react-native-fs';
 import { doRectsOverlap, getRect, getClosestHandle } from '../utils/flowUtils';
@@ -43,7 +44,32 @@ export const useFlowData = (flowId, isSeeThrough, alignModeOpen, t) => {
       const attachmentPromises = nodesData.map(n =>
         getAttachmentByNodeId(flowId, n.id),
       );
-      const attachments = await Promise.all(attachmentPromises);
+      let attachments = await Promise.all(attachmentPromises);
+
+      // Lazy migration for display
+      const documentPath = RNFS.DocumentDirectoryPath;
+      attachments = attachments.map(attachment => {
+        if (attachment) {
+          let { stored_path, thumbnail_path } = attachment;
+          let updated = false;
+
+          if (stored_path && stored_path.startsWith(documentPath)) {
+            stored_path = stored_path.substring(documentPath.length + 1);
+            updated = true;
+          }
+
+          if (thumbnail_path && thumbnail_path.startsWith(documentPath)) {
+            thumbnail_path = thumbnail_path.substring(documentPath.length + 1);
+            updated = true;
+          }
+
+          if (updated) {
+            return { ...attachment, stored_path, thumbnail_path };
+          }
+        }
+        return attachment;
+      });
+
       const attachmentsMap = attachments.reduce((acc, att) => {
         if (att) {
           acc[att.node_id] = att;
@@ -449,6 +475,13 @@ export const useFlowData = (flowId, isSeeThrough, alignModeOpen, t) => {
     });
   };
 
+  const clearNodeSelection = () => {
+    setLinkingState(prev => ({
+      ...prev,
+      selectedNodeIds: new Set(),
+    }));
+  };
+
   const toggleLinkingMode = () => {
     setLinkingState(prev => ({
       ...prev,
@@ -558,5 +591,6 @@ export const useFlowData = (flowId, isSeeThrough, alignModeOpen, t) => {
     toggleLinkingMode,
     handleCardTap,
     handleDeleteEdge,
+    clearNodeSelection,
   };
 };
