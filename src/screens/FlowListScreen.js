@@ -297,28 +297,43 @@ const FlowListScreen = ({ navigation }) => {
         }
 
         if (format === 'zip') {
+          const attachmentsDir = `${exportTempDir}/attachments`;
           await RNFS.mkdir(exportTempDir);
+          await RNFS.mkdir(attachmentsDir); // Create attachments subdirectory
+
+          const updatedAttachments = new Map();
 
           for (const node of allNodes) {
             const attachment = allAttachments.get(node.id);
             if (attachment && attachment.stored_path) {
-              let sourcePath = attachment.stored_path;
-              if (Platform.OS === 'ios') {
-                sourcePath = decodeURIComponent(
-                  sourcePath.replace(/^file:\/\//, ''),
-                );
-              }
+              // 1. Resolve source path
+              const sourcePath = `${RNFS.DocumentDirectoryPath}/${attachment.stored_path}`;
 
               const fileExists = await RNFS.exists(sourcePath);
               if (fileExists) {
-                const filename = sourcePath.split('/').pop();
-                const destPath = `${exportTempDir}/${filename}`;
+                const filename = attachment.stored_path.split('/').pop();
+                // 2. Copy to a structured directory
+                const destPath = `${attachmentsDir}/${filename}`;
                 await RNFS.copyFile(sourcePath, destPath);
+
+                // 3. Create updated attachment info with relative path for the zip
+                const updatedAttachment = { ...attachment };
+                updatedAttachment.stored_path = `attachments/${filename}`; // New relative path
+                if (updatedAttachment.thumbnail_path) {
+                  // Also update thumbnail path if it exists and is the same
+                  const thumbFilename =
+                    attachment.thumbnail_path.split('/').pop();
+                  updatedAttachment.thumbnail_path = `attachments/${thumbFilename}`;
+                }
+                updatedAttachments.set(node.id, updatedAttachment);
               } else {
                 console.warn(
                   `Attachment file not found, skipping: ${sourcePath}`,
                 );
               }
+            } else if (attachment) {
+              // For attachments without stored_path (like URLs), just pass them through
+              updatedAttachments.set(node.id, attachment);
             }
           }
 
@@ -332,8 +347,8 @@ const FlowListScreen = ({ navigation }) => {
 
             const sectionAttachments = {};
             for (const node of sectionNodes) {
-              if (allAttachments.has(node.id)) {
-                sectionAttachments[node.id] = allAttachments.get(node.id);
+              if (updatedAttachments.has(node.id)) {
+                sectionAttachments[node.id] = updatedAttachments.get(node.id);
               }
             }
 
