@@ -139,6 +139,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
     toggleLinkingMode,
     handleCardTap,
     handleDeleteEdge,
+    clearNodeSelection,
   } = useFlowData(flowId, isSeeThrough, alignModeOpen, t);
 
   const [editingNode, setEditingNode] = useState(null);
@@ -1225,6 +1226,12 @@ const FlowEditorScreen = ({ route, navigation }) => {
                 icon="arrow-expand-all"
                 style={styles.alignToolButton}
                 onPress={() => handleAlign('spread')}
+                small
+              />
+              <FAB
+                icon="selection-off"
+                style={styles.alignToolButton}
+                onPress={clearNodeSelection}
                 small
               />
               <FAB

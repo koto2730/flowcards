@@ -475,6 +475,13 @@ export const useFlowData = (flowId, isSeeThrough, alignModeOpen, t) => {
     });
   };
 
+  const clearNodeSelection = () => {
+    setLinkingState(prev => ({
+      ...prev,
+      selectedNodeIds: new Set(),
+    }));
+  };
+
   const toggleLinkingMode = () => {
     setLinkingState(prev => ({
       ...prev,
@@ -584,5 +591,6 @@ export const useFlowData = (flowId, isSeeThrough, alignModeOpen, t) => {
     toggleLinkingMode,
     handleCardTap,
     handleDeleteEdge,
+    clearNodeSelection,
   };
 };
