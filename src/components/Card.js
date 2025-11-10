@@ -119,33 +119,52 @@ const SkiaCard = ({
 
   const attachmentImage = useImage(imagePath);
 
-  // const videoPath = useMemo(() => {
-  //   if (!showAttachment || !node.attachment?.mime_type?.startsWith('video/')) {
-  //     return null;
-  //   }
+  const videoPath = useMemo(() => {
+    if (!showAttachment || !node.attachment?.mime_type?.startsWith('video/')) {
+      return null;
+    }
 
-  //   const attachment = node.attachment;
-  //   let path = null;
-  //   if (attachment.thumbnail_path && attachment.thumbnail_path.length > 0) {
-  //     path = resolveAttachmentPath(attachment.thumbnail_path);
-  //   } else if (attachment.stored_path) {
-  //     path = resolveAttachmentPath(attachment.stored_path);
-  //   }
+    const attachment = node.attachment;
+    let path = null;
+    if (attachment.thumbnail_path && attachment.thumbnail_path.length > 0) {
+      path = resolveAttachmentPath(attachment.thumbnail_path);
+    } else if (attachment.stored_path) {
+      path = resolveAttachmentPath(attachment.stored_path);
+    }
 
-  //   const finalPath = path ? `file://${path}` : null;
-  //   console.log(`[Debug] Video Path for node ${node.id}:`, {
-  //     stored_path: attachment.stored_path,
-  //     thumbnail_path: attachment.thumbnail_path,
-  //     resolved_path: path,
-  //     final_path_for_useVideo: finalPath,
-  //   });
+    const finalPath = path ? `file://${path}` : null;
+    console.log(`[Debug] Video Path for node ${node.id}:`, {
+      stored_path: attachment.stored_path,
+      thumbnail_path: attachment.thumbnail_path,
+      resolved_path: path,
+      final_path_for_useVideo: finalPath,
+    });
 
-  //   return finalPath;
-  // }, [node.attachment, showAttachment, resolveAttachmentPath]);
+    return finalPath;
+  }, [node.attachment, showAttachment, resolveAttachmentPath]);
 
-  // const { currentFrame } = useVideo(videoPath);
-  const currentFrame = null;
-  const videoPath = null;
+  const seek = useSharedValue(0); // 0秒から開始
+  const paused = useSharedValue(false); // 初期値はfalseで再生開始
+  const looping = useSharedValue(false);
+
+  const { currentFrame } = useVideo(videoPath, {
+    seek,
+    paused,
+    looping,
+  });
+
+  useEffect(() => {
+    if (videoPath && currentFrame) {
+      // 動画がロードされ、フレームが利用可能になったら
+      const timer = setTimeout(() => {
+        runOnJS(() => {
+          paused.value = true; // 1秒後に一時停止
+        })();
+      }, 1000); // 1秒
+
+      return () => clearTimeout(timer);
+    }
+  }, [videoPath, currentFrame, paused]); // videoPath, currentFrame, paused の変更を監視
 
   const fileIconSvg = useSVG(require('../../assets/icons/file-outline.svg'));
   const linkIconSvg = useSVG(require('../../assets/icons/link-variant.svg'));
