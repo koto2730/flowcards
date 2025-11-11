@@ -1,4 +1,4 @@
-# FlowCards
+# FlowCards (v2.2.0)
 
 [日本語 (Japanese)](./README-ja.md)
 
@@ -10,38 +10,72 @@ A support tool for thinking and structuring ideas by arranging items as cards an
 
 ## 📖 Overview
 
-This application is a support tool for structuring ideas.  
-Users can arrange items as cards to help visualize and organize what components are needed.  
-Currently, it works locally and does not have features to connect to the network or fetch external information.  
+This application is a support tool for structuring ideas.
+Users can arrange items as cards to help visualize and organize what components are needed.
+In addition to text, you can add attachments like files, URLs, and photos to cards for centralized information management.
+Currently, it works locally and does not have features to connect to the network or fetch external information.
 The motivation for development was the desire to use such a tool on my own smartphone.
 
 ---
 
 ## ✨ Features
 
-* **Feature 1**: Create, update, and delete flows
-* **Feature 2**: Add, update, and delete cards within a flow
-* **Feature 3**: Group cards into a parent card
-* **Feature 4**: Arrange child cards as flows inside a card
-* **Feature 5**: Connect cards with lines to represent flows
-* **Feature 6**: Expand cards to see their internal structure
+* **Flow Management**: Create, update, and delete flows.
+* **Card Operations**: Add, update, and delete cards within a flow.
+* **Hierarchical Structuring**:
+    * Group multiple cards into a single parent card.
+    * Create nested flows with child cards inside a parent card.
+    * Expand cards to see through their internal hierarchical structure.
+* **Visual Connections**: Connect cards with lines to visualize relationships and flows.
+* **Customization**:
+    * Change card sizes between three levels (S/M/L).
+    * Set a custom background color for each card.
+* **Attachments**:
+    * Attach files (images, PDFs, text, etc.) to cards.
+    * Attach website URLs and display their previews.
+* **Alignment Tools**: Select and align multiple cards (left, right, top, bottom, center) at once.
+* **Export**: Export flow data in JSON format (.canvas).
 
 ---
 
 ## 📱 Screenshots
 
-|List|Editor|Editor|
-|----|----|----|
-|![screenshot-01](./.github/images/screenshot-01.png)|![screenshot-02](./.github/images/screenshot-02.png)|![screenshot-03](./.github/images/screenshot-03.png)
+### iOS
+
+|Flow List|Flow Editor|Card Editor|
+|:---:|:---:|:---:|
+|![iOS-01](./.github/images/iOS/screenshot-01.png)|![iOS-02](./.github/images/iOS/screenshot-06.png)|![iOS-03](./.github/images/iOS/screenshot-04.png)|
+
+|Link Mode|See-Through Mode|Attachments|
+|:---:|:---:|:---:|
+|![iOS-04](./.github/images/iOS/screenshot-05.png)|![iOS-05](./.github/images/iOS/screenshot-07.png)||
+
+### Android
+
+|Flow List|Flow Editor|Card Editor|
+|:---:|:---:|:---:|
+|![Android-01](./.github/images/Android/screenshot-01.png)|![Android-02](./.github/images/Android/screenshot-02.png)|![Android-03](./.github/images/Android/screenshot-03.png)|
+
+|Link Mode|See-Through Mode|Attachments|
+|:---:|:---:|:---:|
+|||![Android-06](./.github/images/Android/screenshot-04.png)|
 
 ---
 
 ## 🛠️ Tech Stack
 
 * **Framework**: React Native
-* **Languages**: Javascript, Typescript
+* **Language**: JavaScript
+* **UI Libraries**:
+    * React Native Paper
+    * React-Native-Skia (for drawing)
+    * React-Native-Reanimated (for animations)
+* **State Management**: React Hooks (useState, useMemo, etc.)
 * **Navigation**: React Navigation
-* **Database**: SQLite
+* **Database**: react-native-sqlite-storage
+* **File Management**:
+    * react-native-fs
+    * @react-native-documents/picker
 * **Others**: Developed using Gemini CLI and GitHub Copilot
 
 ---
@@ -63,14 +97,14 @@ cd flowcards
 
 ## 🙌 Contributing
 
-Thank you for your interest in contributing to this project!  
+Thank you for your interest in contributing to this project!
 Issues and Pull Requests are welcome.
 
 ---
 
 ## 📜 License
 
-This project is released under the MIT License.  
+This project is released under the MIT License.
 See the LICENSE file for details.
 
 ---
@@ -82,7 +116,3 @@ koto2730
 GitHub: [https://github.com/koto2730](https://github.com/koto2730)
 
 X (Twitter): [@koto2730oss]
-
----
-
-## 🇯🇵 Japan

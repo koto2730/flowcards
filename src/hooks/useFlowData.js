@@ -46,29 +46,38 @@ export const useFlowData = (flowId, isSeeThrough, alignModeOpen, t) => {
       );
       let attachments = await Promise.all(attachmentPromises);
 
-      // Lazy migration for display
       const documentPath = RNFS.DocumentDirectoryPath;
-      attachments = attachments.map(attachment => {
+      const migrationPromises = attachments.map(attachment => {
         if (attachment) {
-          let { stored_path, thumbnail_path } = attachment;
-          let updated = false;
+          let { id, stored_path, thumbnail_path } = attachment;
+          let needsUpdate = false;
+          let new_stored_path = stored_path;
+          let new_thumbnail_path = thumbnail_path;
 
           if (stored_path && stored_path.startsWith(documentPath)) {
-            stored_path = stored_path.substring(documentPath.length + 1);
-            updated = true;
+            new_stored_path = stored_path.substring(documentPath.length + 1);
+            needsUpdate = true;
           }
 
           if (thumbnail_path && thumbnail_path.startsWith(documentPath)) {
-            thumbnail_path = thumbnail_path.substring(documentPath.length + 1);
-            updated = true;
+            new_thumbnail_path = thumbnail_path.substring(
+              documentPath.length + 1,
+            );
+            needsUpdate = true;
           }
 
-          if (updated) {
-            return { ...attachment, stored_path, thumbnail_path };
+          if (needsUpdate) {
+            // Update the attachment object in memory for the current session
+            attachment.stored_path = new_stored_path;
+            attachment.thumbnail_path = new_thumbnail_path;
+            // Return a promise to update the database
+            return updateAttachmentPaths(id, new_stored_path, new_thumbnail_path);
           }
         }
-        return attachment;
+        return Promise.resolve(); // No update needed
       });
+
+      await Promise.all(migrationPromises);
 
       const attachmentsMap = attachments.reduce((acc, att) => {
         if (att) {
