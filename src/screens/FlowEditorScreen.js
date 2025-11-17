@@ -37,14 +37,10 @@ import {
   insertAttachment,
   deleteAttachment,
 } from '../db';
-import { pick, types, isCancel } from '@react-native-documents/picker';
 import RNFS from 'react-native-fs';
 import Video from 'react-native-video';
-import { Linking } from 'react-native';
-import { launchImageLibrary } from 'react-native-image-picker';
 import {
   Divider,
-  FAB,
   Provider as PaperProvider,
   SegmentedButtons,
   Icon,
@@ -57,6 +53,7 @@ import {
 } from 'react-native-paper';
 import OriginalTheme from './OriginalTheme';
 import SkiaCard from '../components/Card';
+import FloatingActionButtons from '../components/FloatingActionButtons';
 import {
   getCenter,
   getHandlePosition,
@@ -66,10 +63,12 @@ import {
   isPointInDeleteButton,
 } from '../utils/flowUtils';
 import { useFlowData } from '../hooks/useFlowData';
+import { useCanvasTransform } from '../hooks/useCanvasTransform';
+import { useAttachmentManager } from '../hooks/useAttachmentManager';
 import ColorPalette from 'react-native-color-palette';
 import { useTranslation } from 'react-i18next';
-import { getLinkPreview } from 'link-preview-js';
-import FileViewer from 'react-native-file-viewer';
+import { getTextColorForBackground } from '../utils/colorUtils';
+import { ATTACHMENT_DIR } from '../constants/fileSystem';
 
 configureReanimatedLogger({
   level: ReanimatedLogLevel.warn,
@@ -77,46 +76,6 @@ configureReanimatedLogger({
 });
 
 const { width, height } = Dimensions.get('window');
-const ATTACHMENT_BASE_PATH = RNFS.DocumentDirectoryPath;
-const ATTACHMENT_DIR_NAME = 'attachments';
-const ATTACHMENT_DIR = `${ATTACHMENT_BASE_PATH}/${ATTACHMENT_DIR_NAME}`;
-
-const mimeTypeLookup = {
-  txt: 'text/plain',
-  csv: 'text/csv',
-  html: 'text/html',
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  png: 'image/png',
-  gif: 'image/gif',
-  bmp: 'image/bmp',
-  webp: 'image/webp',
-  svg: 'image/svg+xml',
-  mp3: 'audio/mpeg',
-  wav: 'audio/wav',
-  ogg: 'audio/ogg',
-  mp4: 'video/mp4',
-  webm: 'video/webm',
-  pdf: 'application/pdf',
-  doc: 'application/msword',
-  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  xls: 'application/vnd.ms-excel',
-  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  ppt: 'application/vnd.ms-powerpoint',
-  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  zip: 'application/zip',
-  json: 'application/json',
-};
-
-const getTextColorForBackground = hexColor => {
-  if (!hexColor) return 'black';
-  const color = hexColor.startsWith('#') ? hexColor.substring(1) : hexColor;
-  const r = parseInt(color.substring(0, 2), 16);
-  const g = parseInt(color.substring(2, 4), 16);
-  const b = parseInt(color.substring(4, 6), 16);
-  const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
-  return luminance > 186 ? 'black' : 'white';
-};
 
 const FlowEditorScreen = ({ route, navigation }) => {
   const { flowId, flowName } = route.params;
@@ -142,21 +101,39 @@ const FlowEditorScreen = ({ route, navigation }) => {
     clearNodeSelection,
   } = useFlowData(flowId, isSeeThrough, alignModeOpen, t);
 
+  const {
+    translateX,
+    translateY,
+    scale,
+    savedScale,
+    savedTranslateX,
+    savedTranslateY,
+    context,
+    origin_x,
+    origin_y,
+    skiaTransform,
+    skiaOrigin,
+    resetScale,
+    moveToNearestCard,
+  } = useCanvasTransform(displayNodes);
+
   const [editingNode, setEditingNode] = useState(null);
   const [colorPickerVisible, setColorPickerVisible] = useState(false);
-  const [urlInputVisible, setUrlInputVisible] = useState(false);
-  const [attachmentUrl, setAttachmentUrl] = useState('');
   const [showAttachmentsOnCanvas, setShowAttachmentsOnCanvas] = useState(false);
 
-  const translateX = useSharedValue(0);
-  const translateY = useSharedValue(0);
-  const scale = useSharedValue(1);
-  const savedScale = useSharedValue(1);
-  const savedTranslateX = useSharedValue(0);
-  const savedTranslateY = useSharedValue(0);
-  const context = useSharedValue({ x: 0, y: 0 });
-  const origin_x = useSharedValue(0);
-  const origin_y = useSharedValue(0);
+  const {
+    urlInputVisible,
+    setUrlInputVisible,
+    attachmentUrl,
+    setAttachmentUrl,
+    handleAttachFile,
+    handleAttachImageFromLibrary,
+    handleUrlInputChange,
+    handleSaveUrlAttachment,
+    handleOpenAttachment,
+    handleRemoveAttachment,
+    resolveAttachmentPath,
+  } = useAttachmentManager(editingNode, setEditingNode);
 
   const activeNodeId = useSharedValue(null);
   const pressState = useSharedValue({ id: null, state: 'idle' });
@@ -509,17 +486,6 @@ const FlowEditorScreen = ({ route, navigation }) => {
       }
     });
 
-  const skiaTransform = useDerivedValue(() => [
-    { translateX: translateX.value },
-    { translateY: translateY.value },
-    { scale: scale.value },
-  ]);
-
-  const skiaOrigin = useDerivedValue(() => ({
-    x: origin_x.value,
-    y: origin_y.value,
-  }));
-
   const composedGesture = Gesture.Exclusive(
     Gesture.Simultaneous(panGesture, pinchGesture),
     doubleTapGesture,
@@ -820,222 +786,6 @@ const FlowEditorScreen = ({ route, navigation }) => {
     });
   };
 
-  const processAttachment = async (originalUri, fileName, fileType) => {
-    if (fileType === 'application/octet-stream' && fileName) {
-      const extension = fileName.split('.').pop().toLowerCase();
-      if (extension) {
-        const inferredType = mimeTypeLookup[extension];
-        if (inferredType) {
-          fileType = inferredType;
-        }
-      }
-    }
-
-    const uniqueFileName = `${Date.now()}-${fileName}`;
-    const absoluteStoredPath = `${ATTACHMENT_DIR}/${uniqueFileName}`;
-    const relativeStoredPath = `${ATTACHMENT_DIR_NAME}/${uniqueFileName}`;
-
-    if (Platform.OS === 'ios') {
-      const sourcePath = decodeURIComponent(
-        originalUri.replace(/^file:\/\//, ''),
-      );
-      await RNFS.copyFile(sourcePath, absoluteStoredPath);
-    } else {
-      await RNFS.copyFile(originalUri, absoluteStoredPath);
-    }
-
-    let relativeThumbnailPath = null;
-    if (fileType.startsWith('image/') || fileType.startsWith('video/')) {
-      relativeThumbnailPath = relativeStoredPath;
-    }
-
-    const newAttachment = {
-      node_id: editingNode.id,
-      filename: fileName,
-      mime_type: fileType,
-      original_uri: originalUri,
-      stored_path: relativeStoredPath,
-      thumbnail_path: relativeThumbnailPath,
-    };
-
-    const newNode = { ...editingNode, attachment: newAttachment };
-    setEditingNode(newNode);
-  };
-
-  const handleAttachFile = async () => {
-    Keyboard.dismiss();
-
-    try {
-      const result = await pick({
-        type: [
-          types.images,
-          types.audio,
-          types.pdf,
-          types.doc,
-          types.docx,
-          types.xls,
-          types.xlsx,
-          types.ppt,
-          types.pptx,
-          types.plainText,
-        ],
-        allowMultiSelection: false,
-      });
-
-      if (result && result.length > 0) {
-        const res = result[0];
-        await processAttachment(res.uri, res.name, res.type);
-      }
-    } catch (err) {
-      if (isCancel(err)) {
-        // User cancelled the picker
-      } else {
-        console.error('Error picking or copying file', err);
-      }
-    }
-  };
-
-  const handleAttachImageFromLibrary = async () => {
-    Keyboard.dismiss();
-    const result = await launchImageLibrary({
-      mediaType: 'mixed',
-      quality: 1,
-    });
-
-    if (result.didCancel || result.errorCode) {
-      console.log('Image picker cancelled or failed', result.errorMessage);
-      return;
-    }
-
-    if (result.assets && result.assets.length > 0) {
-      const asset = result.assets[0];
-      await processAttachment(asset.uri, asset.fileName, asset.type);
-    }
-  };
-
-  const handleUrlInputChange = text => {
-    let processedText = text;
-    if (processedText.startsWith('https://')) {
-      processedText = processedText.substring('https://'.length);
-    } else if (processedText.startsWith('http://')) {
-      processedText = processedText.substring('http://'.length);
-    }
-    setAttachmentUrl(processedText);
-  };
-
-  const handleSaveUrlAttachment = async () => {
-    if (!attachmentUrl) {
-      Alert.alert(t('invalidUrl'), t('invalidUrlMessage'));
-      return;
-    }
-
-    const fullUrl = `https://` + attachmentUrl;
-
-    try {
-      const previewData = await getLinkPreview(fullUrl, { fetch });
-      let relative_thumbnail_path = null;
-      let preview_image_url = null;
-
-      if (previewData.images && previewData.images.length > 0) {
-        const imageUrl = previewData.images[0];
-        preview_image_url = imageUrl;
-        const fileExtension = (imageUrl.split('.').pop() || 'jpg').split(
-          '?',
-        )[0];
-        const uniqueFileName = `${Date.now()}.${fileExtension}`;
-        const absoluteLocalPath = `${ATTACHMENT_DIR}/${uniqueFileName}`;
-        relative_thumbnail_path = `${ATTACHMENT_DIR_NAME}/${uniqueFileName}`;
-
-        const download = RNFS.downloadFile({
-          fromUrl: imageUrl,
-          toFile: absoluteLocalPath,
-        });
-
-        await download.promise;
-      }
-
-      const newAttachment = {
-        node_id: editingNode.id,
-        filename: previewData.title || fullUrl,
-        mime_type: 'text/url',
-        original_uri: fullUrl,
-        stored_path: null,
-        thumbnail_path: relative_thumbnail_path,
-        preview_title: previewData.title,
-        preview_description: previewData.description,
-        preview_image_url: preview_image_url,
-      };
-
-      setEditingNode(prev => ({ ...prev, attachment: newAttachment }));
-      setUrlInputVisible(false);
-      setAttachmentUrl('');
-    } catch (error) {
-      console.error('Failed to get link preview:', error);
-      Alert.alert(t('previewError'), t('previewErrorMessage'));
-    }
-  };
-
-  const handleOpenAttachment = () => {
-    if (!editingNode?.attachment) return;
-
-    const { mime_type, stored_path, original_uri } = editingNode.attachment;
-
-    if (mime_type === 'text/url' && original_uri) {
-      Linking.openURL(original_uri).catch(err => {
-        console.error('Failed to open URL', err);
-        Alert.alert('Error', 'Could not open the URL.');
-      });
-    } else if (stored_path) {
-      const absolutePath = `${ATTACHMENT_BASE_PATH}/${stored_path}`;
-      FileViewer.open(absolutePath, {
-        showOpenWithDialog: true,
-        showAppsSuggestions: true,
-      })
-        .then(() => {
-          // success
-        })
-        .catch(err => {
-          console.error('Failed to open attachment', err);
-          Alert.alert(
-            'Error',
-            'Could not open the attachment. The file might be corrupted or the format is not supported.',
-          );
-        });
-    }
-  };
-
-  const handleRemoveAttachment = async () => {
-    if (!editingNode?.attachment) return;
-
-    const { stored_path, thumbnail_path } = editingNode.attachment;
-
-    try {
-      if (stored_path) {
-        const absolutePath = `${ATTACHMENT_BASE_PATH}/${stored_path}`;
-        const fileExists = await RNFS.exists(absolutePath);
-        if (fileExists) {
-          await RNFS.unlink(absolutePath);
-        }
-      }
-      if (thumbnail_path) {
-        const absoluteThumbPath = `${ATTACHMENT_BASE_PATH}/${thumbnail_path}`;
-        const thumbExists = await RNFS.exists(absoluteThumbPath);
-        if (thumbExists) {
-          await RNFS.unlink(absoluteThumbPath);
-        }
-      }
-
-      setEditingNode(prev => ({
-        ...prev,
-        attachment: null,
-        attachment_deleted: true,
-        deleted_attachment_id: prev.attachment.id,
-      }));
-    } catch (err) {
-      console.error('Error removing attachment files', err);
-    }
-  };
-
   const handleSaveEditingNode = async () => {
     if (!editingNode) return;
 
@@ -1114,226 +864,30 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
   const fabDisabled = isSeeThrough || linkingState.active || !!editingNode;
 
-  const resetScale = () => {
-    'worklet';
-    scale.value = withTiming(1, { duration: 300 });
-    translateX.value = withTiming(0, { duration: 300 });
-    translateY.value = withTiming(0, { duration: 300 });
-    savedScale.value = 1;
-    savedTranslateX.value = 0;
-    savedTranslateY.value = 0;
-  };
-
-  const moveToNearestCard = () => {
-    'worklet';
-    if (displayNodes.length === 0) return;
-
-    const screenCenterX = (width / 2 - translateX.value) / scale.value;
-    const screenCenterY = (height / 2 - translateY.value) / scale.value;
-
-    let closestNode = null;
-    let minDistance = Infinity;
-
-    displayNodes.forEach(node => {
-      const nodeCenter = getCenter(node);
-      const distance = Math.sqrt(
-        Math.pow(nodeCenter.x - screenCenterX, 2) +
-          Math.pow(nodeCenter.y - screenCenterY, 2),
-      );
-      if (distance < minDistance) {
-        minDistance = distance;
-        closestNode = node;
-      }
-    });
-
-    if (closestNode) {
-      const nodeCenter = getCenter(closestNode);
-      const newTranslateX = width / 2 - nodeCenter.x * scale.value;
-      const newTranslateY = height / 2 - nodeCenter.y * scale.value;
-
-      translateX.value = withTiming(newTranslateX, { duration: 300 });
-      translateY.value = withTiming(newTranslateY, { duration: 300 });
-      savedTranslateX.value = newTranslateX;
-      savedTranslateY.value = newTranslateY;
-    }
-  };
-
-  const resolveAttachmentPath = relativePath => {
-    if (!relativePath) {
-      return null;
-    }
-    // Check if the path is already an absolute path or a URL
-    if (
-      relativePath.startsWith('/') ||
-      relativePath.startsWith('http') ||
-      relativePath.startsWith('file:')
-    ) {
-      return relativePath;
-    }
-    return `${ATTACHMENT_BASE_PATH}/${relativePath}`;
-  };
-
   return (
     <PaperProvider theme={OriginalTheme}>
       <SafeAreaView
         style={styles.container}
         edges={['bottom', 'left', 'right']}
       >
-        <View
-          pointerEvents="box-none"
-          style={styles.fabRootContainer}
-          zIndex={100}
-        >
-          {alignModeOpen ? (
-            <View style={styles.alignToolsContainer}>
-              <FAB
-                icon="format-align-left"
-                style={styles.alignToolButton}
-                onPress={() => handleAlign('left')}
-                small
-              />
-              <FAB
-                icon="format-align-center"
-                style={styles.alignToolButton}
-                onPress={() => handleAlign('center-h')}
-                small
-              />
-              <FAB
-                icon="format-align-right"
-                style={styles.alignToolButton}
-                onPress={() => handleAlign('right')}
-                small
-              />
-              <FAB
-                icon="format-align-top"
-                style={styles.alignToolButton}
-                onPress={() => handleAlign('top')}
-                small
-              />
-              <FAB
-                icon="format-align-middle"
-                style={styles.alignToolButton}
-                onPress={() => handleAlign('center-v')}
-                small
-              />
-              <FAB
-                icon="format-align-bottom"
-                style={styles.alignToolButton}
-                onPress={() => handleAlign('bottom')}
-                small
-              />
-              <FAB
-                icon="arrow-expand-all"
-                style={styles.alignToolButton}
-                onPress={() => handleAlign('spread')}
-                small
-              />
-              <FAB
-                icon="selection-off"
-                style={styles.alignToolButton}
-                onPress={clearNodeSelection}
-                small
-              />
-              <FAB
-                icon="close"
-                style={styles.alignToolButton}
-                onPress={() => {
-                  setAlignModeOpen(false);
-                  setLinkingState(prev => ({
-                    ...prev,
-                    selectedNodeIds: new Set(),
-                  }));
-                }}
-                small
-              />
-            </View>
-          ) : (
-            <>
-              {/* Global Group (Bottom Left) */}
-              <View style={styles.fabGroup}>
-                {/* 6: Reset Zoom */}
-                <FAB
-                  icon="magnify"
-                  style={styles.fab}
-                  small
-                  onPress={() => runOnJS(resetScale)()}
-                />
-                {/* 7: Pan/Move mode */}
-                <FAB
-                  icon="target"
-                  style={styles.fab}
-                  onPress={() => runOnJS(moveToNearestCard)()}
-                  small
-                  visible={true}
-                />
-              </View>
-
-              {/* Right Groups */}
-              <View style={styles.fabRightColumn}>
-                {/* Reference Group (Top Right) */}
-                <View style={[styles.fabGroup, { marginBottom: 8 }]}>
-                  <FAB
-                    icon="format-align-justify"
-                    style={styles.fab}
-                    onPress={() => setAlignModeOpen(true)}
-                    small
-                    visible={true}
-                  />
-                  {/* 4: Show Attachments */}
-                  <FAB
-                    icon="paperclip"
-                    style={styles.fab}
-                    onPress={() => setShowAttachmentsOnCanvas(s => !s)}
-                    color={showAttachmentsOnCanvas ? '#34C759' : undefined}
-                    small
-                    visible={true}
-                  />
-                  {/* 5: See-through Mode */}
-                  <FAB
-                    icon={isSeeThrough ? 'eye-off' : 'eye'}
-                    style={styles.fab}
-                    onPress={() => setIsSeeThrough(s => !s)}
-                    disabled={linkingState.active}
-                    small
-                    visible={true}
-                  />
-                </View>
-
-                {/* Edit Group (Bottom Right) */}
-                <View style={styles.fabGroup}>
-                  {/* 3: Section Up */}
-                  <FAB
-                    icon="arrow-up-bold"
-                    style={styles.fab}
-                    onPress={handlePressSectionUp}
-                    disabled={fabDisabled}
-                    small
-                    visible={true}
-                  />
-                  {/* 2: Link Line Mode */}
-                  <FAB
-                    icon="link-variant"
-                    style={styles.fab}
-                    onPress={toggleLinkingMode}
-                    color={linkingState.active ? '#34C759' : undefined}
-                    disabled={isSeeThrough}
-                    small
-                    visible={true}
-                  />
-                  {/* 1: Add Card */}
-                  <FAB
-                    icon="plus"
-                    style={styles.fab}
-                    onPress={handleAddNode}
-                    disabled={fabDisabled}
-                    small
-                    visible={true}
-                  />
-                </View>
-              </View>
-            </>
-          )}
-        </View>
+        <FloatingActionButtons
+          alignModeOpen={alignModeOpen}
+          setAlignModeOpen={setAlignModeOpen}
+          handleAlign={handleAlign}
+          clearNodeSelection={clearNodeSelection}
+          linkingState={linkingState}
+          toggleLinkingMode={toggleLinkingMode}
+          isSeeThrough={isSeeThrough}
+          setIsSeeThrough={setIsSeeThrough}
+          showAttachmentsOnCanvas={showAttachmentsOnCanvas}
+          setShowAttachmentsOnCanvas={setShowAttachmentsOnCanvas}
+          handlePressSectionUp={handlePressSectionUp}
+          handleAddNode={handleAddNode}
+          resetScale={resetScale}
+          moveToNearestCard={moveToNearestCard}
+          fabDisabled={fabDisabled}
+          setLinkingState={setLinkingState}
+        />
         <GestureDetector gesture={composedGesture}>
           <View style={styles.flowArea}>
             <Canvas style={StyleSheet.absoluteFill}>
@@ -1617,43 +1171,6 @@ const styles = StyleSheet.create({
   },
   flowArea: {
     flex: 1,
-  },
-  fabRootContainer: {
-    position: 'absolute',
-    bottom: 16,
-    left: 16,
-    right: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    pointerEvents: 'box-none',
-  },
-  fabRightColumn: {
-    flexDirection: 'column',
-    alignItems: 'flex-end',
-  },
-  fabGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    pointerEvents: 'box-none',
-  },
-  fab: {
-    marginHorizontal: 4,
-    backgroundColor: OriginalTheme.colors.primary,
-  },
-  alignToolsContainer: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'flex-end',
-    width: 220, // 4 FABs per row
-    pointerEvents: 'box-none',
-  },
-  alignToolButton: {
-    margin: 4,
-    backgroundColor: OriginalTheme.colors.primary,
   },
   editingOverlay: {
     ...StyleSheet.absoluteFillObject,
