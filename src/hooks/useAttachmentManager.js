@@ -13,12 +13,18 @@ import {
 } from '../constants/fileSystem';
 import { mimeTypeLookup } from '../utils/mimeUtils';
 
-export const useAttachmentManager = (editingNode, setEditingNode) => {
+export const useAttachmentManager = () => {
   const { t } = useTranslation();
   const [urlInputVisible, setUrlInputVisible] = useState(false);
   const [attachmentUrl, setAttachmentUrl] = useState('');
 
-  const processAttachment = async (originalUri, fileName, fileType) => {
+  const processAttachment = async (
+    originalUri,
+    fileName,
+    fileType,
+    node,
+    setNode,
+  ) => {
     if (fileType === 'application/octet-stream' && fileName) {
       const extension = fileName.split('.').pop().toLowerCase();
       if (extension) {
@@ -48,7 +54,7 @@ export const useAttachmentManager = (editingNode, setEditingNode) => {
     }
 
     const newAttachment = {
-      node_id: editingNode.id,
+      node_id: node.id,
       filename: fileName,
       mime_type: fileType,
       original_uri: originalUri,
@@ -56,11 +62,11 @@ export const useAttachmentManager = (editingNode, setEditingNode) => {
       thumbnail_path: relativeThumbnailPath,
     };
 
-    const newNode = { ...editingNode, attachment: newAttachment };
-    setEditingNode(newNode);
+    const newNode = { ...node, attachment: newAttachment };
+    setNode(newNode);
   };
 
-  const handleAttachFile = async () => {
+  const handleAttachFile = async (node, setNode) => {
     Keyboard.dismiss();
 
     try {
@@ -82,7 +88,7 @@ export const useAttachmentManager = (editingNode, setEditingNode) => {
 
       if (result && result.length > 0) {
         const res = result[0];
-        await processAttachment(res.uri, res.name, res.type);
+        await processAttachment(res.uri, res.name, res.type, node, setNode);
       }
     } catch (err) {
       if (isCancel(err)) {
@@ -93,7 +99,7 @@ export const useAttachmentManager = (editingNode, setEditingNode) => {
     }
   };
 
-  const handleAttachImageFromLibrary = async () => {
+  const handleAttachImageFromLibrary = async (node, setNode) => {
     Keyboard.dismiss();
     const result = await launchImageLibrary({
       mediaType: 'mixed',
@@ -107,7 +113,13 @@ export const useAttachmentManager = (editingNode, setEditingNode) => {
 
     if (result.assets && result.assets.length > 0) {
       const asset = result.assets[0];
-      await processAttachment(asset.uri, asset.fileName, asset.type);
+      await processAttachment(
+        asset.uri,
+        asset.fileName,
+        asset.type,
+        node,
+        setNode,
+      );
     }
   };
 
@@ -121,7 +133,7 @@ export const useAttachmentManager = (editingNode, setEditingNode) => {
     setAttachmentUrl(processedText);
   };
 
-  const handleSaveUrlAttachment = async () => {
+  const handleSaveUrlAttachment = async (node, setNode) => {
     if (!attachmentUrl) {
       Alert.alert(t('invalidUrl'), t('invalidUrlMessage'));
       return;
@@ -153,7 +165,7 @@ export const useAttachmentManager = (editingNode, setEditingNode) => {
       }
 
       const newAttachment = {
-        node_id: editingNode.id,
+        node_id: node.id,
         filename: previewData.title || fullUrl,
         mime_type: 'text/url',
         original_uri: fullUrl,
@@ -164,7 +176,7 @@ export const useAttachmentManager = (editingNode, setEditingNode) => {
         preview_image_url: preview_image_url,
       };
 
-      setEditingNode(prev => ({ ...prev, attachment: newAttachment }));
+      setNode(prev => ({ ...prev, attachment: newAttachment }));
       setUrlInputVisible(false);
       setAttachmentUrl('');
     } catch (error) {
@@ -173,10 +185,10 @@ export const useAttachmentManager = (editingNode, setEditingNode) => {
     }
   };
 
-  const handleOpenAttachment = () => {
-    if (!editingNode?.attachment) return;
+  const handleOpenAttachment = node => {
+    if (!node?.attachment) return;
 
-    const { mime_type, stored_path, original_uri } = editingNode.attachment;
+    const { mime_type, stored_path, original_uri } = node.attachment;
 
     if (mime_type === 'text/url' && original_uri) {
       Linking.openURL(original_uri).catch(err => {
@@ -202,10 +214,10 @@ export const useAttachmentManager = (editingNode, setEditingNode) => {
     }
   };
 
-  const handleRemoveAttachment = async () => {
-    if (!editingNode?.attachment) return;
+  const handleRemoveAttachment = async (node, setNode) => {
+    if (!node?.attachment) return;
 
-    const { stored_path, thumbnail_path } = editingNode.attachment;
+    const { stored_path, thumbnail_path } = node.attachment;
 
     try {
       if (stored_path) {
@@ -223,7 +235,7 @@ export const useAttachmentManager = (editingNode, setEditingNode) => {
         }
       }
 
-      setEditingNode(prev => ({
+      setNode(prev => ({
         ...prev,
         attachment: null,
         attachment_deleted: true,

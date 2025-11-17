@@ -38,22 +38,14 @@ import {
   deleteAttachment,
 } from '../db';
 import RNFS from 'react-native-fs';
-import Video from 'react-native-video';
-import {
-  Divider,
-  Provider as PaperProvider,
-  SegmentedButtons,
-  Icon,
-  Card,
-  Title,
-  Button,
-  Modal,
-  Portal,
-  Text,
-} from 'react-native-paper';
+import { Provider as PaperProvider } from 'react-native-paper';
 import OriginalTheme from './OriginalTheme';
 import SkiaCard from '../components/Card';
 import FloatingActionButtons from '../components/FloatingActionButtons';
+import EditorModal from '../components/EditorModal';
+import ColorPickerModal from '../components/ColorPickerModal';
+import UrlInputModal from '../components/UrlInputModal';
+import CanvasRenderer from '../components/CanvasRenderer';
 import {
   getCenter,
   getHandlePosition,
@@ -65,8 +57,8 @@ import {
 import { useFlowData } from '../hooks/useFlowData';
 import { useCanvasTransform } from '../hooks/useCanvasTransform';
 import { useAttachmentManager } from '../hooks/useAttachmentManager';
-import ColorPalette from 'react-native-color-palette';
 import { useTranslation } from 'react-i18next';
+import { useGestures } from '../hooks/useGestures';
 import { getTextColorForBackground } from '../utils/colorUtils';
 import { ATTACHMENT_DIR } from '../constants/fileSystem';
 
@@ -133,12 +125,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
     handleOpenAttachment,
     handleRemoveAttachment,
     resolveAttachmentPath,
-  } = useAttachmentManager(editingNode, setEditingNode);
-
-  const activeNodeId = useSharedValue(null);
-  const pressState = useSharedValue({ id: null, state: 'idle' });
-  const dragStartOffset = useSharedValue({ x: 0, y: 0 });
-  const nodePosition = useSharedValue({ x: 0, y: 0 });
+  } = useAttachmentManager();
 
   const fontMgr = useFonts({
     NotoSansJP: [
@@ -236,170 +223,6 @@ const FlowEditorScreen = ({ route, navigation }) => {
     handleDeleteEdge,
   ]);
 
-  const panGesture = Gesture.Pan()
-    .onStart(event => {
-      pressState.value = { id: null, state: 'idle' };
-      const worldX = (event.x - translateX.value) / scale.value;
-      const worldY = (event.y - translateY.value) / scale.value;
-      if (!Array.isArray(displayNodes)) return;
-      const hitNode = [...displayNodes]
-        .reverse()
-        .find(node => isPointInCard(node, worldX, worldY));
-      if (hitNode && !isSeeThrough) {
-        activeNodeId.value = hitNode.id;
-        dragStartOffset.value = {
-          x: worldX - hitNode.position.x,
-          y: worldY - hitNode.position.y,
-        };
-        nodePosition.value = hitNode.position;
-      } else {
-        activeNodeId.value = null;
-      }
-    })
-    .onUpdate(event => {
-      if (event.numberOfPointers > 1) {
-        return;
-      }
-      if (activeNodeId.value) {
-        const worldX = (event.x - translateX.value) / scale.value;
-        const worldY = (event.y - translateY.value) / scale.value;
-        const newPosition = {
-          x: worldX - dragStartOffset.value.x,
-          y: worldY - dragStartOffset.value.y,
-        };
-        nodePosition.value = newPosition;
-        const newAllNodes = allNodes.map(n =>
-          n.id === activeNodeId.value ? { ...n, position: newPosition } : n,
-        );
-        runOnJS(setAllNodes)(newAllNodes);
-      } else {
-        translateX.value = savedTranslateX.value + event.translationX;
-        translateY.value = savedTranslateY.value + event.translationY;
-      }
-    })
-    .onEnd(() => {
-      if (activeNodeId.value) {
-        runOnJS(setPendingEvent)({
-          type: 'dragEnd',
-          nodeId: activeNodeId.value,
-          extra: { newPosition: nodePosition.value },
-        });
-        activeNodeId.value = null;
-      } else {
-        savedTranslateX.value = translateX.value;
-        savedTranslateY.value = translateY.value;
-      }
-    })
-    .enabled(!linkingState.active);
-
-  const pinchGesture = Gesture.Pinch()
-    .onStart(event => {
-      savedScale.value = scale.value;
-      context.value = { focalX: event.focalX, focalY: event.focalY };
-      origin_x.value = (event.focalX - translateX.value) / scale.value;
-      origin_y.value = (event.focalY - translateY.value) / scale.value;
-    })
-    .onUpdate(event => {
-      const newScale = savedScale.value * event.scale;
-      if (newScale < 0.1) {
-        return;
-      }
-      scale.value = newScale;
-    })
-    .onEnd(() => {
-      savedScale.value = scale.value;
-      savedTranslateX.value = translateX.value;
-      savedTranslateY.value = translateY.value;
-    })
-    .enabled(!linkingState.active);
-
-  const checkForEdgeTap = point => {
-    'worklet';
-    const TAP_THRESHOLD = 15;
-
-    const displayNodeIds = new Set(displayNodes.map(n => n.id));
-    const relevantEdges = edges.filter(
-      edge =>
-        displayNodeIds.has(edge.source) && displayNodeIds.has(edge.target),
-    );
-
-    for (const edge of relevantEdges) {
-      const sourceNode = displayNodes.find(n => n.id === edge.source);
-      const targetNode = displayNodes.find(n => n.id === edge.target);
-      if (!sourceNode || !targetNode) continue;
-
-      const p1 = getHandlePosition(sourceNode, edge.sourceHandle);
-      const p2 = getHandlePosition(targetNode, edge.targetHandle);
-
-      const dx = p2.x - p1.x;
-      const dy = p2.y - p1.y;
-      const l2 = dx * dx + dy * dy;
-
-      if (l2 === 0) {
-        const dist = Math.sqrt(
-          Math.pow(point.x - p1.x, 2) + Math.pow(point.y - p1.y, 2),
-        );
-        if (dist < TAP_THRESHOLD) {
-          return edge.id;
-        }
-      } else {
-        let t = ((point.x - p1.x) * dx + (point.y - p1.y) * dy) / l2;
-        t = Math.max(0, Math.min(1, t));
-        const closestPoint = {
-          x: p1.x + t * dx,
-          y: p1.y + t * dy,
-        };
-        const dist = Math.sqrt(
-          Math.pow(point.x - closestPoint.x, 2) +
-            Math.pow(point.y - closestPoint.y, 2),
-        );
-        if (dist < TAP_THRESHOLD) {
-          return edge.id;
-        }
-      }
-    }
-  };
-
-  const tapGesture = Gesture.Tap().onEnd((event, success) => {
-    if (isSeeThrough) return;
-    if (success) {
-      const worldX = (event.x - translateX.value) / scale.value;
-      const worldY = (event.y - translateY.value) / scale.value;
-      if (!Array.isArray(displayNodes)) return;
-
-      const nodeToDelete = [...displayNodes]
-        .reverse()
-        .find(node => isPointInDeleteButton(node, worldX, worldY));
-      if (nodeToDelete) {
-        runOnJS(setPendingEvent)({
-          type: 'delete',
-          nodeId: nodeToDelete.id,
-        });
-        return;
-      }
-
-      const hitNode = [...displayNodes]
-        .reverse()
-        .find(node => isPointInCard(node, worldX, worldY));
-      if (hitNode) {
-        runOnJS(setPendingEvent)({
-          type: 'tap',
-          nodeId: hitNode.id,
-        });
-      } else {
-        if (linkingState.active) {
-          const edgeId = checkForEdgeTap({ x: worldX, y: worldY });
-          if (edgeId) {
-            runOnJS(setPendingEvent)({
-              type: 'edgeTap',
-              nodeId: edgeId,
-            });
-          }
-        }
-      }
-    }
-  });
-
   const handleNodeLongPress = async hitNode => {
     try {
       const attachment = await getAttachmentByNodeId(flowId, hitNode.id);
@@ -425,73 +248,25 @@ const FlowEditorScreen = ({ route, navigation }) => {
     }
   };
 
-  const longPressGesture = Gesture.LongPress()
-    .minDuration(800)
-    .maxDistance(10)
-    .onBegin(event => {
-      if (isSeeThrough || linkingState.active) return;
-      const worldX = (event.x - translateX.value) / scale.value;
-      const worldY = (event.y - translateY.value) / scale.value;
-      if (!Array.isArray(displayNodes)) return;
-      const hitNode = [...displayNodes]
-        .reverse()
-        .find(node => isPointInCard(node, worldX, worldY));
-      if (hitNode) {
-        pressState.value = { id: hitNode.id, state: 'pressing' };
-      }
-      // Start a timer to confirm the long press
-      setTimeout(() => {
-        if (pressState.value.id) {
-          pressState.value = {
-            id: pressState.value.id,
-            state: 'confirmed',
-          };
-        }
-      }, 800);
-    })
-    .onEnd(event => {
-      if (pressState.value.state === 'confirmed') {
-        const worldX = (event.x - translateX.value) / scale.value;
-        const worldY = (event.y - translateY.value) / scale.value;
-        if (!Array.isArray(displayNodes)) return;
-        const hitNode = [...displayNodes]
-          .reverse()
-          .find(node => isPointInCard(node, worldX, worldY));
-        if (hitNode) {
-          runOnJS(handleNodeLongPress)(hitNode);
-        }
-      }
-    })
-    .onFinalize(() => {
-      pressState.value = { id: null, state: 'idle' };
-    });
-
-  const doubleTapGesture = Gesture.Tap()
-    .numberOfTaps(2)
-    .onEnd((event, success) => {
-      if (isSeeThrough || linkingState.active) return;
-      if (success) {
-        const worldX = (event.x - translateX.value) / scale.value;
-        const worldY = (event.y - translateY.value) / scale.value;
-        if (!Array.isArray(displayNodes)) return;
-        const hitNode = [...displayNodes]
-          .reverse()
-          .find(node => isPointInCard(node, worldX, worldY));
-        if (hitNode) {
-          runOnJS(setPendingEvent)({
-            type: 'doubleTap',
-            nodeId: hitNode.id,
-          });
-        }
-      }
-    });
-
-  const composedGesture = Gesture.Exclusive(
-    Gesture.Simultaneous(panGesture, pinchGesture),
-    doubleTapGesture,
-    longPressGesture,
-    tapGesture,
-  );
+  const { composedGesture, pressState } = useGestures({
+    translateX,
+    translateY,
+    scale,
+    savedScale,
+    savedTranslateX,
+    savedTranslateY,
+    context,
+    origin_x,
+    origin_y,
+    displayNodes,
+    allNodes,
+    setAllNodes,
+    edges,
+    linkingState,
+    isSeeThrough,
+    setPendingEvent,
+    handleNodeLongPress,
+  });
 
   const handleAddNode = () => {
     const position = {
@@ -753,41 +528,8 @@ const FlowEditorScreen = ({ route, navigation }) => {
     await Promise.all(updates);
   };
 
-  const renderEdges = () => {
-    const displayNodeIds = new Set(displayNodes.map(n => n.id));
-    const relevantEdges = edges.filter(
-      edge =>
-        displayNodeIds.has(edge.source) && displayNodeIds.has(edge.target),
-    );
-
-    return relevantEdges.map(edge => {
-      const sourceNode = displayNodes.find(n => n.id === edge.source);
-      const targetNode = displayNodes.find(n => n.id === edge.target);
-      if (!sourceNode || !targetNode) return null;
-
-      const interactionPath = CalcSkiaInteractionEdgeStroke({
-        edge,
-        sourceNode,
-        targetNode,
-      });
-      const path = CalcSkiaEdgeStroke({ edge, sourceNode, targetNode });
-
-      return (
-        <Group key={edge.id + '_group'}>
-          <Path
-            path={interactionPath}
-            style="stroke"
-            strokeWidth={15}
-            color="transparent"
-          />
-          <Path path={path} style="stroke" strokeWidth={2} color="black" />
-        </Group>
-      );
-    });
-  };
-
-  const handleSaveEditingNode = async () => {
-    if (!editingNode) return;
+  const handleSaveEditingNode = async nodeToSave => {
+    if (!nodeToSave) return;
 
     const documentPath = RNFS.DocumentDirectoryPath;
     const convertToRelativePath = path => {
@@ -798,37 +540,37 @@ const FlowEditorScreen = ({ route, navigation }) => {
     };
 
     try {
-      let finalAttachmentState = editingNode.attachment;
+      let finalAttachmentState = nodeToSave.attachment;
 
       // Handle attachment changes first
-      if (editingNode.attachment_deleted && editingNode.deleted_attachment_id) {
-        await deleteAttachment(editingNode.deleted_attachment_id);
-        if (!editingNode.attachment) {
+      if (nodeToSave.attachment_deleted && nodeToSave.deleted_attachment_id) {
+        await deleteAttachment(nodeToSave.deleted_attachment_id);
+        if (!nodeToSave.attachment) {
           finalAttachmentState = null;
         }
       }
 
-      if (editingNode.attachment && !editingNode.attachment.id) {
+      if (nodeToSave.attachment && !nodeToSave.attachment.id) {
         // New attachment, insert it
         const insertData = {
           flow_id: flowId,
-          node_id: editingNode.id,
-          filename: editingNode.attachment.filename,
-          mime_type: editingNode.attachment.mime_type,
-          original_uri: editingNode.attachment.original_uri,
+          node_id: nodeToSave.id,
+          filename: nodeToSave.attachment.filename,
+          mime_type: nodeToSave.attachment.mime_type,
+          original_uri: nodeToSave.attachment.original_uri,
           stored_path: convertToRelativePath(
-            editingNode.attachment.stored_path,
+            nodeToSave.attachment.stored_path,
           ),
-          preview_title: editingNode.attachment.preview_title,
-          preview_description: editingNode.attachment.preview_description,
-          preview_image_url: editingNode.attachment.preview_image_url,
+          preview_title: nodeToSave.attachment.preview_title,
+          preview_description: nodeToSave.attachment.preview_description,
+          preview_image_url: nodeToSave.attachment.preview_image_url,
           thumbnail_path: convertToRelativePath(
-            editingNode.attachment.thumbnail_path,
+            nodeToSave.attachment.thumbnail_path,
           ),
         };
         const result = await insertAttachment(insertData);
         finalAttachmentState = {
-          ...editingNode.attachment,
+          ...nodeToSave.attachment,
           id: result.insertId,
           stored_path: insertData.stored_path,
           thumbnail_path: insertData.thumbnail_path,
@@ -848,13 +590,13 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
       // Then, update the node data
       const dataToUpdate = {
-        title: editingNode.title,
-        description: editingNode.description,
-        size: editingNode.size,
-        color: editingNode.color,
+        title: nodeToSave.title,
+        description: nodeToSave.description,
+        size: nodeToSave.size,
+        color: nodeToSave.color,
         attachment: finalAttachmentState,
       };
-      await handleUpdateNodeData(flowId, editingNode.id, dataToUpdate, fontMgr);
+      await handleUpdateNodeData(flowId, nodeToSave.id, dataToUpdate, fontMgr);
     } catch (err) {
       console.error('Failed to save node or attachment', err);
     } finally {
@@ -888,278 +630,57 @@ const FlowEditorScreen = ({ route, navigation }) => {
           fabDisabled={fabDisabled}
           setLinkingState={setLinkingState}
         />
-        <GestureDetector gesture={composedGesture}>
-          <View style={styles.flowArea}>
-            <Canvas style={StyleSheet.absoluteFill}>
-              <Group transform={skiaTransform} origin={skiaOrigin}>
-                {displayNodes.map(node => (
-                  <SkiaCard
-                    key={node.id}
-                    node={node}
-                    fontMgr={fontMgr}
-                    paperclipIconSvg={paperclipIconSvg}
-                    isSelected={linkingState.selectedNodeIds.has(node.id)}
-                    isLinkingMode={linkingState.active}
-                    isLinkSource={linkingState.sourceNodeId === node.id}
-                    isEditing={editingNode && editingNode.id === node.id}
-                    isSeeThroughParent={node.isSeeThroughParent}
-                    showAttachment={showAttachmentsOnCanvas}
-                    pressState={pressState}
-                    resolveAttachmentPath={resolveAttachmentPath}
-                  />
-                ))}
-                {renderEdges()}
-              </Group>
-            </Canvas>
-          </View>
-        </GestureDetector>
-        {editingNode && (
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={styles.editingOverlay}
-          >
-            <Card style={styles.editingContainer}>
-              <Card.Content>
-                <TextInput
-                  value={editingNode.title}
-                  onChangeText={text =>
-                    setEditingNode(prev => ({ ...prev, title: text }))
-                  }
-                  style={styles.input}
-                  placeholder={t('title')}
-                  autoFocus
-                  maxLength={16}
-                />
-                <TextInput
-                  value={editingNode.description}
-                  onChangeText={text =>
-                    setEditingNode(prev => ({ ...prev, description: text }))
-                  }
-                  style={styles.input}
-                  placeholder={t('description')}
-                  multiline
-                  maxLength={100}
-                  editable={editingNode.size !== 'small'}
-                />
-                <SegmentedButtons
-                  value={editingNode.size}
-                  onValueChange={value => {
-                    Keyboard.dismiss();
-                    setEditingNode(prev => ({ ...prev, size: value }));
-                  }}
-                  buttons={[
-                    { value: 'small', label: t('sizeSmall') },
-                    { value: 'medium', label: t('sizeMedium') },
-                    { value: 'large', label: t('sizeLarge') },
-                  ]}
-                  style={styles.sizeSelectionContainer}
-                />
-                <TouchableOpacity
-                  style={[
-                    styles.colorButton,
-                    { backgroundColor: editingNode.color },
-                  ]}
-                  onPress={() => {
-                    Keyboard.dismiss();
-                    setColorPickerVisible(true);
-                  }}
-                >
-                  <Text
-                    style={[
-                      styles.colorButtonText,
-                      { color: getTextColorForBackground(editingNode.color) },
-                    ]}
-                  >
-                    {t('selectColor')}
-                  </Text>
-                </TouchableOpacity>
-
-                <Divider style={{ marginVertical: 10 }} />
-
-                {editingNode.attachment ? (
-                  <View style={styles.attachmentContainer}>
-                    {editingNode.attachment.mime_type === 'text/url' ? (
-                      editingNode.attachment.thumbnail_path ? (
-                        <Image
-                          key={editingNode.attachment.thumbnail_path}
-                          source={{
-                            uri: `file://${resolveAttachmentPath(
-                              editingNode.attachment.thumbnail_path,
-                            )}`,
-                          }}
-                          style={styles.thumbnail}
-                        />
-                      ) : (
-                        <Icon source="link-variant" size={80} />
-                      )
-                    ) : editingNode.attachment.mime_type.startsWith(
-                        'video/',
-                      ) ? (
-                      <Video
-                        source={{
-                          uri: `file://${resolveAttachmentPath(
-                            editingNode.attachment.stored_path,
-                          )}`,
-                        }}
-                        style={styles.thumbnail}
-                        controls={false}
-                        repeat={false}
-                      />
-                    ) : editingNode.attachment.thumbnail_path ||
-                      (editingNode.attachment.mime_type &&
-                        editingNode.attachment.mime_type.startsWith(
-                          'image/',
-                        )) ? (
-                      <Image
-                        key={
-                          editingNode.attachment.thumbnail_path ||
-                          editingNode.attachment.stored_path
-                        }
-                        source={{
-                          uri: `file://${resolveAttachmentPath(
-                            editingNode.attachment.thumbnail_path ||
-                              editingNode.attachment.stored_path,
-                          )}`,
-                        }}
-                        style={styles.thumbnail}
-                      />
-                    ) : (
-                      <Icon source="file-document-outline" size={80} />
-                    )}
-                    <Text style={styles.attachmentText} numberOfLines={1}>
-                      {editingNode.attachment.filename}
-                    </Text>
-                    <View style={styles.attachmentButtons}>
-                      <Button onPress={handleOpenAttachment}>
-                        {t('open')}
-                      </Button>
-                      <Button
-                        onPress={handleRemoveAttachment}
-                        textColor={OriginalTheme.colors.error}
-                      >
-                        {t('remove')}
-                      </Button>
-                    </View>
-                  </View>
-                ) : (
-                  <View style={styles.attachmentSection}>
-                    <Title style={styles.attachmentTitle}>{t('attach')}</Title>
-                    <View style={styles.attachButtonsContainer}>
-                      <Button
-                        icon="file-document-outline"
-                        mode="outlined"
-                        onPress={handleAttachFile}
-                        style={styles.attachButton}
-                      >
-                        {t('file')}
-                      </Button>
-                      <Button
-                        icon="image-multiple"
-                        mode="outlined"
-                        onPress={handleAttachImageFromLibrary}
-                        style={styles.attachButton}
-                      >
-                        {t('photo')}
-                      </Button>
-                      <Button
-                        icon="web"
-                        mode="outlined"
-                        onPress={() => {
-                          Keyboard.dismiss();
-                          setUrlInputVisible(true);
-                        }}
-                        style={styles.attachButton}
-                      >
-                        {t('url')}
-                      </Button>
-                    </View>
-                  </View>
-                )}
-              </Card.Content>
-              <Card.Actions style={styles.buttonContainer}>
-                <Button onPress={handleSaveEditingNode}>{t('save')}</Button>
-                <Button
-                  mode="outlined"
-                  onPress={() => setEditingNode(null)}
-                  textColor={'#555'}
-                >
-                  {t('cancel')}
-                </Button>
-              </Card.Actions>
-            </Card>
-          </KeyboardAvoidingView>
-        )}
-        <Portal>
-          <Modal
-            visible={colorPickerVisible}
-            onDismiss={() => setColorPickerVisible(false)}
-            contentContainerStyle={styles.colorPickerContainer}
-          >
-            {editingNode && (
-              <ColorPalette
-                onChange={color => {
-                  setEditingNode(prev => ({ ...prev, color: color }));
-                  setColorPickerVisible(false);
-                }}
-                value={editingNode.color}
-                colors={[
-                  '#FCA5A5',
-                  '#F87171',
-                  '#FDBA74',
-                  '#FB923C',
-                  '#FDE047',
-                  '#FACC15',
-                  '#86EFAC',
-                  '#4ADE80',
-                  '#5EEAD4',
-                  '#2DD4BF',
-                  '#93C5FD',
-                  '#60A5FA',
-                  '#A5B4FC',
-                  '#818CF8',
-                  '#C4B5FD',
-                  '#A78BFA',
-                  '#D1D5DB',
-                  '#9CA3AF',
-                  '#6B7280',
-                  '#FFFFFF',
-                ]}
-                title={t('selectCardColor')}
-                icon={<Text>✔</Text>}
-              />
-            )}
-          </Modal>
-          <Modal
-            visible={urlInputVisible}
-            onDismiss={() => setUrlInputVisible(false)}
-            contentContainerStyle={styles.urlInputContainer}
-          >
-            <View style={styles.urlInputWrapper}>
-              <Text style={styles.urlInputLabel}>https://</Text>
-              <TextInput
-                value={attachmentUrl}
-                onChangeText={handleUrlInputChange}
-                style={styles.urlInputField}
-                placeholder="example.com"
-                autoCapitalize="none"
-                keyboardType="url"
-                autoFocus
-              />
-            </View>
-            <View style={styles.buttonContainer}>
-              <Button onPress={handleSaveUrlAttachment}>{t('save')}</Button>
-              <Button
-                onPress={() => {
-                  setUrlInputVisible(false);
-                  setAttachmentUrl('');
-                }}
-                textColor={OriginalTheme.colors.secondary}
-              >
-                {t('cancel')}
-              </Button>
-            </View>
-          </Modal>
-        </Portal>
+        <CanvasRenderer
+          composedGesture={composedGesture}
+          skiaTransform={skiaTransform}
+          skiaOrigin={skiaOrigin}
+          displayNodes={displayNodes}
+          edges={edges}
+          fontMgr={fontMgr}
+          paperclipIconSvg={paperclipIconSvg}
+          linkingState={linkingState}
+          editingNode={editingNode}
+          showAttachmentsOnCanvas={showAttachmentsOnCanvas}
+          pressState={pressState}
+          resolveAttachmentPath={resolveAttachmentPath}
+        />
+        <EditorModal
+          visible={!!editingNode}
+          node={editingNode}
+          onClose={() => setEditingNode(null)}
+          onSave={handleSaveEditingNode}
+          onNodeChange={setEditingNode}
+          setColorPickerVisible={setColorPickerVisible}
+          setUrlInputVisible={setUrlInputVisible}
+          handleAttachFile={() => handleAttachFile(editingNode, setEditingNode)}
+          handleAttachImageFromLibrary={() =>
+            handleAttachImageFromLibrary(editingNode, setEditingNode)
+          }
+          handleOpenAttachment={() => handleOpenAttachment(editingNode)}
+          handleRemoveAttachment={() =>
+            handleRemoveAttachment(editingNode, setEditingNode)
+          }
+          resolveAttachmentPath={resolveAttachmentPath}
+        />
+        <ColorPickerModal
+          visible={colorPickerVisible}
+          onClose={() => setColorPickerVisible(false)}
+          node={editingNode}
+          onColorChange={color => {
+            setEditingNode(prev => ({ ...prev, color: color }));
+            setColorPickerVisible(false);
+          }}
+        />
+        <UrlInputModal
+          visible={urlInputVisible}
+          onClose={() => {
+            setUrlInputVisible(false);
+            setAttachmentUrl('');
+          }}
+          attachmentUrl={attachmentUrl}
+          onUrlChange={handleUrlInputChange}
+          onSave={() => handleSaveUrlAttachment(editingNode, setEditingNode)}
+        />
       </SafeAreaView>
     </PaperProvider>
   );
