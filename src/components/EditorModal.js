@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import {
   View,
   StyleSheet,
@@ -22,13 +22,9 @@ import Video from 'react-native-video';
 import { useTranslation } from 'react-i18next';
 import OriginalTheme from '../screens/OriginalTheme';
 import { getTextColorForBackground } from '../utils/colorUtils';
+import { useFlowContext } from '../contexts/FlowContext';
 
 const EditorModal = ({
-  visible,
-  node,
-  onClose,
-  onSave,
-  onNodeChange,
   setColorPickerVisible,
   setUrlInputVisible,
   handleAttachFile,
@@ -38,8 +34,19 @@ const EditorModal = ({
   resolveAttachmentPath,
 }) => {
   const { t } = useTranslation();
+  const { editingNode, closeEditor, saveEditor, dispatch } = useFlowContext();
 
-  if (!visible || !node) {
+  const handleNodeChange = useCallback(
+    (key, value) => {
+      dispatch({
+        type: 'UPDATE_EDITING_NODE',
+        payload: { ...editingNode, [key]: value },
+      });
+    },
+    [dispatch, editingNode],
+  );
+
+  if (!editingNode) {
     return null;
   }
 
@@ -51,27 +58,27 @@ const EditorModal = ({
       <Card style={styles.editingContainer}>
         <Card.Content>
           <TextInput
-            value={node.title}
-            onChangeText={text => onNodeChange({ ...node, title: text })}
+            value={editingNode.title}
+            onChangeText={text => handleNodeChange('title', text)}
             style={styles.input}
             placeholder={t('title')}
             autoFocus
             maxLength={16}
           />
           <TextInput
-            value={node.description}
-            onChangeText={text => onNodeChange({ ...node, description: text })}
+            value={editingNode.description}
+            onChangeText={text => handleNodeChange('description', text)}
             style={styles.input}
             placeholder={t('description')}
             multiline
             maxLength={100}
-            editable={node.size !== 'small'}
+            editable={editingNode.size !== 'small'}
           />
           <SegmentedButtons
-            value={node.size}
+            value={editingNode.size}
             onValueChange={value => {
               Keyboard.dismiss();
-              onNodeChange({ ...node, size: value });
+              handleNodeChange('size', value);
             }}
             buttons={[
               { value: 'small', label: t('sizeSmall') },
@@ -81,7 +88,7 @@ const EditorModal = ({
             style={styles.sizeSelectionContainer}
           />
           <TouchableOpacity
-            style={[styles.colorButton, { backgroundColor: node.color }]}
+            style={[styles.colorButton, { backgroundColor: editingNode.color }]}
             onPress={() => {
               Keyboard.dismiss();
               setColorPickerVisible(true);
@@ -90,7 +97,7 @@ const EditorModal = ({
             <Text
               style={[
                 styles.colorButtonText,
-                { color: getTextColorForBackground(node.color) },
+                { color: getTextColorForBackground(editingNode.color) },
               ]}
             >
               {t('selectColor')}
@@ -99,15 +106,15 @@ const EditorModal = ({
 
           <Divider style={{ marginVertical: 10 }} />
 
-          {node.attachment ? (
+          {editingNode.attachment ? (
             <View style={styles.attachmentContainer}>
-              {node.attachment.mime_type === 'text/url' ? (
-                node.attachment.thumbnail_path ? (
+              {editingNode.attachment.mime_type === 'text/url' ? (
+                editingNode.attachment.thumbnail_path ? (
                   <Image
-                    key={node.attachment.thumbnail_path}
+                    key={editingNode.attachment.thumbnail_path}
                     source={{
                       uri: `file://${resolveAttachmentPath(
-                        node.attachment.thumbnail_path,
+                        editingNode.attachment.thumbnail_path,
                       )}`,
                     }}
                     style={styles.thumbnail}
@@ -115,29 +122,29 @@ const EditorModal = ({
                 ) : (
                   <Icon source="link-variant" size={80} />
                 )
-              ) : node.attachment.mime_type.startsWith('video/') ? (
+              ) : editingNode.attachment.mime_type.startsWith('video/') ? (
                 <Video
                   source={{
                     uri: `file://${resolveAttachmentPath(
-                      node.attachment.stored_path,
+                      editingNode.attachment.stored_path,
                     )}`,
                   }}
                   style={styles.thumbnail}
                   controls={false}
                   repeat={false}
                 />
-              ) : node.attachment.thumbnail_path ||
-                (node.attachment.mime_type &&
-                  node.attachment.mime_type.startsWith('image/')) ? (
+              ) : editingNode.attachment.thumbnail_path ||
+                (editingNode.attachment.mime_type &&
+                  editingNode.attachment.mime_type.startsWith('image/')) ? (
                 <Image
                   key={
-                    node.attachment.thumbnail_path ||
-                    node.attachment.stored_path
+                    editingNode.attachment.thumbnail_path ||
+                    editingNode.attachment.stored_path
                   }
                   source={{
                     uri: `file://${resolveAttachmentPath(
-                      node.attachment.thumbnail_path ||
-                        node.attachment.stored_path,
+                      editingNode.attachment.thumbnail_path ||
+                        editingNode.attachment.stored_path,
                     )}`,
                   }}
                   style={styles.thumbnail}
@@ -146,14 +153,14 @@ const EditorModal = ({
                 <Icon source="file-document-outline" size={80} />
               )}
               <Text style={styles.attachmentText} numberOfLines={1}>
-                {node.attachment.filename}
+                {editingNode.attachment.filename}
               </Text>
               <View style={styles.attachmentButtons}>
-                <Button onPress={() => handleOpenAttachment(node)}>
+                <Button onPress={() => handleOpenAttachment(editingNode)}>
                   {t('open')}
                 </Button>
                 <Button
-                  onPress={() => handleRemoveAttachment(node)}
+                  onPress={() => handleRemoveAttachment(editingNode)}
                   textColor={OriginalTheme.colors.error}
                 >
                   {t('remove')}
@@ -167,7 +174,7 @@ const EditorModal = ({
                 <Button
                   icon="file-document-outline"
                   mode="outlined"
-                  onPress={() => handleAttachFile(node)}
+                  onPress={() => handleAttachFile(editingNode)}
                   style={styles.attachButton}
                 >
                   {t('file')}
@@ -175,7 +182,7 @@ const EditorModal = ({
                 <Button
                   icon="image-multiple"
                   mode="outlined"
-                  onPress={() => handleAttachImageFromLibrary(node)}
+                  onPress={() => handleAttachImageFromLibrary(editingNode)}
                   style={styles.attachButton}
                 >
                   {t('photo')}
@@ -196,8 +203,8 @@ const EditorModal = ({
           )}
         </Card.Content>
         <Card.Actions style={styles.buttonContainer}>
-          <Button onPress={() => onSave(node)}>{t('save')}</Button>
-          <Button mode="outlined" onPress={onClose} textColor={'#555'}>
+          <Button onPress={saveEditor}>{t('save')}</Button>
+          <Button mode="outlined" onPress={closeEditor} textColor={'#555'}>
             {t('cancel')}
           </Button>
         </Card.Actions>

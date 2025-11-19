@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   View,
   StyleSheet,
@@ -30,12 +30,16 @@ import Animated, {
   configureReanimatedLogger,
   ReanimatedLogLevel,
 } from 'react-native-reanimated';
+import 'react-native-get-random-values';
+import { v4 as uuidv4 } from 'uuid';
 import {
   updateFlow,
   getFlows,
   getAttachmentByNodeId,
   insertAttachment,
   deleteAttachment,
+  updateNode,
+  insertNode,
 } from '../db';
 import RNFS from 'react-native-fs';
 import { Provider as PaperProvider } from 'react-native-paper';
@@ -53,14 +57,18 @@ import {
   CalcSkiaInteractionEdgeStroke,
   isPointInCard,
   isPointInDeleteButton,
+  processNodes,
+  doRectsOverlap,
+  getRect,
 } from '../utils/flowUtils';
-import { useFlowData } from '../hooks/useFlowData';
 import { useCanvasTransform } from '../hooks/useCanvasTransform';
 import { useAttachmentManager } from '../hooks/useAttachmentManager';
 import { useTranslation } from 'react-i18next';
 import { useGestures } from '../hooks/useGestures';
 import { getTextColorForBackground } from '../utils/colorUtils';
 import { ATTACHMENT_DIR } from '../constants/fileSystem';
+
+import { FlowProvider, useFlowContext } from '../contexts/FlowContext';
 
 configureReanimatedLogger({
   level: ReanimatedLogLevel.warn,
@@ -69,29 +77,163 @@ configureReanimatedLogger({
 
 const { width, height } = Dimensions.get('window');
 
-const FlowEditorScreen = ({ route, navigation }) => {
+const FlowEditorContent = ({ route, navigation }) => {
   const { flowId, flowName } = route.params;
   const { t } = useTranslation();
-  const [isSeeThrough, setIsSeeThrough] = useState(false);
-  const [alignModeOpen, setAlignModeOpen] = useState(false);
+
+  const fontMgr = useFonts({
+    NotoSansJP: [
+      require('../../assets/fonts/Noto_Sans_JP/static/NotoSansJP-Regular.ttf'),
+      require('../../assets/fonts/Noto_Sans_JP/static/NotoSansJP-Bold.ttf'),
+    ],
+    NotoSansSC: [
+      require('../../assets/fonts/Noto_Sans_SC/static/NotoSansSC-Regular.ttf'),
+      require('../../assets/fonts/Noto_Sans_SC/static/NotoSansSC-Bold.ttf'),
+    ],
+  });
+
   const {
     allNodes,
-    setAllNodes,
     edges,
-    displayNodes,
-    handleUpdateNodeData,
-    handleUpdateNodePosition,
-    addNode,
-    handleDeleteNode,
-    handleDoubleClick,
-    handleSectionUp,
     linkingState,
     setLinkingState,
-    toggleLinkingMode,
-    handleCardTap,
-    handleDeleteEdge,
-    clearNodeSelection,
-  } = useFlowData(flowId, isSeeThrough, alignModeOpen, t);
+    isDataLoaded,
+    addNode,
+    deleteNode,
+    updateNodePosition,
+    updateNodeData,
+    addEdge,
+    deleteEdge,
+    dispatch,
+    openEditor,
+    editingNode,
+    currentParentId,
+    parentIdHistory,
+    goIntoNode,
+    goBack,
+  } = useFlowContext();
+
+  const [isSeeThrough, setIsSeeThrough] = useState(false);
+  const [alignModeOpen, setAlignModeOpen] = useState(false);
+
+  const displayNodes = useMemo(() => {
+    if (!Array.isArray(allNodes)) {
+      return [];
+    }
+    const baseNodes = allNodes.filter(node => node.parentId === currentParentId);
+
+    if (!isSeeThrough) {
+      return baseNodes.map(n => ({ ...n, zIndex: 1 }));
+    }
+
+    const PADDING = 20;
+    const TITLE_HEIGHT = 40;
+    const CARD_SPACING = 20;
+
+    const workingNodes = JSON.parse(JSON.stringify(baseNodes));
+    const allNodesCopy = JSON.parse(JSON.stringify(allNodes));
+
+    const initialCenters = new Map();
+    workingNodes.forEach(node => {
+      initialCenters.set(node.id, {
+        x: node.position.x + node.size.width / 2,
+        y: node.position.y + node.size.height / 2,
+      });
+    });
+
+    const childrenByParent = new Map();
+    const originalNodesMap = new Map();
+
+    workingNodes.forEach(node => {
+      originalNodesMap.set(node.id, JSON.parse(JSON.stringify(node)));
+      const children = allNodesCopy.filter(n => n.parentId === node.id);
+      if (children.length > 0) {
+        const minX = Math.min(...children.map(c => c.position.x));
+        const minY = Math.min(...children.map(c => c.position.y));
+
+        const arrangedChildren = children.map(child => ({
+          ...child,
+          position: {
+            x: node.position.x + PADDING + (child.position.x - minX),
+            y: node.position.y + TITLE_HEIGHT + (child.position.y - minY),
+          },
+        }));
+
+        const maxChildX = Math.max(...arrangedChildren.map(c => c.position.x - node.position.x + c.size.width));
+        const maxChildY = Math.max(...arrangedChildren.map(c => c.position.y - node.position.y + c.size.height));
+
+        node.size = {
+          width: Math.max(node.size.width, maxChildX + PADDING),
+          height: Math.max(node.size.height, maxChildY + PADDING),
+        };
+        node.isSeeThroughParent = true;
+        node.zIndex = 1;
+        childrenByParent.set(node.id, arrangedChildren);
+      } else {
+        node.isSeeThroughParent = false;
+        node.zIndex = 1;
+      }
+    });
+
+    let changed = true;
+    let iterations = 0;
+    while (changed && iterations < 100) {
+      changed = false;
+      iterations++;
+      for (let i = 0; i < workingNodes.length; i++) {
+        for (let j = i + 1; j < workingNodes.length; j++) {
+          const nodeA = workingNodes[i];
+          const nodeB = workingNodes[j];
+          if (doRectsOverlap(getRect(nodeA), getRect(nodeB))) {
+            changed = true;
+            const overlapX = Math.min(nodeA.position.x + nodeA.size.width, nodeB.position.x + nodeB.size.width) - Math.max(nodeA.position.x, nodeB.position.x);
+            const overlapY = Math.min(nodeA.position.y + nodeA.size.height, nodeB.position.y + nodeB.size.height) - Math.max(nodeA.position.y, nodeB.position.y);
+            const initialCenterA = initialCenters.get(nodeA.id);
+            const initialCenterB = initialCenters.get(nodeB.id);
+            const initialDx = initialCenterB.x - initialCenterA.x;
+            const initialDy = initialCenterB.y - initialCenterA.y;
+            if (overlapX < overlapY) {
+              const move = (overlapX + CARD_SPACING) / 2;
+              if (initialDx > 0) {
+                nodeA.position.x -= move;
+                nodeB.position.x += move;
+              } else {
+                nodeA.position.x += move;
+                nodeB.position.x -= move;
+              }
+            } else {
+              const move = (overlapY + CARD_SPACING) / 2;
+              if (initialDy > 0) {
+                nodeA.position.y -= move;
+                nodeB.position.y += move;
+              } else {
+                nodeA.position.y += move;
+                nodeB.position.y -= move;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    const finalNodes = [...workingNodes];
+    workingNodes.forEach(adjustedParent => {
+      if (childrenByParent.has(adjustedParent.id)) {
+        const originalParent = originalNodesMap.get(adjustedParent.id);
+        const children = childrenByParent.get(adjustedParent.id);
+        const dx = adjustedParent.position.x - originalParent.position.x;
+        const dy = adjustedParent.position.y - originalParent.position.y;
+        const adjustedChildren = children.map(child => ({
+          ...child,
+          position: { x: child.position.x + dx, y: child.position.y + dy },
+          zIndex: 10,
+        }));
+        finalNodes.push(...adjustedChildren);
+      }
+    });
+
+    return finalNodes;
+  }, [allNodes, currentParentId, isSeeThrough]);
 
   const {
     translateX,
@@ -109,7 +251,6 @@ const FlowEditorScreen = ({ route, navigation }) => {
     moveToNearestCard,
   } = useCanvasTransform(displayNodes);
 
-  const [editingNode, setEditingNode] = useState(null);
   const [colorPickerVisible, setColorPickerVisible] = useState(false);
   const [showAttachmentsOnCanvas, setShowAttachmentsOnCanvas] = useState(false);
 
@@ -126,17 +267,6 @@ const FlowEditorScreen = ({ route, navigation }) => {
     handleRemoveAttachment,
     resolveAttachmentPath,
   } = useAttachmentManager();
-
-  const fontMgr = useFonts({
-    NotoSansJP: [
-      require('../../assets/fonts/Noto_Sans_JP/static/NotoSansJP-Regular.ttf'),
-      require('../../assets/fonts/Noto_Sans_JP/static/NotoSansJP-Bold.ttf'),
-    ],
-    NotoSansSC: [
-      require('../../assets/fonts/Noto_Sans_SC/static/NotoSansSC-Regular.ttf'),
-      require('../../assets/fonts/Noto_Sans_SC/static/NotoSansSC-Bold.ttf'),
-    ],
-  });
 
   const paperclipIconSvg = useSVG(require('../../assets/icons/paperclip.svg'));
 
@@ -193,6 +323,36 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
   const [pendingEvent, setPendingEvent] = useState(null);
 
+  const handleCardTap = useCallback(
+    async nodeId => {
+      if (linkingState.active) {
+        const { startNode } = linkingState;
+        if (!startNode) {
+          setLinkingState({ ...linkingState, startNode: nodeId });
+        } else if (startNode !== nodeId) {
+          await addEdge(startNode, nodeId);
+          setLinkingState({ ...linkingState, startNode: null });
+        }
+      } else {
+        const newSelectedIds = new Set(linkingState.selectedNodeIds);
+        if (newSelectedIds.has(nodeId)) {
+          newSelectedIds.delete(nodeId);
+        } else {
+          newSelectedIds.add(nodeId);
+        }
+        setLinkingState({ ...linkingState, selectedNodeIds: newSelectedIds });
+      }
+    },
+    [linkingState, addEdge, setLinkingState],
+  );
+
+  const handleDeleteEdge = useCallback(
+    async edgeId => {
+      await deleteEdge(edgeId);
+    },
+    [deleteEdge],
+  );
+
   useEffect(() => {
     if (!pendingEvent) return;
 
@@ -202,11 +362,11 @@ const FlowEditorScreen = ({ route, navigation }) => {
       if (type === 'tap') {
         await handleCardTap(nodeId);
       } else if (type === 'doubleTap') {
-        handleDoubleClick(nodeId);
+        goIntoNode(nodeId);
       } else if (type === 'dragEnd') {
-        await handleUpdateNodePosition(nodeId, extra?.newPosition);
+        await updateNodePosition(nodeId, extra?.newPosition);
       } else if (type === 'delete') {
-        await handleDeleteNode(nodeId);
+        await deleteNode(nodeId);
       } else if (type === 'edgeTap') {
         await handleDeleteEdge(nodeId);
       }
@@ -217,36 +377,18 @@ const FlowEditorScreen = ({ route, navigation }) => {
   }, [
     pendingEvent,
     handleCardTap,
-    handleDoubleClick,
-    handleUpdateNodePosition,
-    handleDeleteNode,
+    goIntoNode,
+    updateNodePosition,
+    deleteNode,
     handleDeleteEdge,
   ]);
 
-  const handleNodeLongPress = async hitNode => {
-    try {
-      const attachment = await getAttachmentByNodeId(flowId, hitNode.id);
-      setEditingNode({
-        id: hitNode.id,
-        title: hitNode.data.label,
-        description: hitNode.data.description,
-        size: hitNode.data.size || 'medium',
-        color: hitNode.data.color || '#FFFFFF',
-        attachment: attachment,
-      });
-    } catch (e) {
-      console.error('Failed to fetch attachment', e);
-      // Even if fetching attachment fails, open the editor without it
-      setEditingNode({
-        id: hitNode.id,
-        title: hitNode.data.label,
-        description: hitNode.data.description,
-        size: hitNode.data.size || 'medium',
-        color: hitNode.data.color || '#FFFFFF',
-        attachment: null,
-      });
-    }
-  };
+  const handleNodeLongPress = useCallback(
+    hitNode => {
+      openEditor(hitNode.id);
+    },
+    [openEditor],
+  );
 
   const { composedGesture, pressState } = useGestures({
     translateX,
@@ -259,14 +401,142 @@ const FlowEditorScreen = ({ route, navigation }) => {
     origin_x,
     origin_y,
     displayNodes,
-    allNodes,
-    setAllNodes,
     edges,
     linkingState,
     isSeeThrough,
     setPendingEvent,
     handleNodeLongPress,
+    dispatch,
   });
+
+  const handlePressSectionUp = useCallback(async () => {
+    if (isSeeThrough || linkingState.active) return;
+    if (parentIdHistory.length > 0) {
+      goBack();
+    } else {
+      const screenCenter = {
+        x: (width / 2 - translateX.value) / scale.value,
+        y: (height / 2 - translateY.value) / scale.value,
+      };
+      if (displayNodes.length === 0) return;
+
+      const newParentId = uuidv4();
+      const newParentNode = {
+        id: newParentId,
+        flowId: flowId,
+        parentId: 'root',
+        label: t('newSection'),
+        description: t('grouped'),
+        x: screenCenter.x - 150 / 2,
+        y: screenCenter.y - 85 / 2,
+        width: 150,
+        height: 85,
+      };
+
+      try {
+        await insertNode(newParentNode);
+        const childrenIds = displayNodes.map(n => n.id);
+        await Promise.all(
+          childrenIds.map(id => updateNode(id, { parentId: newParentId })),
+        );
+        await addNode(newParentNode.position, 'root'); // Re-fetch data
+      } catch (error) {
+        console.error('Failed to create section:', error);
+      }
+    }
+  }, [isSeeThrough, linkingState.active, parentIdHistory, goBack, displayNodes, translateX, translateY, scale, flowId, t, addNode]);
+
+  const handleAlign = useCallback(async (alignment) => {
+    const selectedIds = Array.from(linkingState.selectedNodeIds);
+    if (selectedIds.length < 2) return;
+
+    const selectedNodes = allNodes.filter(node => selectedIds.includes(node.id));
+    let newNodes = [...allNodes];
+    const originalPositions = new Map(newNodes.map(n => [n.id, { ...n.position }]));
+
+    switch (alignment) {
+      case 'top': {
+        const minY = Math.min(...selectedNodes.map(n => n.position.y));
+        newNodes = newNodes.map(n => selectedIds.includes(n.id) ? { ...n, position: { ...n.position, y: minY } } : n);
+        break;
+      }
+      case 'middle': {
+        const avgY = selectedNodes.reduce((sum, n) => sum + n.position.y + n.size.height / 2, 0) / selectedNodes.length;
+        newNodes = newNodes.map(n => selectedIds.includes(n.id) ? { ...n, position: { ...n.position, y: avgY - n.size.height / 2 } } : n);
+        break;
+      }
+      case 'bottom': {
+        const maxY = Math.max(...selectedNodes.map(n => n.position.y + n.size.height));
+        newNodes = newNodes.map(n => selectedIds.includes(n.id) ? { ...n, position: { ...n.position, y: maxY - n.size.height } } : n);
+        break;
+      }
+      case 'left': {
+        const minX = Math.min(...selectedNodes.map(n => n.position.x));
+        newNodes = newNodes.map(n => selectedIds.includes(n.id) ? { ...n, position: { ...n.position, x: minX } } : n);
+        break;
+      }
+      case 'center': {
+        const avgX = selectedNodes.reduce((sum, n) => sum + n.position.x + n.size.width / 2, 0) / selectedNodes.length;
+        newNodes = newNodes.map(n => selectedIds.includes(n.id) ? { ...n, position: { ...n.position, x: avgX - n.size.width / 2 } } : n);
+        break;
+      }
+      case 'right': {
+        const maxX = Math.max(...selectedNodes.map(n => n.position.x + n.size.width));
+        newNodes = newNodes.map(n => selectedIds.includes(n.id) ? { ...n, position: { ...n.position, x: maxX - n.size.width } } : n);
+        break;
+      }
+      case 'spread_h': {
+        const sortedNodes = [...selectedNodes].sort((a, b) => a.position.x - b.position.x);
+        const minX = sortedNodes[0].position.x;
+        const maxX = sortedNodes[sortedNodes.length - 1].position.x + sortedNodes[sortedNodes.length - 1].size.width;
+        const totalWidth = sortedNodes.reduce((sum, n) => sum + n.size.width, 0);
+        const spacing = (maxX - minX - totalWidth) / (sortedNodes.length - 1);
+        let currentX = minX;
+        const nodeMap = new Map(newNodes.map(n => [n.id, n]));
+        sortedNodes.forEach(node => {
+          const nodeToUpdate = nodeMap.get(node.id);
+          if (nodeToUpdate) {
+            nodeToUpdate.position.x = currentX;
+            currentX += nodeToUpdate.size.width + spacing;
+          }
+        });
+        newNodes = Array.from(nodeMap.values());
+        break;
+      }
+      case 'spread_v': {
+        const sortedNodes = [...selectedNodes].sort((a, b) => a.position.y - b.position.y);
+        const minY = sortedNodes[0].position.y;
+        const maxY = sortedNodes[sortedNodes.length - 1].position.y + sortedNodes[sortedNodes.length - 1].size.height;
+        const totalHeight = sortedNodes.reduce((sum, n) => sum + n.size.height, 0);
+        const spacing = (maxY - minY - totalHeight) / (sortedNodes.length - 1);
+        let currentY = minY;
+        const nodeMap = new Map(newNodes.map(n => [n.id, n]));
+        sortedNodes.forEach(node => {
+          const nodeToUpdate = nodeMap.get(node.id);
+          if (nodeToUpdate) {
+            nodeToUpdate.position.y = currentY;
+            currentY += nodeToUpdate.size.height + spacing;
+          }
+        });
+        newNodes = Array.from(nodeMap.values());
+        break;
+      }
+      default:
+        break;
+    }
+
+    dispatch({ type: 'SET_NODES', payload: newNodes });
+
+    const updates = newNodes
+      .filter(n => {
+        const originalPos = originalPositions.get(n.id);
+        return selectedIds.includes(n.id) && originalPos && (n.position.x !== originalPos.x || n.position.y !== originalPos.y);
+      })
+      .map(node => updateNodePosition(node.id, node.position));
+
+    await Promise.all(updates);
+  }, [linkingState.selectedNodeIds, allNodes, dispatch, updateNodePosition]);
+
 
   const handleAddNode = () => {
     const position = {
@@ -276,335 +546,11 @@ const FlowEditorScreen = ({ route, navigation }) => {
     addNode(position);
   };
 
-  const handlePressSectionUp = () => {
-    const screenCenter = {
-      x: (width / 2 - translateX.value) / scale.value,
-      y: (height / 2 - translateY.value) / scale.value,
-    };
-    handleSectionUp(screenCenter);
-  };
-
-  const handleAlign = async alignment => {
-    const selectedIds = Array.from(linkingState.selectedNodeIds);
-    if (selectedIds.length === 0) return;
-    if (alignment !== 'spread' && selectedIds.length < 2) return;
-
-    const selectedNodes = allNodes.filter(node =>
-      selectedIds.includes(node.id),
-    );
-
-    const originalNodesMap = new Map(
-      allNodes.map(n => [n.id, JSON.stringify(n.position)]),
-    );
-    let newNodes = [...allNodes];
-
-    switch (alignment) {
-      case 'left': {
-        const minX = Math.min(...selectedNodes.map(n => n.position.x));
-        newNodes = newNodes.map(node =>
-          selectedIds.includes(node.id)
-            ? { ...node, position: { ...node.position, x: minX } }
-            : node,
-        );
-        break;
-      }
-      case 'center-h': {
-        const minX = Math.min(...selectedNodes.map(n => n.position.x));
-        const maxX = Math.max(
-          ...selectedNodes.map(n => n.position.x + n.size.width),
-        );
-        const center = (minX + maxX) / 2;
-        newNodes = newNodes.map(node =>
-          selectedIds.includes(node.id)
-            ? {
-                ...node,
-                position: {
-                  ...node.position,
-                  x: center - node.size.width / 2,
-                },
-              }
-            : node,
-        );
-        break;
-      }
-      case 'right': {
-        const maxX = Math.max(
-          ...selectedNodes.map(n => n.position.x + n.size.width),
-        );
-        newNodes = newNodes.map(node =>
-          selectedIds.includes(node.id)
-            ? {
-                ...node,
-                position: { ...node.position, x: maxX - node.size.width },
-              }
-            : node,
-        );
-        break;
-      }
-      case 'top': {
-        const minY = Math.min(...selectedNodes.map(n => n.position.y));
-        newNodes = newNodes.map(node =>
-          selectedIds.includes(node.id)
-            ? { ...node, position: { ...node.position, y: minY } }
-            : node,
-        );
-        break;
-      }
-      case 'center-v': {
-        const minY = Math.min(...selectedNodes.map(n => n.position.y));
-        const maxY = Math.max(
-          ...selectedNodes.map(n => n.position.y + n.size.height),
-        );
-        const center = (minY + maxY) / 2;
-        newNodes = newNodes.map(node =>
-          selectedIds.includes(node.id)
-            ? {
-                ...node,
-                position: {
-                  ...node.position,
-                  y: center - node.size.height / 2,
-                },
-              }
-            : node,
-        );
-        break;
-      }
-      case 'bottom': {
-        const maxY = Math.max(
-          ...selectedNodes.map(n => n.position.y + n.size.height),
-        );
-        newNodes = newNodes.map(node =>
-          selectedIds.includes(node.id)
-            ? {
-                ...node,
-                position: { ...node.position, y: maxY - node.size.height },
-              }
-            : node,
-        );
-        break;
-      }
-      case 'spread': {
-        let tempAllNodes = JSON.parse(JSON.stringify(allNodes));
-        const MAX_ITERATIONS = 100;
-        let iterations = 0;
-        let moved = false;
-        const selectedIdsSet = new Set(selectedIds);
-
-        // Step 1: Resolve overlaps between selected nodes
-        if (selectedNodes.length > 1) {
-          iterations = 0;
-          do {
-            moved = false;
-            const currentSelectedNodes = tempAllNodes.filter(n =>
-              selectedIdsSet.has(n.id),
-            );
-            for (let i = 0; i < currentSelectedNodes.length; i++) {
-              for (let j = i + 1; j < currentSelectedNodes.length; j++) {
-                const nodeA = currentSelectedNodes[i];
-                const nodeB = currentSelectedNodes[j];
-                const rectA = { ...nodeA.position, ...nodeA.size };
-                const rectB = { ...nodeB.position, ...nodeB.size };
-
-                const overlapX = Math.max(
-                  0,
-                  Math.min(rectA.x + rectA.width, rectB.x + rectB.width) -
-                    Math.max(rectA.x, rectB.x),
-                );
-                const overlapY = Math.max(
-                  0,
-                  Math.min(rectA.y + rectA.height, rectB.y + rectB.height) -
-                    Math.max(rectA.y, rectB.y),
-                );
-
-                if (overlapX > 0 && overlapY > 0) {
-                  moved = true;
-                  const centerA = {
-                    x: rectA.x + rectA.width / 2,
-                    y: rectA.y + rectA.height / 2,
-                  };
-                  const centerB = {
-                    x: rectB.x + rectB.width / 2,
-                    y: rectB.y + rectB.height / 2,
-                  };
-                  let dx = centerB.x - centerA.x;
-                  let dy = centerB.y - centerA.y;
-
-                  if (dx === 0 && dy === 0) {
-                    dx = (Math.random() - 0.5) * 2;
-                    dy = (Math.random() - 0.5) * 2;
-                  }
-
-                  const angle = Math.atan2(dy, dx);
-                  const moveX = (overlapX / 2) * Math.cos(angle);
-                  const moveY = (overlapY / 2) * Math.sin(angle);
-
-                  nodeA.position.x -= moveX;
-                  nodeA.position.y -= moveY;
-                  nodeB.position.x += moveX;
-                  nodeB.position.y += moveY;
-                }
-              }
-            }
-            iterations++;
-          } while (moved && iterations < MAX_ITERATIONS);
-        }
-
-        // Step 2: Resolve overlaps between selected and unselected nodes
-        iterations = 0;
-        do {
-          moved = false;
-          const currentSelectedNodes = tempAllNodes.filter(n =>
-            selectedIdsSet.has(n.id),
-          );
-          const unselectedNodes = tempAllNodes.filter(
-            n => !selectedIdsSet.has(n.id),
-          );
-
-          for (const selectedNode of currentSelectedNodes) {
-            for (const unselectedNode of unselectedNodes) {
-              const rectA = { ...selectedNode.position, ...selectedNode.size };
-              const rectB = {
-                ...unselectedNode.position,
-                ...unselectedNode.size,
-              };
-
-              const overlapX = Math.max(
-                0,
-                Math.min(rectA.x + rectA.width, rectB.x + rectB.width) -
-                  Math.max(rectA.x, rectB.x),
-              );
-              const overlapY = Math.max(
-                0,
-                Math.min(rectA.y + rectA.height, rectB.y + rectB.height) -
-                  Math.max(rectA.y, rectB.y),
-              );
-
-              if (overlapX > 0 && overlapY > 0) {
-                moved = true;
-                const centerA = {
-                  x: rectA.x + rectA.width / 2,
-                  y: rectA.y + rectA.height / 2,
-                };
-                const centerB = {
-                  x: rectB.x + rectB.width / 2,
-                  y: rectB.y + rectB.height / 2,
-                };
-                let dx = centerB.x - centerA.x;
-                let dy = centerB.y - centerA.y;
-
-                if (dx === 0 && dy === 0) {
-                  dx = (Math.random() - 0.5) * 2;
-                  dy = (Math.random() - 0.5) * 2;
-                }
-
-                const angle = Math.atan2(dy, dx);
-                const moveX = overlapX * Math.cos(angle);
-                const moveY = overlapY * Math.sin(angle);
-
-                unselectedNode.position.x += moveX;
-                unselectedNode.position.y += moveY;
-              }
-            }
-          }
-          iterations++;
-        } while (moved && iterations < MAX_ITERATIONS);
-
-        newNodes = tempAllNodes;
-        break;
-      }
-    }
-
-    setAllNodes(newNodes);
-
-    const nodesToUpdate = newNodes.filter(
-      node =>
-        JSON.stringify(node.position) !== originalNodesMap.get(node.id),
-    );
-
-    const updates = nodesToUpdate.map(node =>
-      handleUpdateNodePosition(node.id, node.position),
-    );
-
-    await Promise.all(updates);
-  };
-
-  const handleSaveEditingNode = async nodeToSave => {
-    if (!nodeToSave) return;
-
-    const documentPath = RNFS.DocumentDirectoryPath;
-    const convertToRelativePath = path => {
-      if (path && path.startsWith(documentPath)) {
-        return path.substring(documentPath.length + 1);
-      }
-      return path;
-    };
-
-    try {
-      let finalAttachmentState = nodeToSave.attachment;
-
-      // Handle attachment changes first
-      if (nodeToSave.attachment_deleted && nodeToSave.deleted_attachment_id) {
-        await deleteAttachment(nodeToSave.deleted_attachment_id);
-        if (!nodeToSave.attachment) {
-          finalAttachmentState = null;
-        }
-      }
-
-      if (nodeToSave.attachment && !nodeToSave.attachment.id) {
-        // New attachment, insert it
-        const insertData = {
-          flow_id: flowId,
-          node_id: nodeToSave.id,
-          filename: nodeToSave.attachment.filename,
-          mime_type: nodeToSave.attachment.mime_type,
-          original_uri: nodeToSave.attachment.original_uri,
-          stored_path: convertToRelativePath(
-            nodeToSave.attachment.stored_path,
-          ),
-          preview_title: nodeToSave.attachment.preview_title,
-          preview_description: nodeToSave.attachment.preview_description,
-          preview_image_url: nodeToSave.attachment.preview_image_url,
-          thumbnail_path: convertToRelativePath(
-            nodeToSave.attachment.thumbnail_path,
-          ),
-        };
-        const result = await insertAttachment(insertData);
-        finalAttachmentState = {
-          ...nodeToSave.attachment,
-          id: result.insertId,
-          stored_path: insertData.stored_path,
-          thumbnail_path: insertData.thumbnail_path,
-        };
-      }
-
-      // For existing attachments, ensure paths are relative before saving.
-      if (finalAttachmentState && finalAttachmentState.id) {
-        finalAttachmentState = {
-          ...finalAttachmentState,
-          stored_path: convertToRelativePath(finalAttachmentState.stored_path),
-          thumbnail_path: convertToRelativePath(
-            finalAttachmentState.thumbnail_path,
-          ),
-        };
-      }
-
-      // Then, update the node data
-      const dataToUpdate = {
-        title: nodeToSave.title,
-        description: nodeToSave.description,
-        size: nodeToSave.size,
-        color: nodeToSave.color,
-        attachment: finalAttachmentState,
-      };
-      await handleUpdateNodeData(flowId, nodeToSave.id, dataToUpdate, fontMgr);
-    } catch (err) {
-      console.error('Failed to save node or attachment', err);
-    } finally {
-      setEditingNode(null);
-    }
-  };
-
   const fabDisabled = isSeeThrough || linkingState.active || !!editingNode;
+
+  if (!isDataLoaded || !fontMgr) {
+    return null; // Or a loading indicator
+  }
 
   return (
     <PaperProvider theme={OriginalTheme}>
@@ -616,49 +562,37 @@ const FlowEditorScreen = ({ route, navigation }) => {
           alignModeOpen={alignModeOpen}
           setAlignModeOpen={setAlignModeOpen}
           handleAlign={handleAlign}
-          clearNodeSelection={clearNodeSelection}
-          linkingState={linkingState}
-          toggleLinkingMode={toggleLinkingMode}
           isSeeThrough={isSeeThrough}
           setIsSeeThrough={setIsSeeThrough}
           showAttachmentsOnCanvas={showAttachmentsOnCanvas}
           setShowAttachmentsOnCanvas={setShowAttachmentsOnCanvas}
           handlePressSectionUp={handlePressSectionUp}
-          handleAddNode={handleAddNode}
           resetScale={resetScale}
           moveToNearestCard={moveToNearestCard}
           fabDisabled={fabDisabled}
-          setLinkingState={setLinkingState}
         />
         <CanvasRenderer
           composedGesture={composedGesture}
           skiaTransform={skiaTransform}
           skiaOrigin={skiaOrigin}
           displayNodes={displayNodes}
-          edges={edges}
           fontMgr={fontMgr}
           paperclipIconSvg={paperclipIconSvg}
-          linkingState={linkingState}
           editingNode={editingNode}
           showAttachmentsOnCanvas={showAttachmentsOnCanvas}
           pressState={pressState}
           resolveAttachmentPath={resolveAttachmentPath}
         />
         <EditorModal
-          visible={!!editingNode}
-          node={editingNode}
-          onClose={() => setEditingNode(null)}
-          onSave={handleSaveEditingNode}
-          onNodeChange={setEditingNode}
           setColorPickerVisible={setColorPickerVisible}
           setUrlInputVisible={setUrlInputVisible}
-          handleAttachFile={() => handleAttachFile(editingNode, setEditingNode)}
+          handleAttachFile={() => handleAttachFile(editingNode, (node) => dispatch({ type: 'UPDATE_EDITING_NODE', payload: node }))}
           handleAttachImageFromLibrary={() =>
-            handleAttachImageFromLibrary(editingNode, setEditingNode)
+            handleAttachImageFromLibrary(editingNode, (node) => dispatch({ type: 'UPDATE_EDITING_NODE', payload: node }))
           }
           handleOpenAttachment={() => handleOpenAttachment(editingNode)}
           handleRemoveAttachment={() =>
-            handleRemoveAttachment(editingNode, setEditingNode)
+            handleRemoveAttachment(editingNode, (node) => dispatch({ type: 'UPDATE_EDITING_NODE', payload: node }))
           }
           resolveAttachmentPath={resolveAttachmentPath}
         />
@@ -667,7 +601,10 @@ const FlowEditorScreen = ({ route, navigation }) => {
           onClose={() => setColorPickerVisible(false)}
           node={editingNode}
           onColorChange={color => {
-            setEditingNode(prev => ({ ...prev, color: color }));
+            dispatch({
+              type: 'UPDATE_EDITING_NODE',
+              payload: { ...editingNode, color },
+            });
             setColorPickerVisible(false);
           }}
         />
@@ -679,10 +616,18 @@ const FlowEditorScreen = ({ route, navigation }) => {
           }}
           attachmentUrl={attachmentUrl}
           onUrlChange={handleUrlInputChange}
-          onSave={() => handleSaveUrlAttachment(editingNode, setEditingNode)}
+          onSave={() => handleSaveUrlAttachment(editingNode, (node) => dispatch({ type: 'UPDATE_EDITING_NODE', payload: node }))}
         />
       </SafeAreaView>
     </PaperProvider>
+  );
+};
+
+const FlowEditorScreen = props => {
+  return (
+    <FlowProvider flowId={props.route.params.flowId}>
+      <FlowEditorContent {...props} />
+    </FlowProvider>
   );
 };
 
@@ -690,125 +635,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  flowArea: {
-    flex: 1,
-  },
-  editingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  editingContainer: {
-    width: '90%',
-    padding: 8,
-  },
-  input: {
-    backgroundColor: 'transparent',
-    borderBottomWidth: 1,
-    borderColor: '#ccc',
-    padding: 8,
-    marginBottom: 10,
-  },
-  buttonContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginTop: 10,
-  },
-  sizeSelectionContainer: {
-    marginBottom: 10,
-  },
-  colorButton: {
-    padding: 10,
-    borderRadius: 5,
-    alignItems: 'center',
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#ccc',
-  },
-  colorButtonText: {
-    fontWeight: 'bold',
-  },
-  colorPickerOverlay: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
-  colorPickerContainer: {
-    width: '80%',
-    backgroundColor: 'white',
-    borderRadius: 10,
-    padding: 20,
-  },
-  urlInputContainer: {
-    backgroundColor: 'white',
-    padding: 20,
-    borderRadius: 10,
-    width: '80%',
-    alignSelf: 'center',
-  },
-  urlInputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderColor: '#ccc',
-    marginBottom: 10,
-  },
-  urlInputLabel: {
-    paddingHorizontal: 8,
-    color: '#555',
-  },
-  urlInputField: {
-    flex: 1,
-    backgroundColor: 'transparent',
-    padding: 8,
-  },
-  scaleIndicatorText: {
-    color: 'black',
-    fontSize: 12,
-    backgroundColor: 'rgba(255,255,255,0.8)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 5,
-  },
-  attachmentContainer: {
-    alignItems: 'center',
-  },
-  attachmentText: {
-    marginTop: 8,
-    marginBottom: 10,
-  },
-  attachmentButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    width: '60%',
-  },
-  attachmentSection: {
-    alignItems: 'center',
-    marginVertical: 10,
-  },
-  attachmentTitle: {
-    fontSize: 16,
-    marginBottom: 10,
-  },
-  attachButtonsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    width: '100%',
-    flexWrap: 'wrap',
-  },
-  attachButton: {
-    width: '45%',
-    marginBottom: 10,
-  },
-  thumbnail: {
-    width: 100,
-    height: 100,
-    resizeMode: 'cover',
-    marginBottom: 10,
-    borderRadius: 5,
-  },
+  // ... other styles
 });
 
 export default FlowEditorScreen;

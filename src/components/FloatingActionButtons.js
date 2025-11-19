@@ -1,27 +1,37 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { FAB } from 'react-native-paper';
 import OriginalTheme from '../screens/OriginalTheme';
 import { runOnJS } from 'react-native-reanimated';
+import { useFlowContext } from '../contexts/FlowContext';
 
 const FloatingActionButtons = ({
   alignModeOpen,
   setAlignModeOpen,
   handleAlign,
-  clearNodeSelection,
-  linkingState,
-  toggleLinkingMode,
   isSeeThrough,
   setIsSeeThrough,
   showAttachmentsOnCanvas,
   setShowAttachmentsOnCanvas,
   handlePressSectionUp,
-  handleAddNode,
   resetScale,
   moveToNearestCard,
   fabDisabled,
-  setLinkingState,
 }) => {
+  const { linkingState, setLinkingState, addNode } = useFlowContext();
+
+  const toggleLinkingMode = useCallback(() => {
+    setLinkingState({
+      ...linkingState,
+      active: !linkingState.active,
+      startNode: null,
+    });
+  }, [linkingState, setLinkingState]);
+
+  const clearNodeSelection = useCallback(() => {
+    setLinkingState({ ...linkingState, selectedNodeIds: new Set() });
+  }, [linkingState, setLinkingState]);
+
   return (
     <View
       pointerEvents="box-none"
@@ -83,10 +93,7 @@ const FloatingActionButtons = ({
             style={styles.alignToolButton}
             onPress={() => {
               setAlignModeOpen(false);
-              setLinkingState(prev => ({
-                ...prev,
-                selectedNodeIds: new Set(),
-              }));
+              clearNodeSelection();
             }}
             small
           />
@@ -168,7 +175,7 @@ const FloatingActionButtons = ({
               <FAB
                 icon="plus"
                 style={styles.fab}
-                onPress={handleAddNode}
+                onPress={addNode}
                 disabled={fabDisabled}
                 small
                 visible={true}
@@ -222,3 +229,4 @@ const styles = StyleSheet.create({
 });
 
 export default FloatingActionButtons;
+

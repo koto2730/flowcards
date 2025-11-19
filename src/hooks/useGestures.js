@@ -20,13 +20,12 @@ export const useGestures = ({
   origin_x,
   origin_y,
   displayNodes,
-  allNodes,
-  setAllNodes,
   edges,
   linkingState,
   isSeeThrough,
   setPendingEvent,
   handleNodeLongPress,
+  dispatch,
 }) => {
   const activeNodeId = useSharedValue(null);
   const pressState = useSharedValue({ id: null, state: 'idle' });
@@ -65,10 +64,10 @@ export const useGestures = ({
           y: worldY - dragStartOffset.value.y,
         };
         nodePosition.value = newPosition;
-        const newAllNodes = allNodes.map(n =>
-          n.id === activeNodeId.value ? { ...n, position: newPosition } : n,
-        );
-        runOnJS(setAllNodes)(newAllNodes);
+        runOnJS(dispatch)({
+          type: 'UPDATE_NODE_POSITION_IMMEDIATE',
+          payload: { nodeId: activeNodeId.value, position: newPosition },
+        });
       } else {
         translateX.value = savedTranslateX.value + event.translationX;
         translateY.value = savedTranslateY.value + event.translationY;

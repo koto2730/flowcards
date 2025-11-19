@@ -7,21 +7,22 @@ import {
   CalcSkiaEdgeStroke,
   CalcSkiaInteractionEdgeStroke,
 } from '../utils/flowUtils';
+import { useFlowContext } from '../contexts/FlowContext';
 
 const CanvasRenderer = ({
   composedGesture,
   skiaTransform,
   skiaOrigin,
   displayNodes,
-  edges,
   fontMgr,
   paperclipIconSvg,
-  linkingState,
   editingNode,
   showAttachmentsOnCanvas,
   pressState,
   resolveAttachmentPath,
 }) => {
+  const { edges, linkingState } = useFlowContext();
+
   const renderEdges = () => {
     const displayNodeIds = new Set(displayNodes.map(n => n.id));
     const relevantEdges = edges.filter(
