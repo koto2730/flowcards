@@ -1,5 +1,56 @@
 import { Skia } from '@shopify/react-native-skia';
 
+const CARD_SIZES = {
+  small: { width: 150, height: 60 },
+  medium: { width: 150, height: 85 },
+  large: { width: 180, height: 254 },
+};
+
+export const processNodes = (dbNodes, attachmentsMap) => {
+  return Array.isArray(dbNodes)
+    ? dbNodes.map(n => {
+        let size = 'medium'; // Default
+        if (
+          n.width === CARD_SIZES.small.width &&
+          n.height === CARD_SIZES.small.height
+        ) {
+          size = 'small';
+        } else if (
+          n.width === CARD_SIZES.large.width &&
+          n.height === CARD_SIZES.large.height
+        ) {
+          size = 'large';
+        }
+
+        return {
+          id: n.id,
+          parentId: n.parentId,
+          data: {
+            label: n.label ?? '',
+            description: n.description ?? '',
+            size: size,
+            color: n.color ?? '#FFFFFF',
+          },
+          position: { x: n.x, y: n.y },
+          size: { width: n.width, height: n.height },
+          color: n.color ?? '#FFFFFF',
+          attachment: attachmentsMap[n.id] || null,
+        };
+      })
+    : [];
+};
+
+export const processEdges = (dbEdges) => {
+  return Array.isArray(dbEdges) ? dbEdges.map(edge => ({
+    id: edge.id.toString(),
+    source: edge.source,
+    target: edge.target,
+    sourceHandle: edge.sourceHandle,
+    targetHandle: edge.targetHandle,
+    type: edge.type,
+  })) : [];
+};
+
 export const getRect = node => ({
   x: node.position.x,
   y: node.position.y,
