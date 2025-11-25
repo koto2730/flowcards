@@ -74,11 +74,11 @@ export const doRectsOverlap = (rect1, rect2) => {
 
 export const getHandlePosition = (node, handleName) => {
   'worklet';
-  const { x, y } = node.position;
-  const { width, height } = node.size;
   if (!node || !node.position || !node.size) {
     return { x: 0, y: 0 }; // ← 防御的にデフォルト値
   }
+  const { x, y } = node.position;
+  const { width, height } = node.size;
   switch (handleName) {
     case 'handleTop':
       return { x: x + width / 2, y: y };

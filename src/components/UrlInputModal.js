@@ -19,6 +19,7 @@ const UrlInputModal = ({
         visible={visible}
         onDismiss={onClose}
         contentContainerStyle={styles.urlInputContainer}
+        testID="url-input-modal" // ここを追加
       >
         <View style={styles.urlInputWrapper}>
           <Text style={styles.urlInputLabel}>https://</Text>
