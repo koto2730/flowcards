@@ -1,10 +1,9 @@
 import { useSharedValue, useDerivedValue, withTiming } from 'react-native-reanimated';
-import { Dimensions } from 'react-native';
+import { useWindowDimensions } from 'react-native';
 import { getCenter } from '../utils/flowUtils';
 
-const { width, height } = Dimensions.get('window');
-
 export const useCanvasTransform = (displayNodes) => {
+  const { width, height } = useWindowDimensions();
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
   const scale = useSharedValue(1);
