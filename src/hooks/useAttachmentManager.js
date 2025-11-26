@@ -107,7 +107,7 @@ export const useAttachmentManager = () => {
     });
 
     if (result.didCancel || result.errorCode) {
-      console.log('Image picker cancelled or failed', result.errorMessage);
+
       return;
     }
 

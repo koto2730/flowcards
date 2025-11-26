@@ -150,7 +150,7 @@ const FlowListScreen = ({ navigation }) => {
   // Refetch on focus
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
-      console.log('FlowListScreen: Screen focused, fetching flows.');
+
       fetchFlows(true);
       setSelectionMode(false);
       setSelectedFlows([]);
