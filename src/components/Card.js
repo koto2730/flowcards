@@ -133,7 +133,7 @@ const SkiaCard = ({
     }
 
     const finalPath = path ? `file://${path}` : null;
-    console.log(`[Debug] Video Path for node ${node.id}:`, {
+
       stored_path: attachment.stored_path,
       thumbnail_path: attachment.thumbnail_path,
       resolved_path: path,
