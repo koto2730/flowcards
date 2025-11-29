@@ -115,12 +115,13 @@ const FlowEditorContent = ({ route, navigation }) => {
 
   const [isSeeThrough, setIsSeeThrough] = useState(false);
   const [alignModeOpen, setAlignModeOpen] = useState(false);
-
   const displayNodes = useMemo(() => {
     if (!Array.isArray(allNodes)) {
       return [];
     }
-    const baseNodes = allNodes.filter(node => node.parentId === currentParentId);
+    const baseNodes = allNodes.filter(
+      node => node.parentId === currentParentId,
+    );
 
     if (!isSeeThrough) {
       return baseNodes.map(n => ({ ...n, zIndex: 1 }));
@@ -159,8 +160,16 @@ const FlowEditorContent = ({ route, navigation }) => {
           },
         }));
 
-        const maxChildX = Math.max(...arrangedChildren.map(c => c.position.x - node.position.x + c.size.width));
-        const maxChildY = Math.max(...arrangedChildren.map(c => c.position.y - node.position.y + c.size.height));
+        const maxChildX = Math.max(
+          ...arrangedChildren.map(
+            c => c.position.x - node.position.x + c.size.width,
+          ),
+        );
+        const maxChildY = Math.max(
+          ...arrangedChildren.map(
+            c => c.position.y - node.position.y + c.size.height,
+          ),
+        );
 
         node.size = {
           width: Math.max(node.size.width, maxChildX + PADDING),
@@ -186,8 +195,16 @@ const FlowEditorContent = ({ route, navigation }) => {
           const nodeB = workingNodes[j];
           if (doRectsOverlap(getRect(nodeA), getRect(nodeB))) {
             changed = true;
-            const overlapX = Math.min(nodeA.position.x + nodeA.size.width, nodeB.position.x + nodeB.size.width) - Math.max(nodeA.position.x, nodeB.position.x);
-            const overlapY = Math.min(nodeA.position.y + nodeA.size.height, nodeB.position.y + nodeB.size.height) - Math.max(nodeA.position.y, nodeB.position.y);
+            const overlapX =
+              Math.min(
+                nodeA.position.x + nodeA.size.width,
+                nodeB.position.x + nodeB.size.width,
+              ) - Math.max(nodeA.position.x, nodeB.position.x);
+            const overlapY =
+              Math.min(
+                nodeA.position.y + nodeA.size.height,
+                nodeB.position.y + nodeB.size.height,
+              ) - Math.max(nodeA.position.y, nodeB.position.y);
             const initialCenterA = initialCenters.get(nodeA.id);
             const initialCenterB = initialCenters.get(nodeB.id);
             const initialDx = initialCenterB.x - initialCenterA.x;
@@ -444,107 +461,186 @@ const FlowEditorContent = ({ route, navigation }) => {
         console.error('Failed to create section:', error);
       }
     }
-  }, [isSeeThrough, linkingState.active, parentIdHistory, goBack, displayNodes, translateX, translateY, scale, flowId, t, addNode]);
+  }, [
+    isSeeThrough,
+    linkingState.active,
+    parentIdHistory,
+    goBack,
+    displayNodes,
+    translateX,
+    translateY,
+    scale,
+    flowId,
+    t,
+    addNode,
+  ]);
 
-  const handleAlign = useCallback(async (alignment) => {
-    const selectedIds = Array.from(linkingState.selectedNodeIds);
-    if (selectedIds.length < 2) return;
+  const handleAlign = useCallback(
+    async alignment => {
+      const selectedIds = Array.from(linkingState.selectedNodeIds);
+      if (selectedIds.length < 2) return;
 
-    const selectedNodes = allNodes.filter(node => selectedIds.includes(node.id));
-    let newNodes = [...allNodes];
-    const originalPositions = new Map(newNodes.map(n => [n.id, { ...n.position }]));
+      const selectedNodes = allNodes.filter(node =>
+        selectedIds.includes(node.id),
+      );
+      let newNodes = [...allNodes];
+      const originalPositions = new Map(
+        newNodes.map(n => [n.id, { ...n.position }]),
+      );
 
-    switch (alignment) {
-      case 'top': {
-        const minY = Math.min(...selectedNodes.map(n => n.position.y));
-        newNodes = newNodes.map(n => selectedIds.includes(n.id) ? { ...n, position: { ...n.position, y: minY } } : n);
-        break;
+      switch (alignment) {
+        case 'top': {
+          const minY = Math.min(...selectedNodes.map(n => n.position.y));
+          newNodes = newNodes.map(n =>
+            selectedIds.includes(n.id)
+              ? { ...n, position: { ...n.position, y: minY } }
+              : n,
+          );
+          break;
+        }
+        case 'middle': {
+          const avgY =
+            selectedNodes.reduce(
+              (sum, n) => sum + n.position.y + n.size.height / 2,
+              0,
+            ) / selectedNodes.length;
+          newNodes = newNodes.map(n =>
+            selectedIds.includes(n.id)
+              ? {
+                  ...n,
+                  position: { ...n.position, y: avgY - n.size.height / 2 },
+                }
+              : n,
+          );
+          break;
+        }
+        case 'bottom': {
+          const maxY = Math.max(
+            ...selectedNodes.map(n => n.position.y + n.size.height),
+          );
+          newNodes = newNodes.map(n =>
+            selectedIds.includes(n.id)
+              ? { ...n, position: { ...n.position, y: maxY - n.size.height } }
+              : n,
+          );
+          break;
+        }
+        case 'left': {
+          const minX = Math.min(...selectedNodes.map(n => n.position.x));
+          newNodes = newNodes.map(n =>
+            selectedIds.includes(n.id)
+              ? { ...n, position: { ...n.position, x: minX } }
+              : n,
+          );
+          break;
+        }
+        case 'center': {
+          const avgX =
+            selectedNodes.reduce(
+              (sum, n) => sum + n.position.x + n.size.width / 2,
+              0,
+            ) / selectedNodes.length;
+          newNodes = newNodes.map(n =>
+            selectedIds.includes(n.id)
+              ? {
+                  ...n,
+                  position: { ...n.position, x: avgX - n.size.width / 2 },
+                }
+              : n,
+          );
+          break;
+        }
+        case 'right': {
+          const maxX = Math.max(
+            ...selectedNodes.map(n => n.position.x + n.size.width),
+          );
+          newNodes = newNodes.map(n =>
+            selectedIds.includes(n.id)
+              ? { ...n, position: { ...n.position, x: maxX - n.size.width } }
+              : n,
+          );
+          break;
+        }
+        case 'spread_h': {
+          const sortedNodes = [...selectedNodes].sort(
+            (a, b) => a.position.x - b.position.x,
+          );
+          const minX = sortedNodes[0].position.x;
+          const maxX =
+            sortedNodes[sortedNodes.length - 1].position.x +
+            sortedNodes[sortedNodes.length - 1].size.width;
+          const totalWidth = sortedNodes.reduce(
+            (sum, n) => sum + n.size.width,
+            0,
+          );
+          const spacing = (maxX - minX - totalWidth) / (sortedNodes.length - 1);
+          let currentX = minX;
+          const nodeMap = new Map(newNodes.map(n => [n.id, n]));
+          sortedNodes.forEach(node => {
+            const nodeToUpdate = nodeMap.get(node.id);
+            if (nodeToUpdate) {
+              nodeToUpdate.position.x = currentX;
+              currentX += nodeToUpdate.size.width + spacing;
+            }
+          });
+          newNodes = Array.from(nodeMap.values());
+          break;
+        }
+        case 'spread_v': {
+          const sortedNodes = [...selectedNodes].sort(
+            (a, b) => a.position.y - b.position.y,
+          );
+          const minY = sortedNodes[0].position.y;
+          const maxY =
+            sortedNodes[sortedNodes.length - 1].position.y +
+            sortedNodes[sortedNodes.length - 1].size.height;
+          const totalHeight = sortedNodes.reduce(
+            (sum, n) => sum + n.size.height,
+            0,
+          );
+          const spacing =
+            (maxY - minY - totalHeight) / (sortedNodes.length - 1);
+          let currentY = minY;
+          const nodeMap = new Map(newNodes.map(n => [n.id, n]));
+          sortedNodes.forEach(node => {
+            const nodeToUpdate = nodeMap.get(node.id);
+            if (nodeToUpdate) {
+              nodeToUpdate.position.y = currentY;
+              currentY += nodeToUpdate.size.height + spacing;
+            }
+          });
+          newNodes = Array.from(nodeMap.values());
+          break;
+        }
+        default:
+          break;
       }
-      case 'middle': {
-        const avgY = selectedNodes.reduce((sum, n) => sum + n.position.y + n.size.height / 2, 0) / selectedNodes.length;
-        newNodes = newNodes.map(n => selectedIds.includes(n.id) ? { ...n, position: { ...n.position, y: avgY - n.size.height / 2 } } : n);
-        break;
-      }
-      case 'bottom': {
-        const maxY = Math.max(...selectedNodes.map(n => n.position.y + n.size.height));
-        newNodes = newNodes.map(n => selectedIds.includes(n.id) ? { ...n, position: { ...n.position, y: maxY - n.size.height } } : n);
-        break;
-      }
-      case 'left': {
-        const minX = Math.min(...selectedNodes.map(n => n.position.x));
-        newNodes = newNodes.map(n => selectedIds.includes(n.id) ? { ...n, position: { ...n.position, x: minX } } : n);
-        break;
-      }
-      case 'center': {
-        const avgX = selectedNodes.reduce((sum, n) => sum + n.position.x + n.size.width / 2, 0) / selectedNodes.length;
-        newNodes = newNodes.map(n => selectedIds.includes(n.id) ? { ...n, position: { ...n.position, x: avgX - n.size.width / 2 } } : n);
-        break;
-      }
-      case 'right': {
-        const maxX = Math.max(...selectedNodes.map(n => n.position.x + n.size.width));
-        newNodes = newNodes.map(n => selectedIds.includes(n.id) ? { ...n, position: { ...n.position, x: maxX - n.size.width } } : n);
-        break;
-      }
-      case 'spread_h': {
-        const sortedNodes = [...selectedNodes].sort((a, b) => a.position.x - b.position.x);
-        const minX = sortedNodes[0].position.x;
-        const maxX = sortedNodes[sortedNodes.length - 1].position.x + sortedNodes[sortedNodes.length - 1].size.width;
-        const totalWidth = sortedNodes.reduce((sum, n) => sum + n.size.width, 0);
-        const spacing = (maxX - minX - totalWidth) / (sortedNodes.length - 1);
-        let currentX = minX;
-        const nodeMap = new Map(newNodes.map(n => [n.id, n]));
-        sortedNodes.forEach(node => {
-          const nodeToUpdate = nodeMap.get(node.id);
-          if (nodeToUpdate) {
-            nodeToUpdate.position.x = currentX;
-            currentX += nodeToUpdate.size.width + spacing;
-          }
-        });
-        newNodes = Array.from(nodeMap.values());
-        break;
-      }
-      case 'spread_v': {
-        const sortedNodes = [...selectedNodes].sort((a, b) => a.position.y - b.position.y);
-        const minY = sortedNodes[0].position.y;
-        const maxY = sortedNodes[sortedNodes.length - 1].position.y + sortedNodes[sortedNodes.length - 1].size.height;
-        const totalHeight = sortedNodes.reduce((sum, n) => sum + n.size.height, 0);
-        const spacing = (maxY - minY - totalHeight) / (sortedNodes.length - 1);
-        let currentY = minY;
-        const nodeMap = new Map(newNodes.map(n => [n.id, n]));
-        sortedNodes.forEach(node => {
-          const nodeToUpdate = nodeMap.get(node.id);
-          if (nodeToUpdate) {
-            nodeToUpdate.position.y = currentY;
-            currentY += nodeToUpdate.size.height + spacing;
-          }
-        });
-        newNodes = Array.from(nodeMap.values());
-        break;
-      }
-      default:
-        break;
-    }
 
-    dispatch({ type: 'SET_NODES', payload: newNodes });
+      dispatch({ type: 'SET_NODES', payload: newNodes });
 
-    const updates = newNodes
-      .filter(n => {
-        const originalPos = originalPositions.get(n.id);
-        return selectedIds.includes(n.id) && originalPos && (n.position.x !== originalPos.x || n.position.y !== originalPos.y);
-      })
-      .map(node => updateNodePosition(node.id, node.position));
+      const updates = newNodes
+        .filter(n => {
+          const originalPos = originalPositions.get(n.id);
+          return (
+            selectedIds.includes(n.id) &&
+            originalPos &&
+            (n.position.x !== originalPos.x || n.position.y !== originalPos.y)
+          );
+        })
+        .map(node => updateNodePosition(node.id, node.position));
 
-    await Promise.all(updates);
-  }, [linkingState.selectedNodeIds, allNodes, dispatch, updateNodePosition]);
+      await Promise.all(updates);
+    },
+    [linkingState.selectedNodeIds, allNodes, dispatch, updateNodePosition],
+  );
 
-
-  const handleAddNode = () => {
-    const position = {
-      x: (10 - translateX.value) / scale.value,
-      y: (10 - translateY.value) / scale.value,
-    };
-    addNode(position);
-  };
+  // const handleAddNode = () => {
+  //   const position = {
+  //     x: (10 - translateX.value) / scale.value,
+  //     y: (10 - translateY.value) / scale.value,
+  //   };
+  //   addNode(position);
+  // };
 
   const fabDisabled = isSeeThrough || linkingState.active || !!editingNode;
 
@@ -586,13 +682,21 @@ const FlowEditorContent = ({ route, navigation }) => {
         <EditorModal
           setColorPickerVisible={setColorPickerVisible}
           setUrlInputVisible={setUrlInputVisible}
-          handleAttachFile={() => handleAttachFile(editingNode, (node) => dispatch({ type: 'UPDATE_EDITING_NODE', payload: node }))}
+          handleAttachFile={() =>
+            handleAttachFile(editingNode, node =>
+              dispatch({ type: 'UPDATE_EDITING_NODE', payload: node }),
+            )
+          }
           handleAttachImageFromLibrary={() =>
-            handleAttachImageFromLibrary(editingNode, (node) => dispatch({ type: 'UPDATE_EDITING_NODE', payload: node }))
+            handleAttachImageFromLibrary(editingNode, node =>
+              dispatch({ type: 'UPDATE_EDITING_NODE', payload: node }),
+            )
           }
           handleOpenAttachment={() => handleOpenAttachment(editingNode)}
           handleRemoveAttachment={() =>
-            handleRemoveAttachment(editingNode, (node) => dispatch({ type: 'UPDATE_EDITING_NODE', payload: node }))
+            handleRemoveAttachment(editingNode, node =>
+              dispatch({ type: 'UPDATE_EDITING_NODE', payload: node }),
+            )
           }
           resolveAttachmentPath={resolveAttachmentPath}
         />
@@ -616,7 +720,11 @@ const FlowEditorContent = ({ route, navigation }) => {
           }}
           attachmentUrl={attachmentUrl}
           onUrlChange={handleUrlInputChange}
-          onSave={() => handleSaveUrlAttachment(editingNode, (node) => dispatch({ type: 'UPDATE_EDITING_NODE', payload: node }))}
+          onSave={() =>
+            handleSaveUrlAttachment(editingNode, node =>
+              dispatch({ type: 'UPDATE_EDITING_NODE', payload: node }),
+            )
+          }
         />
       </SafeAreaView>
     </PaperProvider>

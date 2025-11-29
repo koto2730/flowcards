@@ -22,7 +22,11 @@ import {
   updateAttachment,
   updateAttachmentPaths,
 } from '../db';
-import { processNodes, processEdges, getClosestHandle } from '../utils/flowUtils';
+import {
+  processNodes,
+  processEdges,
+  getClosestHandle,
+} from '../utils/flowUtils';
 import { ATTACHMENT_DIR } from '../constants/fileSystem';
 
 const FlowContext = createContext(null);
@@ -95,12 +99,28 @@ export function FlowProvider({ children, flowId }) {
 
   const loadData = useCallback(async () => {
     try {
-      const [nodesData, edgesData] = await Promise.all([
+      const [nodesDataFromDB, edgesData] = await Promise.all([
         getNodes(flowId),
         getEdges(flowId),
       ]);
+      const nodesData = nodesDataFromDB.map(node => {
+        return {
+          id: node.id,
+          parentId: node.parentId,
+          label: node.label,
+          description: node.description,
+          color: node.color,
+          contents: node.contents,
+          x: node.x,
+          y: node.y,
+          width: node.width,
+          height: node.height,
+        };
+      });
 
-      const attachmentPromises = nodesData.map(n => getAttachmentByNodeId(flowId, n.id));
+      const attachmentPromises = nodesData.map(n =>
+        getAttachmentByNodeId(flowId, n.id),
+      );
       const attachments = await Promise.all(attachmentPromises);
 
       const attachmentsMap = attachments.reduce((acc, att) => {
@@ -123,41 +143,35 @@ export function FlowProvider({ children, flowId }) {
     loadData();
   }, [loadData]);
 
-  const addNode = useCallback(
-    async (position) => {
-      const newNode = {
-        id: uuidv4(),
-        flowId,
-        parentId: state.currentParentId,
-        label: 'New Card',
-        description: '',
-        x: position.x,
-        y: position.y,
-        width: 150,
-        height: 85,
-        color: '#FFFFFF',
-      };
-      try {
-        await insertNode(newNode);
-        await loadData();
-      } catch (error) {
-        console.error('Failed to add node:', error);
-      }
-    },
-    [flowId, loadData, state.currentParentId],
-  );
+  const addNode = useCallback(async () => {
+    const newNode = {
+      id: uuidv4(),
+      flowId,
+      parentId: state.currentParentId,
+      label: 'New Card',
+      description: '',
+      x: 10,
+      y: 10,
+      width: 150,
+      height: 85,
+      color: '#FFFFFF',
+    };
+    try {
+      await insertNode(newNode);
+      await loadData();
+    } catch (error) {
+      console.error('Failed to add node:', error);
+    }
+  }, [flowId, loadData, state.currentParentId]);
 
-  const updateNodePosition = useCallback(
-    async (nodeId, position) => {
-      try {
-        dispatch({ type: 'UPDATE_NODE_POSITION', payload: { nodeId, position } });
-        await updateNode(nodeId, { x: position.x, y: position.y });
-      } catch (error) {
-        console.error('Failed to update node position:', error);
-      }
-    },
-    [],
-  );
+  const updateNodePosition = useCallback(async (nodeId, position) => {
+    try {
+      dispatch({ type: 'UPDATE_NODE_POSITION', payload: { nodeId, position } });
+      await updateNode(nodeId, { x: position.x, y: position.y });
+    } catch (error) {
+      console.error('Failed to update node position:', error);
+    }
+  }, []);
 
   const updateNodeData = useCallback(
     async (nodeId, data) => {
@@ -209,7 +223,7 @@ export function FlowProvider({ children, flowId }) {
   );
 
   const deleteEdge = useCallback(
-    async (edgeId) => {
+    async edgeId => {
       try {
         await dbDeleteEdge(edgeId);
         await loadData();
@@ -253,6 +267,7 @@ export function FlowProvider({ children, flowId }) {
   const openEditor = useCallback(
     async nodeId => {
       const nodeToEdit = state.allNodes.find(n => n.id === nodeId);
+      console.log(nodeToEdit);
       if (!nodeToEdit) return;
 
       try {
@@ -261,8 +276,9 @@ export function FlowProvider({ children, flowId }) {
           type: 'OPEN_EDITOR',
           payload: {
             ...nodeToEdit,
-            title: nodeToEdit.data.label,
-            description: nodeToEdit.data.description,
+            label: nodeToEdit.label,
+            description: nodeToEdit.description,
+            color: nodeToEdit.color,
             attachment: attachment,
           },
         });
@@ -272,8 +288,9 @@ export function FlowProvider({ children, flowId }) {
           type: 'OPEN_EDITOR',
           payload: {
             ...nodeToEdit,
-            title: nodeToEdit.data.label,
-            description: nodeToEdit.data.description,
+            label: nodeToEdit.label,
+            description: nodeToEdit.description,
+            color: nodeToEdit.color,
             attachment: null,
           },
         });
@@ -292,11 +309,11 @@ export function FlowProvider({ children, flowId }) {
 
     try {
       const nodeUpdateData = {
-        label: nodeToSave.data.label,
-        description: nodeToSave.data.description,
-        color: nodeToSave.data.color,
-        width: nodeToSave.size.width,
-        height: nodeToSave.size.height,
+        label: nodeToSave.label,
+        description: nodeToSave.description,
+        color: nodeToSave.color,
+        width: nodeToSave.width,
+        height: nodeToSave.height,
       };
       await updateNode(nodeToSave.id, nodeUpdateData);
 
@@ -304,11 +321,14 @@ export function FlowProvider({ children, flowId }) {
         await deleteAttachment(nodeToSave.deleted_attachment_id);
       }
       if (nodeToSave.attachment && !nodeToSave.attachment.id) {
-        await insertAttachment({ ...nodeToSave.attachment, flow_id: flowId, node_id: nodeToSave.id });
+        await insertAttachment({
+          ...nodeToSave.attachment,
+          flow_id: flowId,
+          node_id: nodeToSave.id,
+        });
       } else if (nodeToSave.attachment) {
         await updateAttachment(nodeToSave.attachment.id, nodeToSave.attachment);
       }
-
     } catch (err) {
       console.error('Failed to save node or attachment', err);
     } finally {

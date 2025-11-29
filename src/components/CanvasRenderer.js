@@ -55,7 +55,6 @@ const CanvasRenderer = ({
       );
     });
   };
-
   return (
     <GestureDetector gesture={composedGesture}>
       <View style={styles.flowArea}>

@@ -87,12 +87,13 @@ const SkiaCard = ({
   crossPath.lineTo(deleteButtonX - 5, deleteButtonY + 5);
 
   const borderPath = Skia.Path.Make();
+  console.log('check:', node.x, node.y, node.width, node.height);
   borderPath.addRect(
     Skia.XYWHRect(
-      node.position.x,
-      node.position.y,
-      node.size.width,
-      node.size.height,
+      !node.position.x ? 10 : Number(node.x),
+      !node.position.y ? 10 : Number(node.y),
+      !node.size.width ? 150 : Number(node.width),
+      !node.size.height ? 85 : Number(node.height),
     ),
   );
 
@@ -133,12 +134,6 @@ const SkiaCard = ({
     }
 
     const finalPath = path ? `file://${path}` : null;
-
-      stored_path: attachment.stored_path,
-      thumbnail_path: attachment.thumbnail_path,
-      resolved_path: path,
-      final_path_for_useVideo: finalPath,
-    });
 
     return finalPath;
   }, [node.attachment, showAttachment, resolveAttachmentPath]);

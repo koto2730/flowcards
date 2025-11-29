@@ -150,7 +150,6 @@ const FlowListScreen = ({ navigation }) => {
   // Refetch on focus
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
-
       fetchFlows(true);
       setSelectionMode(false);
       setSelectedFlows([]);
@@ -321,8 +320,9 @@ const FlowListScreen = ({ navigation }) => {
                 updatedAttachment.stored_path = `attachments/${filename}`; // New relative path
                 if (updatedAttachment.thumbnail_path) {
                   // Also update thumbnail path if it exists and is the same
-                  const thumbFilename =
-                    attachment.thumbnail_path.split('/').pop();
+                  const thumbFilename = attachment.thumbnail_path
+                    .split('/')
+                    .pop();
                   updatedAttachment.thumbnail_path = `attachments/${thumbFilename}`;
                 }
                 updatedAttachments.set(node.id, updatedAttachment);
