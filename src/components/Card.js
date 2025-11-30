@@ -87,7 +87,6 @@ const SkiaCard = ({
   crossPath.lineTo(deleteButtonX - 5, deleteButtonY + 5);
 
   const borderPath = Skia.Path.Make();
-  console.log('check:', node.x, node.y, node.width, node.height);
   borderPath.addRect(
     Skia.XYWHRect(
       !node.position.x ? 10 : Number(node.x),
@@ -97,7 +96,7 @@ const SkiaCard = ({
     ),
   );
 
-  const cardSize = node.data.size || 'medium';
+  const cardSize = node.size || 'medium';
   const layoutWidth = (node.size.width || CARD_MIN_WIDTH) - marginRow * 2;
 
   const imagePath = useMemo(() => {
@@ -196,11 +195,11 @@ const SkiaCard = ({
       paragraphStyle,
       fontMgr,
     ).pushStyle(titleStyle);
-    builder.addText(node.data.label ?? '');
+    builder.addText(node.label ?? '');
     builder.pop();
 
-    if (node.data.description && cardSize !== 'small') {
-      let descriptionText = node.data.description;
+    if (node.description && cardSize !== 'small') {
+      let descriptionText = node.description;
       if (cardSize === 'medium' && descriptionText.length > 8) {
         descriptionText = descriptionText.substring(0, 8) + '...';
       }
@@ -210,8 +209,8 @@ ${descriptionText}`);
       builder.pop();
     }
 
-    if (node.data.type === 'url' && node.data.url) {
-      let urlText = node.data.url;
+    if (node.type === 'url' && node.url) {
+      let urlText = node.url;
       if (urlText.length > 40) {
         urlText = urlText.substring(0, 40) + '...';
       }
@@ -226,10 +225,10 @@ ${urlText}`);
     return paragraph;
   }, [
     fontMgr,
-    node.data.label,
-    node.data.description,
-    node.data.type,
-    node.data.url,
+    node.label,
+    node.description,
+    node.type,
+    node.url,
     layoutWidth,
     titleColor,
     descriptionColor,

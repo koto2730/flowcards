@@ -58,24 +58,24 @@ const EditorModal = ({
       <Card style={styles.editingContainer}>
         <Card.Content>
           <TextInput
-            value={editingNode.data.label}
-            onChangeText={text => handleNodeChange('title', text)}
+            value={editingNode.label}
+            onChangeText={text => handleNodeChange('label', text)}
             style={styles.input}
             placeholder={t('title')}
             autoFocus
             maxLength={16}
           />
           <TextInput
-            value={editingNode.data.description}
+            value={editingNode.description}
             onChangeText={text => handleNodeChange('description', text)}
             style={styles.input}
             placeholder={t('description')}
             multiline
             maxLength={100}
-            editable={editingNode.data.size !== 'small'}
+            editable={editingNode.size !== 'small'}
           />
           <SegmentedButtons
-            value={editingNode.data.size}
+            value={editingNode.size}
             onValueChange={value => {
               Keyboard.dismiss();
               handleNodeChange('size', value);

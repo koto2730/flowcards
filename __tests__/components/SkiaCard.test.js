@@ -8,11 +8,9 @@ describe('SkiaCard', () => {
     id: '1',
     position: { x: 0, y: 0 },
     size: { width: 200, height: 100 },
-    data: {
-      label: 'Test Card',
-      description: 'This is a test description.',
-      type: 'text',
-    },
+    label: 'Test Card',
+    description: 'This is a test description.',
+    type: 'text',
     color: 'lightblue',
   };
 
@@ -27,7 +25,7 @@ describe('SkiaCard', () => {
     pressState: { value: { id: '', state: 'none' } },
     isSeeThroughParent: false,
     showAttachment: false,
-    resolveAttachmentPath: jest.fn((path) => path),
+    resolveAttachmentPath: jest.fn(path => path),
   };
 
   it('renders without crashing with default props', () => {
@@ -62,7 +60,7 @@ describe('SkiaCard', () => {
       },
     };
     const { toJSON } = render(
-      <SkiaCard {...defaultProps} node={nodeWithImage} showAttachment={true} />
+      <SkiaCard {...defaultProps} node={nodeWithImage} showAttachment={true} />,
     );
     expect(toJSON()).toBeDefined();
     // useImageフックが呼ばれていることを確認するには、モックのJest関数をassertする必要があるが、
@@ -80,7 +78,7 @@ describe('SkiaCard', () => {
       },
     };
     const { toJSON } = render(
-      <SkiaCard {...defaultProps} node={nodeWithVideo} showAttachment={true} />
+      <SkiaCard {...defaultProps} node={nodeWithVideo} showAttachment={true} />,
     );
     expect(toJSON()).toBeDefined();
   });
@@ -95,9 +93,8 @@ describe('SkiaCard', () => {
       },
     };
     const { toJSON } = render(
-      <SkiaCard {...defaultProps} node={nodeWithUrl} showAttachment={true} />
+      <SkiaCard {...defaultProps} node={nodeWithUrl} showAttachment={true} />,
     );
     expect(toJSON()).toBeDefined();
   });
-
 });

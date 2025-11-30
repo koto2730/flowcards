@@ -28,6 +28,7 @@ import {
   getClosestHandle,
 } from '../utils/flowUtils';
 import { ATTACHMENT_DIR } from '../constants/fileSystem';
+import { cardSizeLabelToValue, cardValueToSizeLabel } from '../utils/flowUtils';
 
 const FlowContext = createContext(null);
 
@@ -82,7 +83,13 @@ function flowReducer(state, action) {
     case 'CLOSE_EDITOR':
       return { ...state, editingNode: null };
     case 'UPDATE_EDITING_NODE':
-      return { ...state, editingNode: action.payload };
+      const size = cardSizeLabelToValue(action.payload.size);
+      const editingNode = {
+        ...action.payload,
+        width: size.width,
+        height: size.height,
+      };
+      return { ...state, editingNode: editingNode };
     case 'SET_PARENT':
       return {
         ...state,
@@ -104,6 +111,7 @@ export function FlowProvider({ children, flowId }) {
         getEdges(flowId),
       ]);
       const nodesData = nodesDataFromDB.map(node => {
+        const sizeValue = { width: node.width, height: node.heigt };
         return {
           id: node.id,
           parentId: node.parentId,
@@ -115,6 +123,7 @@ export function FlowProvider({ children, flowId }) {
           y: node.y,
           width: node.width,
           height: node.height,
+          size: cardValueToSizeLabel(sizeValue),
         };
       });
 

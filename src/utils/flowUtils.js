@@ -6,6 +6,23 @@ const CARD_SIZES = {
   large: { width: 180, height: 254 },
 };
 
+export const cardSizeLabelToValue = size => {
+  if (size in CARD_SIZES) return CARD_SIZES[size];
+  return CARD_SIZES.medium;
+};
+
+export const cardValueToSizeLabel = value => {
+  if (value.width < 180) {
+    if (value.height < 85) {
+      return 'small';
+    } else {
+      return 'medium';
+    }
+  } else {
+    return 'large';
+  }
+};
+
 export const processNodes = (dbNodes, attachmentsMap) => {
   return Array.isArray(dbNodes)
     ? dbNodes.map(n => {
@@ -25,12 +42,10 @@ export const processNodes = (dbNodes, attachmentsMap) => {
         return {
           id: n.id,
           parentId: n.parentId,
-          data: {
-            label: n.label ?? '',
-            description: n.description ?? '',
-            size: size,
-            color: n.color ?? '#FFFFFF',
-          },
+          label: n.label ?? '',
+          description: n.description ?? '',
+          size: size,
+          color: n.color ?? '#FFFFFF',
           position: { x: n.x, y: n.y },
           size: { width: n.width, height: n.height },
           color: n.color ?? '#FFFFFF',
@@ -40,15 +55,17 @@ export const processNodes = (dbNodes, attachmentsMap) => {
     : [];
 };
 
-export const processEdges = (dbEdges) => {
-  return Array.isArray(dbEdges) ? dbEdges.map(edge => ({
-    id: edge.id.toString(),
-    source: edge.source,
-    target: edge.target,
-    sourceHandle: edge.sourceHandle,
-    targetHandle: edge.targetHandle,
-    type: edge.type,
-  })) : [];
+export const processEdges = dbEdges => {
+  return Array.isArray(dbEdges)
+    ? dbEdges.map(edge => ({
+        id: edge.id.toString(),
+        source: edge.source,
+        target: edge.target,
+        sourceHandle: edge.sourceHandle,
+        targetHandle: edge.targetHandle,
+        type: edge.type,
+      }))
+    : [];
 };
 
 export const getRect = node => ({
@@ -169,7 +186,11 @@ export const CalcSkiaEdgeStroke = ({ edge, sourceNode, targetNode }) => {
   return skPath;
 };
 
-export const CalcSkiaInteractionEdgeStroke = ({ edge, sourceNode, targetNode }) => {
+export const CalcSkiaInteractionEdgeStroke = ({
+  edge,
+  sourceNode,
+  targetNode,
+}) => {
   const sourcePos = getHandlePosition(sourceNode, edge.sourceHandle);
   const targetPos = getHandlePosition(targetNode, edge.targetHandle);
   const skPath = Skia.Path.Make();
@@ -201,37 +222,37 @@ export const isPointInDeleteButton = (node, x, y) => {
 };
 
 export const getClosestHandle = (sourceNode, targetNode) => {
-    const sourceCenter = getCenter(sourceNode);
-    const targetCenter = getCenter(targetNode);
+  const sourceCenter = getCenter(sourceNode);
+  const targetCenter = getCenter(targetNode);
 
-    const dx = targetCenter.x - sourceCenter.x;
-    const dy = targetCenter.y - sourceCenter.y;
+  const dx = targetCenter.x - sourceCenter.x;
+  const dy = targetCenter.y - sourceCenter.y;
 
-    let candidateHandles = [];
-    if (Math.abs(dy) > Math.abs(dx)) {
-      // 主に垂直方向
-      candidateHandles = ['handleTop', 'handleBottom'];
-    } else {
-      // 主に水平方向
-      candidateHandles = ['handleLeft', 'handleRight'];
+  let candidateHandles = [];
+  if (Math.abs(dy) > Math.abs(dx)) {
+    // 主に垂直方向
+    candidateHandles = ['handleTop', 'handleBottom'];
+  } else {
+    // 主に水平方向
+    candidateHandles = ['handleLeft', 'handleRight'];
+  }
+
+  let minDistance = Infinity;
+  let closestHandle = null;
+
+  candidateHandles.forEach(handleName => {
+    const handlePos = getHandlePosition(sourceNode, handleName);
+    const distance = Math.sqrt(
+      Math.pow(handlePos.x - targetCenter.x, 2) +
+        Math.pow(handlePos.y - targetCenter.y, 2),
+    );
+    if (distance < minDistance) {
+      minDistance = distance;
+      closestHandle = handleName;
     }
-
-    let minDistance = Infinity;
-    let closestHandle = null;
-
-    candidateHandles.forEach(handleName => {
-      const handlePos = getHandlePosition(sourceNode, handleName);
-      const distance = Math.sqrt(
-        Math.pow(handlePos.x - targetCenter.x, 2) +
-          Math.pow(handlePos.y - targetCenter.y, 2),
-      );
-      if (distance < minDistance) {
-        minDistance = distance;
-        closestHandle = handleName;
-      }
-    });
-    return closestHandle;
-  };
+  });
+  return closestHandle;
+};
 
 export const convertFlowToJSONCanvas = (flow, nodes, edges, attachments) => {
   const jsonCanvasNodes = nodes.map(node => {
