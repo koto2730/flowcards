@@ -11,6 +11,7 @@ import {
   Image,
   Platform,
   Keyboard,
+  Vibration,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -469,15 +470,15 @@ const FlowEditorScreen = ({ route, navigation }) => {
       if (hitNode) {
         pressState.value = { id: hitNode.id, state: 'pressing' };
       }
-      // Start a timer to confirm the long press
-      setTimeout(() => {
-        if (pressState.value.id) {
-          pressState.value = {
-            id: pressState.value.id,
-            state: 'confirmed',
-          };
-        }
-      }, 800);
+    })
+    .onStart(() => {
+      if (pressState.value.id) {
+        pressState.value = {
+          id: pressState.value.id,
+          state: 'confirmed',
+        };
+        runOnJS(Vibration.vibrate)(50);
+      }
     })
     .onEnd(event => {
       if (pressState.value.state === 'confirmed') {
@@ -528,9 +529,9 @@ const FlowEditorScreen = ({ route, navigation }) => {
   }));
 
   const composedGesture = Gesture.Exclusive(
+    longPressGesture,
     Gesture.Simultaneous(panGesture, pinchGesture),
     doubleTapGesture,
-    longPressGesture,
     tapGesture,
   );
 
@@ -783,8 +784,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
     setAllNodes(newNodes);
 
     const nodesToUpdate = newNodes.filter(
-      node =>
-        JSON.stringify(node.position) !== originalNodesMap.get(node.id),
+      node => JSON.stringify(node.position) !== originalNodesMap.get(node.id),
     );
 
     const updates = nodesToUpdate.map(node =>
