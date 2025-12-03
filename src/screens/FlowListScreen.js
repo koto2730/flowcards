@@ -619,8 +619,7 @@ const FlowListScreen = ({ navigation }) => {
         }}
         onLongPress={() => {
           if (!selectionMode) {
-            setSelectionMode(true);
-            setSelectedFlows([item.id]);
+            handleEditExistingFlow(item);
           }
         }}
       >
