@@ -318,15 +318,22 @@ const FlowEditorScreen = ({ route, navigation }) => {
   const pinchGesture = Gesture.Pinch()
     .onStart(event => {
       savedScale.value = scale.value;
-      context.value = { focalX: event.focalX, focalY: event.focalY };
-      origin_x.value = (event.focalX - translateX.value) / scale.value;
-      origin_y.value = (event.focalY - translateY.value) / scale.value;
+      savedTranslateX.value = translateX.value;
+      savedTranslateY.value = translateY.value;
     })
     .onUpdate(event => {
       const newScale = savedScale.value * event.scale;
       if (newScale < 0.1) {
         return;
       }
+
+      const worldFocalX =
+        (event.focalX - savedTranslateX.value) / savedScale.value;
+      const worldFocalY =
+        (event.focalY - savedTranslateY.value) / savedScale.value;
+
+      translateX.value = event.focalX - worldFocalX * newScale;
+      translateY.value = event.focalY - worldFocalY * newScale;
       scale.value = newScale;
     })
     .onEnd(() => {
