@@ -180,12 +180,12 @@ const SkiaCard = ({
 
     const textShadow = {
       blurRadius: 4,
-      color: Skia.Color('black'),
+      color: Skia.Color('white'),
       offset: { x: 0, y: 0 },
     };
 
     const titleStyle = {
-      color: Skia.Color('white'),
+      color: Skia.Color('black'),
       fontFamilies: ['NotoSansJP', 'NotoSansSC'],
       fontSize: 16,
       fontStyle: { weight: FontWeight.Bold },
@@ -193,14 +193,14 @@ const SkiaCard = ({
     };
 
     const descriptionStyle = {
-      color: Skia.Color('white'),
+      color: Skia.Color('black'),
       fontFamilies: ['NotoSansJP', 'NotoSansSC'],
       fontSize: 14,
       shadows: [textShadow],
     };
 
     const urlStyle = {
-      color: Skia.Color('#ADD8E6'), // Light blue for visibility on dark/image
+      color: Skia.Color('#00008B'), // Dark blue for visibility
       fontFamilies: ['NotoSansJP', 'NotoSansSC'],
       fontSize: 12,
       shadows: [textShadow],
