@@ -11,6 +11,7 @@ import {
   Image,
   Platform,
   Keyboard,
+  Vibration,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -318,15 +319,22 @@ const FlowEditorScreen = ({ route, navigation }) => {
   const pinchGesture = Gesture.Pinch()
     .onStart(event => {
       savedScale.value = scale.value;
-      context.value = { focalX: event.focalX, focalY: event.focalY };
-      origin_x.value = (event.focalX - translateX.value) / scale.value;
-      origin_y.value = (event.focalY - translateY.value) / scale.value;
+      savedTranslateX.value = translateX.value;
+      savedTranslateY.value = translateY.value;
     })
     .onUpdate(event => {
       const newScale = savedScale.value * event.scale;
       if (newScale < 0.1) {
         return;
       }
+
+      const worldFocalX =
+        (event.focalX - savedTranslateX.value) / savedScale.value;
+      const worldFocalY =
+        (event.focalY - savedTranslateY.value) / savedScale.value;
+
+      translateX.value = event.focalX - worldFocalX * newScale;
+      translateY.value = event.focalY - worldFocalY * newScale;
       scale.value = newScale;
     })
     .onEnd(() => {
@@ -462,15 +470,15 @@ const FlowEditorScreen = ({ route, navigation }) => {
       if (hitNode) {
         pressState.value = { id: hitNode.id, state: 'pressing' };
       }
-      // Start a timer to confirm the long press
-      setTimeout(() => {
-        if (pressState.value.id) {
-          pressState.value = {
-            id: pressState.value.id,
-            state: 'confirmed',
-          };
-        }
-      }, 800);
+    })
+    .onStart(() => {
+      if (pressState.value.id) {
+        pressState.value = {
+          id: pressState.value.id,
+          state: 'confirmed',
+        };
+        runOnJS(Vibration.vibrate)(50);
+      }
     })
     .onEnd(event => {
       if (pressState.value.state === 'confirmed') {
@@ -521,9 +529,9 @@ const FlowEditorScreen = ({ route, navigation }) => {
   }));
 
   const composedGesture = Gesture.Exclusive(
+    longPressGesture,
     Gesture.Simultaneous(panGesture, pinchGesture),
     doubleTapGesture,
-    longPressGesture,
     tapGesture,
   );
 
@@ -776,8 +784,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
     setAllNodes(newNodes);
 
     const nodesToUpdate = newNodes.filter(
-      node =>
-        JSON.stringify(node.position) !== originalNodesMap.get(node.id),
+      node => JSON.stringify(node.position) !== originalNodesMap.get(node.id),
     );
 
     const updates = nodesToUpdate.map(node =>

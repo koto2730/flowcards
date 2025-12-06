@@ -178,23 +178,32 @@ const SkiaCard = ({
       textAlign: TextAlign.Left,
     };
 
+    const textShadow = {
+      blurRadius: 4,
+      color: Skia.Color('white'),
+      offset: { x: 0, y: 0 },
+    };
+
     const titleStyle = {
-      color: titleColor,
+      color: Skia.Color('black'),
       fontFamilies: ['NotoSansJP', 'NotoSansSC'],
-      ontSize: 16,
+      fontSize: 16,
       fontStyle: { weight: FontWeight.Bold },
+      shadows: [textShadow],
     };
 
     const descriptionStyle = {
-      color: descriptionColor,
+      color: Skia.Color('black'),
       fontFamilies: ['NotoSansJP', 'NotoSansSC'],
       fontSize: 14,
+      shadows: [textShadow],
     };
 
     const urlStyle = {
-      color: Skia.Color('blue'),
+      color: Skia.Color('#00008B'), // Dark blue for visibility
       fontFamilies: ['NotoSansJP', 'NotoSansSC'],
       fontSize: 12,
+      shadows: [textShadow],
     };
 
     const builder = Skia.ParagraphBuilder.Make(
@@ -246,10 +255,10 @@ ${urlText}`);
   const renderAttachment = () => {
     if (!showAttachment || !node.attachment) return null;
 
-    const ICON_SIZE = 48;
-    const PADDING = 5;
-    const x = node.position.x + node.size.width - ICON_SIZE - PADDING;
-    const y = node.position.y + node.size.height - ICON_SIZE - PADDING;
+    const imgWidth = node.size.width;
+    const imgHeight = imgWidth; // Square aspect ratio, or adjust as needed
+    const x = node.position.x;
+    const y = node.position.y + (node.size.height + marginColumn) - imgHeight;
 
     if (videoPath && currentFrame) {
       return (
@@ -257,8 +266,8 @@ ${urlText}`);
           image={currentFrame}
           x={x}
           y={y}
-          width={ICON_SIZE}
-          height={ICON_SIZE}
+          width={imgWidth}
+          height={imgHeight}
           fit="cover"
         />
       );
@@ -270,8 +279,8 @@ ${urlText}`);
           image={attachmentImage}
           x={x}
           y={y}
-          width={ICON_SIZE}
-          height={ICON_SIZE}
+          width={imgWidth}
+          height={imgHeight}
           fit="cover"
         />
       );
@@ -284,12 +293,29 @@ ${urlText}`);
       iconSvg = fileIconSvg;
     }
 
+    // For SVGs, we might want to keep them smaller or center them, 
+    // but the request was about thumbnails (images). 
+    // Let's apply similar logic but maybe centered if it's just an icon?
+    // The user specifically mentioned "thumbnail", which implies images.
+    // If it's an icon, maybe we shouldn't stretch it to full width?
+    // Let's keep icons smaller but positioned at bottom right as before, 
+    // OR scale them up. User said "thumbnail... 150 width". 
+    // Assuming this applies to image thumbnails primarily.
+    // If it is an SVG icon (file/link), maybe keeping it as an icon is safer,
+    // but let's try to follow the positioning logic for consistency.
+    
+    // Using original icon logic for non-image attachments to avoid huge ugly icons
+    const ICON_SIZE = 48;
+    const PADDING = 5;
+    const iconX = node.position.x + node.size.width - ICON_SIZE - PADDING;
+    const iconY = node.position.y + node.size.height - ICON_SIZE - PADDING;
+
     if (iconSvg) {
       return (
         <ImageSVG
           svg={iconSvg}
-          x={x}
-          y={y}
+          x={iconX}
+          y={iconY}
           width={ICON_SIZE}
           height={ICON_SIZE}
           fit="cover"
@@ -300,8 +326,8 @@ ${urlText}`);
     return (
       <ImageSVG
         svg={paperclipIconSvg}
-        x={x}
-        y={y}
+        x={iconX}
+        y={iconY}
         width={ICON_SIZE}
         height={ICON_SIZE}
         fit="cover"
@@ -310,44 +336,57 @@ ${urlText}`);
     );
   };
 
+  const clipRect = useMemo(
+    () =>
+      Skia.XYWHRect(
+        node.position.x,
+        node.position.y,
+        node.size.width,
+        node.size.height + marginColumn,
+      ),
+    [node.position.x, node.position.y, node.size.width, node.size.height],
+  );
+
   return (
     <Group opacity={isEditing ? 0.5 : 1.0}>
-      <Rect
-        x={node.position.x}
-        y={node.position.y}
-        width={node.size.width}
-        height={node.size.height + marginColumn}
-        color={cardColor}
-      />
-      {isSeeThroughParent ? (
-        <Path
-          path={borderPath}
-          style="stroke"
-          strokeWidth={borderWidth}
-          color={borderColor}
-        >
-          <DashPathEffect intervals={[4, 4]} />
-        </Path>
-      ) : (
+      <Group clip={clipRect}>
         <Rect
           x={node.position.x}
           y={node.position.y}
           width={node.size.width}
           height={node.size.height + marginColumn}
-          strokeWidth={borderWidth}
-          style="stroke"
-          color={borderColor}
+          color={cardColor}
         />
-      )}
-      {renderAttachment()}
-      {cardParagraph && (
-        <Paragraph
-          paragraph={cardParagraph}
-          x={node.position.x + marginRow}
-          y={titleY}
-          width={layoutWidth}
-        />
-      )}
+        {renderAttachment()}
+        {cardParagraph && (
+          <Paragraph
+            paragraph={cardParagraph}
+            x={node.position.x + marginRow}
+            y={titleY}
+            width={layoutWidth}
+          />
+        )}
+        {isSeeThroughParent ? (
+          <Path
+            path={borderPath}
+            style="stroke"
+            strokeWidth={borderWidth}
+            color={borderColor}
+          >
+            <DashPathEffect intervals={[4, 4]} />
+          </Path>
+        ) : (
+          <Rect
+            x={node.position.x}
+            y={node.position.y}
+            width={node.size.width}
+            height={node.size.height + marginColumn}
+            strokeWidth={borderWidth}
+            style="stroke"
+            color={borderColor}
+          />
+        )}
+      </Group>
       <Group>
         <Circle
           cx={deleteButtonX}
