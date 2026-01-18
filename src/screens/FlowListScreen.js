@@ -853,6 +853,7 @@ const FlowListScreen = ({ navigation }) => {
           onEndReached={loadMoreFlows}
           onEndReachedThreshold={0.5}
           ListFooterComponent={renderFooter}
+          contentInsetAdjustmentBehavior="never"
         />
       </View>
     </PaperProvider>
