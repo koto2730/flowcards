@@ -388,6 +388,31 @@ export const useFlowData = (flowId, isSeeThrough, alignModeOpen, t) => {
     }
   };
 
+  const addBulkNodes = async (labels, startPosition) => {
+    const VERTICAL_SPACING = CARD_SIZES.medium.height + 20;
+    try {
+      const insertPromises = labels.map((label, index) => {
+        const newNodeData = {
+          id: uuidv4(),
+          flowId: flowId,
+          parentId: currentParentId,
+          label: label,
+          description: '',
+          x: startPosition.x,
+          y: startPosition.y + index * VERTICAL_SPACING,
+          width: CARD_SIZES.medium.width,
+          height: CARD_SIZES.medium.height,
+          color: '#FFFFFF',
+        };
+        return insertNode(newNodeData);
+      });
+      await Promise.all(insertPromises);
+      fetchData();
+    } catch (error) {
+      console.error('Failed to add bulk nodes:', error);
+    }
+  };
+
   const handleDeleteNode = async nodeId => {
     const nodesToRemove = new Set();
     const findChildren = id => {
@@ -592,6 +617,7 @@ export const useFlowData = (flowId, isSeeThrough, alignModeOpen, t) => {
     handleUpdateNodeData,
     handleUpdateNodePosition,
     addNode,
+    addBulkNodes,
     handleDeleteNode,
     handleDoubleClick,
     handleSectionUp,

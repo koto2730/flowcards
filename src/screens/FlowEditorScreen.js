@@ -132,6 +132,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
     handleUpdateNodeData,
     handleUpdateNodePosition,
     addNode,
+    addBulkNodes,
     handleDeleteNode,
     handleDoubleClick,
     handleSectionUp,
@@ -148,6 +149,8 @@ const FlowEditorScreen = ({ route, navigation }) => {
   const [urlInputVisible, setUrlInputVisible] = useState(false);
   const [attachmentUrl, setAttachmentUrl] = useState('');
   const [showAttachmentsOnCanvas, setShowAttachmentsOnCanvas] = useState(false);
+  const [bulkAddModalVisible, setBulkAddModalVisible] = useState(false);
+  const [bulkAddText, setBulkAddText] = useState('');
 
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
@@ -225,6 +228,14 @@ const FlowEditorScreen = ({ route, navigation }) => {
       title: flowName || 'Flow',
       headerStyle: { backgroundColor: OriginalTheme.colors.primary },
       headerTintColor: '#fff',
+      headerRight: () => (
+        <TouchableOpacity
+          onPress={() => setBulkAddModalVisible(true)}
+          style={{ marginRight: 16 }}
+        >
+          <Icon source="plus-box-multiple" size={24} color="#fff" />
+        </TouchableOpacity>
+      ),
     });
   }, [navigation, flowName]);
 
@@ -541,6 +552,36 @@ const FlowEditorScreen = ({ route, navigation }) => {
       y: (10 - translateY.value) / scale.value,
     };
     addNode(position);
+  };
+
+  const parseBulkText = text => {
+    const lines = text.split('\n');
+    const labels = lines
+      .map(line => {
+        // Remove bullet characters: ・, -, *, •, ●, ○, ◯, numbers with dots/parentheses
+        return line
+          .replace(/^[\s]*[・\-\*•●○◯]\s*/, '')
+          .replace(/^[\s]*\d+[.)]\s*/, '')
+          .trim();
+      })
+      .filter(label => label.length > 0);
+    return labels;
+  };
+
+  const handleBulkAdd = () => {
+    const labels = parseBulkText(bulkAddText);
+    if (labels.length === 0) {
+      setBulkAddModalVisible(false);
+      setBulkAddText('');
+      return;
+    }
+    const startPosition = {
+      x: (10 - translateX.value) / scale.value,
+      y: (10 - translateY.value) / scale.value,
+    };
+    addBulkNodes(labels, startPosition);
+    setBulkAddModalVisible(false);
+    setBulkAddText('');
   };
 
   const handlePressSectionUp = () => {
@@ -1612,6 +1653,38 @@ const FlowEditorScreen = ({ route, navigation }) => {
               </Button>
             </View>
           </Modal>
+          <Modal
+            visible={bulkAddModalVisible}
+            onDismiss={() => {
+              setBulkAddModalVisible(false);
+              setBulkAddText('');
+            }}
+            contentContainerStyle={styles.bulkAddContainer}
+          >
+            <Text style={styles.bulkAddTitle}>{t('bulkAddCards')}</Text>
+            <TextInput
+              value={bulkAddText}
+              onChangeText={setBulkAddText}
+              style={styles.bulkAddTextInput}
+              placeholder={t('bulkAddPlaceholder')}
+              placeholderTextColor="#999"
+              multiline
+              numberOfLines={10}
+              autoFocus
+            />
+            <View style={styles.buttonContainer}>
+              <Button onPress={handleBulkAdd}>{t('create')}</Button>
+              <Button
+                onPress={() => {
+                  setBulkAddModalVisible(false);
+                  setBulkAddText('');
+                }}
+                textColor={OriginalTheme.colors.secondary}
+              >
+                {t('cancel')}
+              </Button>
+            </View>
+          </Modal>
         </Portal>
       </SafeAreaView>
     </PaperProvider>
@@ -1777,6 +1850,28 @@ const styles = StyleSheet.create({
     resizeMode: 'cover',
     marginBottom: 10,
     borderRadius: 5,
+  },
+  bulkAddContainer: {
+    backgroundColor: 'white',
+    padding: 20,
+    borderRadius: 10,
+    width: '90%',
+    alignSelf: 'center',
+  },
+  bulkAddTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 15,
+    textAlign: 'center',
+  },
+  bulkAddTextInput: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 5,
+    padding: 10,
+    minHeight: 200,
+    textAlignVertical: 'top',
+    marginBottom: 10,
   },
 });
 
