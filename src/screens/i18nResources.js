@@ -73,6 +73,9 @@ export const resources = {
       exportOptionZip: 'Save as File (.zip)',
       rename: 'Rename',
       select: 'Select',
+      bulkAddCards: 'Bulk Add Cards',
+      bulkAddPlaceholder: 'Enter one item per line.\nExample:\n・Item 1\n・Item 2\n- Item 3',
+      create: 'Create',
     },
   },
   ja: {
@@ -147,6 +150,9 @@ export const resources = {
       exportOptionZip: 'ファイルとして保存 (.zip)',
       rename: 'リネーム',
       select: '選択',
+      bulkAddCards: 'カードを一括追加',
+      bulkAddPlaceholder: '1行に1項目を入力してください。\n例:\n・項目1\n・項目2\n- 項目3',
+      create: '作成',
     },
   },
   zh: {
@@ -220,6 +226,9 @@ export const resources = {
       exportOptionZip: '保存为文件 (.zip)',
       rename: '改名',
       select: '选择',
+      bulkAddCards: '批量添加卡片',
+      bulkAddPlaceholder: '每行输入一个项目。\n例:\n・项目1\n・项目2\n- 项目3',
+      create: '创建',
     },
   },
 };
