@@ -76,6 +76,8 @@ export const resources = {
       bulkAddCards: 'Bulk Add Cards',
       bulkAddPlaceholder: 'Enter one item per line.\nExample:\n・Item 1\n・Item 2\n- Item 3',
       create: 'Create',
+      editCard: 'Edit Card',
+      photo: 'Photo',
     },
   },
   ja: {
@@ -153,6 +155,8 @@ export const resources = {
       bulkAddCards: 'カードを一括追加',
       bulkAddPlaceholder: '1行に1項目を入力してください。\n例:\n・項目1\n・項目2\n- 項目3',
       create: '作成',
+      editCard: 'カード編集',
+      photo: '写真',
     },
   },
   zh: {
@@ -229,6 +233,8 @@ export const resources = {
       bulkAddCards: '批量添加卡片',
       bulkAddPlaceholder: '每行输入一个项目。\n例:\n・项目1\n・项目2\n- 项目3',
       create: '创建',
+      editCard: '编辑卡片',
+      photo: '照片',
     },
   },
 };

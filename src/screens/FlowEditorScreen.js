@@ -1413,6 +1413,21 @@ const FlowEditorScreen = ({ route, navigation }) => {
             style={styles.editingOverlay}
           >
             <Card style={styles.editingContainer}>
+              <View style={styles.editingHeader}>
+                <Text style={styles.editingHeaderTitle}>{t('editCard')}</Text>
+                <View style={styles.editingHeaderButtons}>
+                  <Button
+                    mode="outlined"
+                    onPress={() => setEditingNode(null)}
+                    textColor={'#555'}
+                  >
+                    {t('cancel')}
+                  </Button>
+                  <Button mode="contained" onPress={handleSaveEditingNode}>
+                    {t('save')}
+                  </Button>
+                </View>
+              </View>
               <Card.Content>
                 <TextInput
                   value={editingNode.title}
@@ -1570,16 +1585,6 @@ const FlowEditorScreen = ({ route, navigation }) => {
                   </View>
                 )}
               </Card.Content>
-              <Card.Actions style={styles.buttonContainer}>
-                <Button onPress={handleSaveEditingNode}>{t('save')}</Button>
-                <Button
-                  mode="outlined"
-                  onPress={() => setEditingNode(null)}
-                  textColor={'#555'}
-                >
-                  {t('cancel')}
-                </Button>
-              </Card.Actions>
             </Card>
           </KeyboardAvoidingView>
         )}
@@ -1661,7 +1666,23 @@ const FlowEditorScreen = ({ route, navigation }) => {
             }}
             contentContainerStyle={styles.bulkAddContainer}
           >
-            <Text style={styles.bulkAddTitle}>{t('bulkAddCards')}</Text>
+            <View style={styles.bulkAddHeader}>
+              <Text style={styles.bulkAddTitle}>{t('bulkAddCards')}</Text>
+              <View style={styles.bulkAddHeaderButtons}>
+                <Button
+                  onPress={() => {
+                    setBulkAddModalVisible(false);
+                    setBulkAddText('');
+                  }}
+                  textColor={OriginalTheme.colors.secondary}
+                >
+                  {t('cancel')}
+                </Button>
+                <Button mode="contained" onPress={handleBulkAdd}>
+                  {t('create')}
+                </Button>
+              </View>
+            </View>
             <TextInput
               value={bulkAddText}
               onChangeText={setBulkAddText}
@@ -1672,18 +1693,6 @@ const FlowEditorScreen = ({ route, navigation }) => {
               numberOfLines={10}
               autoFocus
             />
-            <View style={styles.buttonContainer}>
-              <Button onPress={handleBulkAdd}>{t('create')}</Button>
-              <Button
-                onPress={() => {
-                  setBulkAddModalVisible(false);
-                  setBulkAddText('');
-                }}
-                textColor={OriginalTheme.colors.secondary}
-              >
-                {t('cancel')}
-              </Button>
-            </View>
           </Modal>
         </Portal>
       </SafeAreaView>
@@ -1744,6 +1753,24 @@ const styles = StyleSheet.create({
   editingContainer: {
     width: '90%',
     padding: 8,
+  },
+  editingHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  editingHeaderTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  editingHeaderButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   input: {
     backgroundColor: 'transparent',
@@ -1858,11 +1885,19 @@ const styles = StyleSheet.create({
     width: '90%',
     alignSelf: 'center',
   },
+  bulkAddHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
   bulkAddTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    marginBottom: 15,
-    textAlign: 'center',
+  },
+  bulkAddHeaderButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   bulkAddTextInput: {
     borderWidth: 1,
@@ -1871,7 +1906,6 @@ const styles = StyleSheet.create({
     padding: 10,
     minHeight: 200,
     textAlignVertical: 'top',
-    marginBottom: 10,
   },
 });
 
