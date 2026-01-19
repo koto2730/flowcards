@@ -854,6 +854,8 @@ const FlowListScreen = ({ navigation }) => {
           onEndReachedThreshold={0.5}
           ListFooterComponent={renderFooter}
           contentInsetAdjustmentBehavior="never"
+          automaticallyAdjustContentInsets={false}
+          scrollIndicatorInsets={{ top: 0 }}
         />
       </View>
     </PaperProvider>
