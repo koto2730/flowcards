@@ -187,7 +187,7 @@ const FlowListScreen = ({ navigation }) => {
       setEditingFlowId(null);
       setNewFlowName('');
       fetchFlows(true);
-      navigation.navigate('FlowEditor', { flowId: newFlowId });
+      navigation.navigate('FlowEditor', { flowId: newFlowId, flowName: newFlowName });
     } catch (error) {
       console.error('Failed to add flow:', error);
     }
