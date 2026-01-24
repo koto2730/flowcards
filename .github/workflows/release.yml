@@ -40,21 +40,21 @@ jobs:
       - name: Decode Keystore
         run: echo -n "${{ secrets.ANDROID_SIGNING_KEY }}" | base64 --decode > "${{ github.workspace }}/release.keystore"
 
-      - name: Build and Sign Android App Bundle
-        run: cd android && ./gradlew bundleRelease -PversionCode=$((${{ env.BUILD_NUMBER_OFFSET }} + ${{ github.run_number }}))
+      - name: Build and Sign Android App Bundle and APK
+        run: cd android && ./gradlew bundleRelease assembleRelease -PversionCode=$((${{ env.BUILD_NUMBER_OFFSET }} + ${{ github.run_number }}))
         env:
           MYAPP_UPLOAD_STORE_FILE: ${{ github.workspace }}/release.keystore
           MYAPP_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           MYAPP_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_ALIAS }}
           MYAPP_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
-      - name: Create or Update Draft Release and Upload Android Asset
+      - name: Create or Update Draft Release and Upload APK
         id: create_release
         uses: softprops/action-gh-release@v1
         with:
           draft: true
           tag_name: build-${{ github.run_number }}
-          files: android/app/build/outputs/bundle/release/app-release.aab
+          files: android/app/build/outputs/apk/release/app-release.apk
 
       - name: Upload to Google Play
         uses: r0adkll/upload-google-play@v1
