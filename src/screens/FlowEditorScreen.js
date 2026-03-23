@@ -42,7 +42,7 @@ import { pick, types, isCancel } from '@react-native-documents/picker';
 import RNFS from 'react-native-fs';
 import Video from 'react-native-video';
 import { Linking } from 'react-native';
-import { launchImageLibrary } from 'react-native-image-picker';
+import { launchImageLibrary, launchCamera } from 'react-native-image-picker';
 import {
   Divider,
   FAB,
@@ -961,6 +961,25 @@ const FlowEditorScreen = ({ route, navigation }) => {
     }
   };
 
+  const handleAttachImageFromCamera = async () => {
+    Keyboard.dismiss();
+    const result = await launchCamera({
+      mediaType: 'photo',
+      quality: 0.8,
+      saveToPhotos: false,
+    });
+
+    if (result.didCancel || result.errorCode) {
+      console.log('Camera cancelled or failed', result.errorMessage);
+      return;
+    }
+
+    if (result.assets && result.assets.length > 0) {
+      const asset = result.assets[0];
+      await processAttachment(asset.uri, asset.fileName, asset.type);
+    }
+  };
+
   const handleUrlInputChange = text => {
     let processedText = text;
     if (processedText.startsWith('https://')) {
@@ -1569,6 +1588,14 @@ const FlowEditorScreen = ({ route, navigation }) => {
                         style={styles.attachButton}
                       >
                         {t('photo')}
+                      </Button>
+                      <Button
+                        icon="camera"
+                        mode="outlined"
+                        onPress={handleAttachImageFromCamera}
+                        style={styles.attachButton}
+                      >
+                        {t('camera')}
                       </Button>
                       <Button
                         icon="web"
