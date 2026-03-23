@@ -79,6 +79,7 @@ export const resources = {
       editCard: 'Edit Card',
       photo: 'Photo',
       camera: 'Camera',
+      addCard: 'Add Card',
     },
   },
   ja: {
@@ -159,6 +160,7 @@ export const resources = {
       editCard: 'カード編集',
       photo: '写真',
       camera: 'カメラ',
+      addCard: 'カードを追加',
     },
   },
   zh: {
@@ -238,6 +240,7 @@ export const resources = {
       editCard: '编辑卡片',
       photo: '照片',
       camera: '拍照',
+      addCard: '添加卡片',
     },
   },
 };

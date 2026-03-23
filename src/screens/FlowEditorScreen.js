@@ -36,6 +36,7 @@ import {
   getFlows,
   getAttachmentByNodeId,
   insertAttachment,
+  insertNode,
   deleteAttachment,
 } from '../db';
 import { pick, types, isCancel } from '@react-native-documents/picker';
@@ -71,6 +72,7 @@ import ColorPalette from 'react-native-color-palette';
 import { useTranslation } from 'react-i18next';
 import { getLinkPreview } from 'link-preview-js';
 import FileViewer from 'react-native-file-viewer';
+import { v4 as uuidv4 } from 'uuid';
 
 configureReanimatedLogger({
   level: ReanimatedLogLevel.warn,
@@ -129,6 +131,8 @@ const FlowEditorScreen = ({ route, navigation }) => {
     setAllNodes,
     edges,
     displayNodes,
+    fetchData,
+    currentParentId,
     handleUpdateNodeData,
     handleUpdateNodePosition,
     addNode,
@@ -151,6 +155,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
   const [showAttachmentsOnCanvas, setShowAttachmentsOnCanvas] = useState(false);
   const [bulkAddModalVisible, setBulkAddModalVisible] = useState(false);
   const [bulkAddText, setBulkAddText] = useState('');
+  const [fabMenuOpen, setFabMenuOpen] = useState(false);
 
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
@@ -963,20 +968,109 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
   const handleAttachImageFromCamera = async () => {
     Keyboard.dismiss();
+    const hasPermission = await requestCameraPermission();
+    if (!hasPermission) {
+      Alert.alert(t('error'), 'Camera permission denied');
+      return;
+    }
     const result = await launchCamera({
       mediaType: 'photo',
       quality: 0.8,
       saveToPhotos: false,
     });
 
-    if (result.didCancel || result.errorCode) {
-      console.log('Camera cancelled or failed', result.errorMessage);
+    if (result.didCancel) return;
+    if (result.errorCode) {
+      Alert.alert(t('error'), result.errorMessage || result.errorCode);
       return;
     }
 
     if (result.assets && result.assets.length > 0) {
       const asset = result.assets[0];
       await processAttachment(asset.uri, asset.fileName, asset.type);
+    }
+  };
+
+  const requestCameraPermission = async () => {
+    if (Platform.OS !== 'android') return true;
+    const granted = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.CAMERA,
+    );
+    return granted === PermissionsAndroid.RESULTS.GRANTED;
+  };
+
+  const handleAddNodeFromCamera = async () => {
+    setFabMenuOpen(false);
+    const hasPermission = await requestCameraPermission();
+    if (!hasPermission) {
+      Alert.alert(t('error'), 'Camera permission denied');
+      return;
+    }
+    const result = await launchCamera({
+      mediaType: 'photo',
+      quality: 0.8,
+      saveToPhotos: false,
+    });
+
+    if (result.didCancel) return;
+    if (result.errorCode) {
+      Alert.alert(t('error'), result.errorMessage || result.errorCode);
+      return;
+    }
+
+    if (result.assets && result.assets.length > 0) {
+      try {
+        const asset = result.assets[0];
+        const fileName = asset.fileName || `photo_${Date.now()}.jpg`;
+        const nodeId = uuidv4();
+        const position = {
+          x: (10 - translateX.value) / scale.value,
+          y: (10 - translateY.value) / scale.value,
+        };
+
+        await insertNode({
+          id: nodeId,
+          flowId,
+          parentId: currentParentId,
+          label: t('newCard'),
+          description: '',
+          x: position.x,
+          y: position.y,
+          width: 150,
+          height: 85,
+          color: '#FFFFFF',
+        });
+
+        const dirExists = await RNFS.exists(ATTACHMENT_DIR);
+        if (!dirExists) {
+          await RNFS.mkdir(ATTACHMENT_DIR);
+        }
+
+        const uniqueFileName = `${Date.now()}-${fileName}`;
+        const absoluteStoredPath = `${ATTACHMENT_DIR}/${uniqueFileName}`;
+        const relativeStoredPath = `${ATTACHMENT_DIR_NAME}/${uniqueFileName}`;
+
+        if (Platform.OS === 'ios') {
+          const sourcePath = decodeURIComponent(asset.uri.replace(/^file:\/\//, ''));
+          await RNFS.copyFile(sourcePath, absoluteStoredPath);
+        } else {
+          await RNFS.copyFile(asset.uri, absoluteStoredPath);
+        }
+
+        await insertAttachment({
+          node_id: nodeId,
+          flow_id: flowId,
+          filename: fileName,
+          mime_type: asset.type,
+          original_uri: asset.uri,
+          stored_path: relativeStoredPath,
+          thumbnail_path: relativeStoredPath,
+        });
+
+        fetchData();
+      } catch (e) {
+        Alert.alert(t('error'), e.message || String(e));
+      }
     }
   };
 
@@ -1314,6 +1408,30 @@ const FlowEditorScreen = ({ route, navigation }) => {
                 small
               />
             </View>
+          ) : fabMenuOpen ? (
+            <View style={[styles.alignToolsContainer, { width: 'auto' }]}>
+              <FAB
+                icon="arrow-left"
+                style={styles.alignToolButton}
+                onPress={() => setFabMenuOpen(false)}
+                small
+                visible={true}
+              />
+              <FAB
+                icon="camera"
+                style={styles.alignToolButton}
+                onPress={handleAddNodeFromCamera}
+                small
+                visible={true}
+              />
+              <FAB
+                icon="card-plus-outline"
+                style={styles.alignToolButton}
+                onPress={() => { setFabMenuOpen(false); handleAddNode(); }}
+                small
+                visible={true}
+              />
+            </View>
           ) : (
             <>
               {/* Global Group (Bottom Left) */}
@@ -1368,7 +1486,6 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
                 {/* Edit Group (Bottom Right) */}
                 <View style={styles.fabGroup}>
-                  {/* 3: Section Up */}
                   <FAB
                     icon="arrow-up-bold"
                     style={styles.fab}
@@ -1377,7 +1494,6 @@ const FlowEditorScreen = ({ route, navigation }) => {
                     small
                     visible={true}
                   />
-                  {/* 2: Link Line Mode */}
                   <FAB
                     icon="link-variant"
                     style={styles.fab}
@@ -1387,11 +1503,10 @@ const FlowEditorScreen = ({ route, navigation }) => {
                     small
                     visible={true}
                   />
-                  {/* 1: Add Card */}
                   <FAB
                     icon="plus"
                     style={styles.fab}
-                    onPress={handleAddNode}
+                    onPress={() => setFabMenuOpen(true)}
                     disabled={fabDisabled}
                     small
                     visible={true}
