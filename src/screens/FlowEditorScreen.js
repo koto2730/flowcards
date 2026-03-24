@@ -37,6 +37,7 @@ import {
   getAttachmentByNodeId,
   insertAttachment,
   insertNode,
+  deleteNode,
   deleteAttachment,
 } from '../db';
 import { pick, types, isCancel } from '@react-native-documents/picker';
@@ -1021,28 +1022,16 @@ const FlowEditorScreen = ({ route, navigation }) => {
     }
 
     if (result.assets && result.assets.length > 0) {
+      const asset = result.assets[0];
+      const fileName = asset.fileName || `photo_${Date.now()}.jpg`;
+      const mimeType = asset.type || 'image/jpeg';
+      const nodeId = uuidv4();
+      const position = {
+        x: (10 - translateX.value) / scale.value,
+        y: (10 - translateY.value) / scale.value,
+      };
+      let nodeInserted = false;
       try {
-        const asset = result.assets[0];
-        const fileName = asset.fileName || `photo_${Date.now()}.jpg`;
-        const nodeId = uuidv4();
-        const position = {
-          x: (10 - translateX.value) / scale.value,
-          y: (10 - translateY.value) / scale.value,
-        };
-
-        await insertNode({
-          id: nodeId,
-          flowId,
-          parentId: currentParentId,
-          label: t('newCard'),
-          description: '',
-          x: position.x,
-          y: position.y,
-          width: 150,
-          height: 85,
-          color: '#FFFFFF',
-        });
-
         const dirExists = await RNFS.exists(ATTACHMENT_DIR);
         if (!dirExists) {
           await RNFS.mkdir(ATTACHMENT_DIR);
@@ -1059,11 +1048,25 @@ const FlowEditorScreen = ({ route, navigation }) => {
           await RNFS.copyFile(asset.uri, absoluteStoredPath);
         }
 
+        await insertNode({
+          id: nodeId,
+          flowId,
+          parentId: currentParentId,
+          label: t('newCard'),
+          description: '',
+          x: position.x,
+          y: position.y,
+          width: 150,
+          height: 85,
+          color: '#FFFFFF',
+        });
+        nodeInserted = true;
+
         await insertAttachment({
           node_id: nodeId,
           flow_id: flowId,
           filename: fileName,
-          mime_type: asset.type,
+          mime_type: mimeType,
           original_uri: asset.uri,
           stored_path: relativeStoredPath,
           thumbnail_path: relativeStoredPath,
@@ -1071,6 +1074,9 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
         fetchData();
       } catch (e) {
+        if (nodeInserted) {
+          await deleteNode(nodeId).catch(() => {});
+        }
         Alert.alert(t('error'), e.message || String(e));
       }
     }
