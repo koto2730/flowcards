@@ -80,6 +80,7 @@ export const resources = {
       photo: 'Photo',
       camera: 'Camera',
       addCard: 'Add Card',
+      qrScanHint: 'Point the camera at a QR code',
     },
   },
   ja: {
@@ -161,6 +162,7 @@ export const resources = {
       photo: '写真',
       camera: 'カメラ',
       addCard: 'カードを追加',
+      qrScanHint: 'QRコードにカメラを向けてください',
     },
   },
   zh: {
@@ -241,6 +243,7 @@ export const resources = {
       photo: '照片',
       camera: '拍照',
       addCard: '添加卡片',
+      qrScanHint: '将相机对准二维码',
     },
   },
 };
