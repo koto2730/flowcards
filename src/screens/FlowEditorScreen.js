@@ -75,6 +75,8 @@ import { getLinkPreview } from 'link-preview-js';
 import FileViewer from 'react-native-file-viewer';
 import { v4 as uuidv4 } from 'uuid';
 import QRScannerModal from '../components/QRScannerModal';
+import AudioRecorderModal from '../components/AudioRecorderModal';
+import AudioAttachmentPlayer from '../components/AudioAttachmentPlayer';
 
 configureReanimatedLogger({
   level: ReanimatedLogLevel.warn,
@@ -100,6 +102,8 @@ const mimeTypeLookup = {
   mp3: 'audio/mpeg',
   wav: 'audio/wav',
   ogg: 'audio/ogg',
+  m4a: 'audio/mp4',
+  aac: 'audio/aac',
   mp4: 'video/mp4',
   webm: 'video/webm',
   pdf: 'application/pdf',
@@ -159,6 +163,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
   const [bulkAddText, setBulkAddText] = useState('');
   const [fabMenuOpen, setFabMenuOpen] = useState(false);
   const [qrScannerVisible, setQrScannerVisible] = useState(false);
+  const [audioRecorderVisible, setAudioRecorderVisible] = useState(false);
 
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
@@ -877,14 +882,16 @@ const FlowEditorScreen = ({ route, navigation }) => {
   };
 
   const processAttachment = async (originalUri, fileName, fileType) => {
-    if (fileType === 'application/octet-stream' && fileName) {
-      const extension = fileName.split('.').pop().toLowerCase();
-      if (extension) {
-        const inferredType = mimeTypeLookup[extension];
-        if (inferredType) {
-          fileType = inferredType;
-        }
-      }
+    if (!fileType || fileType === 'application/octet-stream') {
+      const extension = fileName?.split('.').pop()?.toLowerCase();
+      const inferredType = extension ? mimeTypeLookup[extension] : null;
+      fileType = inferredType || 'application/octet-stream';
+    }
+    if (!fileName) {
+      const extFromMime = Object.keys(mimeTypeLookup).find(
+        ext => mimeTypeLookup[ext] === fileType,
+      );
+      fileName = `file_${Date.now()}.${extFromMime || 'bin'}`;
     }
 
     const uniqueFileName = `${Date.now()}-${fileName}`;
@@ -973,7 +980,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
     Keyboard.dismiss();
     const hasPermission = await requestCameraPermission();
     if (!hasPermission) {
-      Alert.alert(t('error'), 'Camera permission denied');
+      Alert.alert(t('error'), t('cameraPermissionDenied'));
       return;
     }
     const result = await launchCamera({
@@ -1002,11 +1009,93 @@ const FlowEditorScreen = ({ route, navigation }) => {
     return granted === PermissionsAndroid.RESULTS.GRANTED;
   };
 
+  const handleAddNodeFromVideo = async () => {
+    setFabMenuOpen(false);
+    const hasPermission = await requestCameraPermission();
+    if (!hasPermission) {
+      Alert.alert(t('error'), t('cameraPermissionDenied'));
+      return;
+    }
+    const result = await launchCamera({
+      mediaType: 'video',
+      videoQuality: 'high',
+      saveToPhotos: false,
+    });
+
+    if (result.didCancel) return;
+    if (result.errorCode) {
+      Alert.alert(t('error'), result.errorMessage || result.errorCode);
+      return;
+    }
+
+    if (result.assets && result.assets.length > 0) {
+      const asset = result.assets[0];
+      const extFromUri = (asset.uri || '').split('?')[0].split('.').pop()?.toLowerCase();
+      const ext = extFromUri && extFromUri.length <= 4 ? extFromUri : (Platform.OS === 'ios' ? 'mov' : 'mp4');
+      const fileName = asset.fileName || `video_${Date.now()}.${ext}`;
+      const mimeType = asset.type || (ext === 'mov' ? 'video/quicktime' : 'video/mp4');
+      const nodeId = uuidv4();
+      const position = {
+        x: (10 - translateX.value) / scale.value,
+        y: (10 - translateY.value) / scale.value,
+      };
+      let nodeInserted = false;
+      try {
+        const dirExists = await RNFS.exists(ATTACHMENT_DIR);
+        if (!dirExists) {
+          await RNFS.mkdir(ATTACHMENT_DIR);
+        }
+
+        const uniqueFileName = `${Date.now()}-${fileName}`;
+        const absoluteStoredPath = `${ATTACHMENT_DIR}/${uniqueFileName}`;
+        const relativeStoredPath = `${ATTACHMENT_DIR_NAME}/${uniqueFileName}`;
+
+        if (Platform.OS === 'ios') {
+          const sourcePath = decodeURIComponent(asset.uri.replace(/^file:\/\//, ''));
+          await RNFS.copyFile(sourcePath, absoluteStoredPath);
+        } else {
+          await RNFS.copyFile(asset.uri, absoluteStoredPath);
+        }
+
+        await insertNode({
+          id: nodeId,
+          flowId,
+          parentId: currentParentId,
+          label: t('newCard'),
+          description: '',
+          x: position.x,
+          y: position.y,
+          width: 150,
+          height: 85,
+          color: '#FFFFFF',
+        });
+        nodeInserted = true;
+
+        await insertAttachment({
+          node_id: nodeId,
+          flow_id: flowId,
+          filename: fileName,
+          mime_type: mimeType,
+          original_uri: asset.uri,
+          stored_path: relativeStoredPath,
+          thumbnail_path: relativeStoredPath,
+        });
+
+        fetchData();
+      } catch (e) {
+        if (nodeInserted) {
+          await deleteNode(nodeId).catch(() => {});
+        }
+        Alert.alert(t('error'), e.message || String(e));
+      }
+    }
+  };
+
   const handleAddNodeFromCamera = async () => {
     setFabMenuOpen(false);
     const hasPermission = await requestCameraPermission();
     if (!hasPermission) {
-      Alert.alert(t('error'), 'Camera permission denied');
+      Alert.alert(t('error'), t('cameraPermissionDenied'));
       return;
     }
     const result = await launchCamera({
@@ -1082,6 +1171,66 @@ const FlowEditorScreen = ({ route, navigation }) => {
     }
   };
 
+  const handleAudioRecorded = async uri => {
+    setAudioRecorderVisible(false);
+    if (!uri) return;
+    const nodeId = uuidv4();
+    const position = {
+      x: (10 - translateX.value) / scale.value,
+      y: (10 - translateY.value) / scale.value,
+    };
+    let nodeInserted = false;
+    try {
+      const dirExists = await RNFS.exists(ATTACHMENT_DIR);
+      if (!dirExists) {
+        await RNFS.mkdir(ATTACHMENT_DIR);
+      }
+      const fileName = `audio_${Date.now()}.m4a`;
+      const absoluteStoredPath = `${ATTACHMENT_DIR}/${fileName}`;
+      const relativeStoredPath = `${ATTACHMENT_DIR_NAME}/${fileName}`;
+
+      const sourcePath = Platform.OS === 'ios'
+        ? decodeURIComponent(uri.replace(/^file:\/\//, ''))
+        : uri.replace(/^file:\/\//, '');
+      await RNFS.copyFile(sourcePath, absoluteStoredPath);
+
+      const now = new Date();
+      const pad = n => String(n).padStart(2, '0');
+      const label = `${t('audio')} ${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+
+      await insertNode({
+        id: nodeId,
+        flowId,
+        parentId: currentParentId,
+        label,
+        description: '',
+        x: position.x,
+        y: position.y,
+        width: 150,
+        height: 85,
+        color: '#FFFFFF',
+      });
+      nodeInserted = true;
+
+      await insertAttachment({
+        node_id: nodeId,
+        flow_id: flowId,
+        filename: fileName,
+        mime_type: 'audio/mp4',
+        original_uri: uri,
+        stored_path: relativeStoredPath,
+        thumbnail_path: null,
+      });
+
+      fetchData();
+    } catch (e) {
+      if (nodeInserted) {
+        await deleteNode(nodeId).catch(() => {});
+      }
+      Alert.alert(t('error'), e.message || String(e));
+    }
+  };
+
   const handleQRScanned = async value => {
     setQrScannerVisible(false);
     try {
@@ -1137,10 +1286,13 @@ const FlowEditorScreen = ({ route, navigation }) => {
             const ext = (previewImageUrl.split('.').pop() || 'jpg').split('?')[0];
             const uniqueFileName = `${Date.now()}.${ext}`;
             const absoluteLocalPath = `${ATTACHMENT_DIR}/${uniqueFileName}`;
-            relativeThumbnailPath = `${ATTACHMENT_DIR_NAME}/${uniqueFileName}`;
             await RNFS.downloadFile({ fromUrl: previewImageUrl, toFile: absoluteLocalPath }).promise;
+            relativeThumbnailPath = `${ATTACHMENT_DIR_NAME}/${uniqueFileName}`;
           }
-        } catch (_) {}
+        } catch (_) {
+          relativeThumbnailPath = null;
+          previewImageUrl = null;
+        }
 
         await insertAttachment({
           node_id: nodeId,
@@ -1515,8 +1667,22 @@ const FlowEditorScreen = ({ route, navigation }) => {
             </View>
           ) : fabMenuOpen ? (
             <View style={styles.fabMenuContainer}>
-              {/* QR button — above card-plus (right-aligned) */}
+              {/* Mic + Video + QR row — above card-plus (right-aligned) */}
               <View style={styles.fabMenuQrRow}>
+                <FAB
+                  icon="microphone"
+                  style={styles.alignToolButton}
+                  onPress={() => { setFabMenuOpen(false); setAudioRecorderVisible(true); }}
+                  small
+                  visible={true}
+                />
+                <FAB
+                  icon="video"
+                  style={styles.alignToolButton}
+                  onPress={handleAddNodeFromVideo}
+                  small
+                  visible={true}
+                />
                 <FAB
                   icon="qrcode-scan"
                   style={styles.alignToolButton}
@@ -1766,6 +1932,13 @@ const FlowEditorScreen = ({ route, navigation }) => {
                         controls={false}
                         repeat={false}
                       />
+                    ) : editingNode.attachment.mime_type &&
+                      editingNode.attachment.mime_type.startsWith('audio/') ? (
+                      <AudioAttachmentPlayer
+                        uri={`file://${resolveAttachmentPath(
+                          editingNode.attachment.stored_path,
+                        )}`}
+                      />
                     ) : editingNode.attachment.thumbnail_path ||
                       (editingNode.attachment.mime_type &&
                         editingNode.attachment.mime_type.startsWith(
@@ -1960,6 +2133,11 @@ const FlowEditorScreen = ({ route, navigation }) => {
         visible={qrScannerVisible}
         onScan={handleQRScanned}
         onClose={() => setQrScannerVisible(false)}
+      />
+      <AudioRecorderModal
+        visible={audioRecorderVisible}
+        onSave={handleAudioRecorded}
+        onClose={() => setAudioRecorderVisible(false)}
       />
     </PaperProvider>
   );

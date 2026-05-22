@@ -168,6 +168,7 @@ const SkiaCard = ({
 
   const fileIconSvg = useSVG(require('../../assets/icons/file-outline.svg'));
   const linkIconSvg = useSVG(require('../../assets/icons/link-variant.svg'));
+  const microphoneIconSvg = useSVG(require('../../assets/icons/microphone.svg'));
 
   const cardParagraph = useMemo(() => {
     if (!fontMgr) {
@@ -289,6 +290,8 @@ ${urlText}`);
     let iconSvg = null;
     if (node.attachment.mime_type === 'text/url') {
       iconSvg = linkIconSvg;
+    } else if (node.attachment.mime_type?.startsWith('audio/')) {
+      iconSvg = microphoneIconSvg;
     } else {
       iconSvg = fileIconSvg;
     }
