@@ -75,6 +75,8 @@ import { getLinkPreview } from 'link-preview-js';
 import FileViewer from 'react-native-file-viewer';
 import { v4 as uuidv4 } from 'uuid';
 import QRScannerModal from '../components/QRScannerModal';
+import AudioRecorderModal from '../components/AudioRecorderModal';
+import AudioAttachmentPlayer from '../components/AudioAttachmentPlayer';
 
 configureReanimatedLogger({
   level: ReanimatedLogLevel.warn,
@@ -100,6 +102,8 @@ const mimeTypeLookup = {
   mp3: 'audio/mpeg',
   wav: 'audio/wav',
   ogg: 'audio/ogg',
+  m4a: 'audio/mp4',
+  aac: 'audio/aac',
   mp4: 'video/mp4',
   webm: 'video/webm',
   pdf: 'application/pdf',
@@ -159,6 +163,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
   const [bulkAddText, setBulkAddText] = useState('');
   const [fabMenuOpen, setFabMenuOpen] = useState(false);
   const [qrScannerVisible, setQrScannerVisible] = useState(false);
+  const [audioRecorderVisible, setAudioRecorderVisible] = useState(false);
 
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
@@ -1082,6 +1087,66 @@ const FlowEditorScreen = ({ route, navigation }) => {
     }
   };
 
+  const handleAudioRecorded = async uri => {
+    setAudioRecorderVisible(false);
+    if (!uri) return;
+    const nodeId = uuidv4();
+    const position = {
+      x: (10 - translateX.value) / scale.value,
+      y: (10 - translateY.value) / scale.value,
+    };
+    let nodeInserted = false;
+    try {
+      const dirExists = await RNFS.exists(ATTACHMENT_DIR);
+      if (!dirExists) {
+        await RNFS.mkdir(ATTACHMENT_DIR);
+      }
+      const fileName = `audio_${Date.now()}.m4a`;
+      const absoluteStoredPath = `${ATTACHMENT_DIR}/${fileName}`;
+      const relativeStoredPath = `${ATTACHMENT_DIR_NAME}/${fileName}`;
+
+      const sourcePath = Platform.OS === 'ios'
+        ? decodeURIComponent(uri.replace(/^file:\/\//, ''))
+        : uri.replace(/^file:\/\//, '');
+      await RNFS.copyFile(sourcePath, absoluteStoredPath);
+
+      const now = new Date();
+      const pad = n => String(n).padStart(2, '0');
+      const label = `${t('audio')} ${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+
+      await insertNode({
+        id: nodeId,
+        flowId,
+        parentId: currentParentId,
+        label,
+        description: '',
+        x: position.x,
+        y: position.y,
+        width: 150,
+        height: 85,
+        color: '#FFFFFF',
+      });
+      nodeInserted = true;
+
+      await insertAttachment({
+        node_id: nodeId,
+        flow_id: flowId,
+        filename: fileName,
+        mime_type: 'audio/mp4',
+        original_uri: uri,
+        stored_path: relativeStoredPath,
+        thumbnail_path: null,
+      });
+
+      fetchData();
+    } catch (e) {
+      if (nodeInserted) {
+        await deleteNode(nodeId).catch(() => {});
+      }
+      Alert.alert(t('error'), e.message || String(e));
+    }
+  };
+
   const handleQRScanned = async value => {
     setQrScannerVisible(false);
     try {
@@ -1515,8 +1580,15 @@ const FlowEditorScreen = ({ route, navigation }) => {
             </View>
           ) : fabMenuOpen ? (
             <View style={styles.fabMenuContainer}>
-              {/* QR button — above card-plus (right-aligned) */}
+              {/* Mic + QR row — above card-plus (right-aligned) */}
               <View style={styles.fabMenuQrRow}>
+                <FAB
+                  icon="microphone"
+                  style={styles.alignToolButton}
+                  onPress={() => { setFabMenuOpen(false); setAudioRecorderVisible(true); }}
+                  small
+                  visible={true}
+                />
                 <FAB
                   icon="qrcode-scan"
                   style={styles.alignToolButton}
@@ -1766,6 +1838,13 @@ const FlowEditorScreen = ({ route, navigation }) => {
                         controls={false}
                         repeat={false}
                       />
+                    ) : editingNode.attachment.mime_type &&
+                      editingNode.attachment.mime_type.startsWith('audio/') ? (
+                      <AudioAttachmentPlayer
+                        uri={`file://${resolveAttachmentPath(
+                          editingNode.attachment.stored_path,
+                        )}`}
+                      />
                     ) : editingNode.attachment.thumbnail_path ||
                       (editingNode.attachment.mime_type &&
                         editingNode.attachment.mime_type.startsWith(
@@ -1960,6 +2039,11 @@ const FlowEditorScreen = ({ route, navigation }) => {
         visible={qrScannerVisible}
         onScan={handleQRScanned}
         onClose={() => setQrScannerVisible(false)}
+      />
+      <AudioRecorderModal
+        visible={audioRecorderVisible}
+        onSave={handleAudioRecorded}
+        onClose={() => setAudioRecorderVisible(false)}
       />
     </PaperProvider>
   );

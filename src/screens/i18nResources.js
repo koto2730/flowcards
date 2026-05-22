@@ -81,6 +81,9 @@ export const resources = {
       camera: 'Camera',
       addCard: 'Add Card',
       qrScanHint: 'Point the camera at a QR code',
+      recordAudio: 'Record Audio',
+      audio: 'Audio',
+      microphonePermissionDenied: 'Microphone permission denied',
     },
   },
   ja: {
@@ -163,6 +166,9 @@ export const resources = {
       camera: 'カメラ',
       addCard: 'カードを追加',
       qrScanHint: 'QRコードにカメラを向けてください',
+      recordAudio: '音声を録音',
+      audio: '音声',
+      microphonePermissionDenied: 'マイクの権限が拒否されました',
     },
   },
   zh: {
@@ -244,6 +250,9 @@ export const resources = {
       camera: '拍照',
       addCard: '添加卡片',
       qrScanHint: '将相机对准二维码',
+      recordAudio: '录制音频',
+      audio: '音频',
+      microphonePermissionDenied: '麦克风权限被拒绝',
     },
   },
 };
