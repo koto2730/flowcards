@@ -882,14 +882,13 @@ const FlowEditorScreen = ({ route, navigation }) => {
   };
 
   const processAttachment = async (originalUri, fileName, fileType) => {
-    if (fileType === 'application/octet-stream' && fileName) {
-      const extension = fileName.split('.').pop().toLowerCase();
-      if (extension) {
-        const inferredType = mimeTypeLookup[extension];
-        if (inferredType) {
-          fileType = inferredType;
-        }
-      }
+    if (!fileName) {
+      fileName = `file_${Date.now()}`;
+    }
+    if (!fileType || fileType === 'application/octet-stream') {
+      const extension = fileName.split('.').pop()?.toLowerCase();
+      const inferredType = extension ? mimeTypeLookup[extension] : null;
+      fileType = inferredType || 'application/octet-stream';
     }
 
     const uniqueFileName = `${Date.now()}-${fileName}`;
@@ -978,7 +977,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
     Keyboard.dismiss();
     const hasPermission = await requestCameraPermission();
     if (!hasPermission) {
-      Alert.alert(t('error'), 'Camera permission denied');
+      Alert.alert(t('error'), t('cameraPermissionDenied'));
       return;
     }
     const result = await launchCamera({
@@ -1011,7 +1010,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
     setFabMenuOpen(false);
     const hasPermission = await requestCameraPermission();
     if (!hasPermission) {
-      Alert.alert(t('error'), 'Camera permission denied');
+      Alert.alert(t('error'), t('cameraPermissionDenied'));
       return;
     }
     const result = await launchCamera({
@@ -1093,7 +1092,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
     setFabMenuOpen(false);
     const hasPermission = await requestCameraPermission();
     if (!hasPermission) {
-      Alert.alert(t('error'), 'Camera permission denied');
+      Alert.alert(t('error'), t('cameraPermissionDenied'));
       return;
     }
     const result = await launchCamera({
@@ -1284,10 +1283,13 @@ const FlowEditorScreen = ({ route, navigation }) => {
             const ext = (previewImageUrl.split('.').pop() || 'jpg').split('?')[0];
             const uniqueFileName = `${Date.now()}.${ext}`;
             const absoluteLocalPath = `${ATTACHMENT_DIR}/${uniqueFileName}`;
-            relativeThumbnailPath = `${ATTACHMENT_DIR_NAME}/${uniqueFileName}`;
             await RNFS.downloadFile({ fromUrl: previewImageUrl, toFile: absoluteLocalPath }).promise;
+            relativeThumbnailPath = `${ATTACHMENT_DIR_NAME}/${uniqueFileName}`;
           }
-        } catch (_) {}
+        } catch (_) {
+          relativeThumbnailPath = null;
+          previewImageUrl = null;
+        }
 
         await insertAttachment({
           node_id: nodeId,
