@@ -1007,6 +1007,88 @@ const FlowEditorScreen = ({ route, navigation }) => {
     return granted === PermissionsAndroid.RESULTS.GRANTED;
   };
 
+  const handleAddNodeFromVideo = async () => {
+    setFabMenuOpen(false);
+    const hasPermission = await requestCameraPermission();
+    if (!hasPermission) {
+      Alert.alert(t('error'), 'Camera permission denied');
+      return;
+    }
+    const result = await launchCamera({
+      mediaType: 'video',
+      videoQuality: 'high',
+      saveToPhotos: false,
+    });
+
+    if (result.didCancel) return;
+    if (result.errorCode) {
+      Alert.alert(t('error'), result.errorMessage || result.errorCode);
+      return;
+    }
+
+    if (result.assets && result.assets.length > 0) {
+      const asset = result.assets[0];
+      const extFromUri = (asset.uri || '').split('?')[0].split('.').pop();
+      const ext = extFromUri && extFromUri.length <= 4 ? extFromUri : (Platform.OS === 'ios' ? 'mov' : 'mp4');
+      const fileName = asset.fileName || `video_${Date.now()}.${ext}`;
+      const mimeType = asset.type || (ext === 'mov' ? 'video/quicktime' : 'video/mp4');
+      const nodeId = uuidv4();
+      const position = {
+        x: (10 - translateX.value) / scale.value,
+        y: (10 - translateY.value) / scale.value,
+      };
+      let nodeInserted = false;
+      try {
+        const dirExists = await RNFS.exists(ATTACHMENT_DIR);
+        if (!dirExists) {
+          await RNFS.mkdir(ATTACHMENT_DIR);
+        }
+
+        const uniqueFileName = `${Date.now()}-${fileName}`;
+        const absoluteStoredPath = `${ATTACHMENT_DIR}/${uniqueFileName}`;
+        const relativeStoredPath = `${ATTACHMENT_DIR_NAME}/${uniqueFileName}`;
+
+        if (Platform.OS === 'ios') {
+          const sourcePath = decodeURIComponent(asset.uri.replace(/^file:\/\//, ''));
+          await RNFS.copyFile(sourcePath, absoluteStoredPath);
+        } else {
+          await RNFS.copyFile(asset.uri, absoluteStoredPath);
+        }
+
+        await insertNode({
+          id: nodeId,
+          flowId,
+          parentId: currentParentId,
+          label: t('newCard'),
+          description: '',
+          x: position.x,
+          y: position.y,
+          width: 150,
+          height: 85,
+          color: '#FFFFFF',
+        });
+        nodeInserted = true;
+
+        await insertAttachment({
+          node_id: nodeId,
+          flow_id: flowId,
+          filename: fileName,
+          mime_type: mimeType,
+          original_uri: asset.uri,
+          stored_path: relativeStoredPath,
+          thumbnail_path: relativeStoredPath,
+        });
+
+        fetchData();
+      } catch (e) {
+        if (nodeInserted) {
+          await deleteNode(nodeId).catch(() => {});
+        }
+        Alert.alert(t('error'), e.message || String(e));
+      }
+    }
+  };
+
   const handleAddNodeFromCamera = async () => {
     setFabMenuOpen(false);
     const hasPermission = await requestCameraPermission();
@@ -1580,12 +1662,19 @@ const FlowEditorScreen = ({ route, navigation }) => {
             </View>
           ) : fabMenuOpen ? (
             <View style={styles.fabMenuContainer}>
-              {/* Mic + QR row — above card-plus (right-aligned) */}
+              {/* Mic + Video + QR row — above card-plus (right-aligned) */}
               <View style={styles.fabMenuQrRow}>
                 <FAB
                   icon="microphone"
                   style={styles.alignToolButton}
                   onPress={() => { setFabMenuOpen(false); setAudioRecorderVisible(true); }}
+                  small
+                  visible={true}
+                />
+                <FAB
+                  icon="video"
+                  style={styles.alignToolButton}
+                  onPress={handleAddNodeFromVideo}
                   small
                   visible={true}
                 />
