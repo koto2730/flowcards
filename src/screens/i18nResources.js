@@ -84,6 +84,7 @@ export const resources = {
       recordAudio: 'Record Audio',
       audio: 'Audio',
       microphonePermissionDenied: 'Microphone permission denied',
+      recordingFailed: 'Recording failed',
     },
   },
   ja: {
@@ -169,6 +170,7 @@ export const resources = {
       recordAudio: '音声を録音',
       audio: '音声',
       microphonePermissionDenied: 'マイクの権限が拒否されました',
+      recordingFailed: '録音に失敗しました',
     },
   },
   zh: {
@@ -253,6 +255,7 @@ export const resources = {
       recordAudio: '录制音频',
       audio: '音频',
       microphonePermissionDenied: '麦克风权限被拒绝',
+      recordingFailed: '录音失败',
     },
   },
 };

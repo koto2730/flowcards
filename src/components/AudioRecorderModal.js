@@ -45,12 +45,13 @@ const AudioRecorderModal = ({ visible, onSave, onClose }) => {
     }
     setErrorMsg(null);
     try {
+      // Pass explicit audioSets to work around a nitro-sound iOS bridge issue
+      // where undefined audioSets triggers a C++ optional access error.
       const uri = await startRecorder(undefined, { AudioQuality: 'high' }, false);
       recordedUriRef.current = uri;
     } catch (e) {
-      console.log('[AudioRecorderModal] startRecorder error:', e, JSON.stringify(e, Object.getOwnPropertyNames(e || {})));
       const detail = e?.message || e?.toString?.() || String(e);
-      setErrorMsg(`Recording failed: ${detail}`);
+      setErrorMsg(`${t('recordingFailed')}: ${detail}`);
     }
   };
 
