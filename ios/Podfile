@@ -31,5 +31,22 @@ target 'FlowCards' do
       :mac_catalyst_enabled => false,
       # :ccache_enabled => true,
     )
+
+    # Xcode 26.5+ clang strict consteval workaround for fmt 11.0.2.
+    # base.h self-defines FMT_USE_CONSTEVAL based on compiler detection and
+    # ignores preprocessor overrides, so we patch the header to force
+    # FMT_CONSTEVAL to be empty (no consteval). Reapplies on every pod install.
+    fmt_base_h = File.join(__dir__, 'Pods/fmt/include/fmt/base.h')
+    if File.exist?(fmt_base_h)
+      content = File.read(fmt_base_h)
+      patched = content.sub(
+        "#  define FMT_CONSTEVAL consteval\n",
+        "#  define FMT_CONSTEVAL\n",
+      )
+      if patched != content
+        File.chmod(0644, fmt_base_h)
+        File.write(fmt_base_h, patched)
+      end
+    end
   end
 end
