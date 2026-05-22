@@ -31,7 +31,13 @@ const AudioRecorderModal = ({ visible, onSave, onClose }) => {
     }
     if (Platform.OS === 'android') {
       PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO).then(
-        result => setHasPermission(result === PermissionsAndroid.RESULTS.GRANTED),
+        result => {
+          const granted = result === PermissionsAndroid.RESULTS.GRANTED;
+          setHasPermission(granted);
+          if (!granted) {
+            setErrorMsg(t('microphonePermissionDenied'));
+          }
+        },
       );
     } else {
       setHasPermission(true);
@@ -92,7 +98,6 @@ const AudioRecorderModal = ({ visible, onSave, onClose }) => {
               <TouchableOpacity
                 style={[styles.recordButton, styles.startButton]}
                 onPress={handleStart}
-                disabled={!hasPermission}
               >
                 <Icon name="microphone" size={36} color="#FFF" />
               </TouchableOpacity>
