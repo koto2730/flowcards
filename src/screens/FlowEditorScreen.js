@@ -882,13 +882,16 @@ const FlowEditorScreen = ({ route, navigation }) => {
   };
 
   const processAttachment = async (originalUri, fileName, fileType) => {
-    if (!fileName) {
-      fileName = `file_${Date.now()}`;
-    }
     if (!fileType || fileType === 'application/octet-stream') {
-      const extension = fileName.split('.').pop()?.toLowerCase();
+      const extension = fileName?.split('.').pop()?.toLowerCase();
       const inferredType = extension ? mimeTypeLookup[extension] : null;
       fileType = inferredType || 'application/octet-stream';
+    }
+    if (!fileName) {
+      const extFromMime = Object.keys(mimeTypeLookup).find(
+        ext => mimeTypeLookup[ext] === fileType,
+      );
+      fileName = `file_${Date.now()}.${extFromMime || 'bin'}`;
     }
 
     const uniqueFileName = `${Date.now()}-${fileName}`;
@@ -1027,7 +1030,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
     if (result.assets && result.assets.length > 0) {
       const asset = result.assets[0];
-      const extFromUri = (asset.uri || '').split('?')[0].split('.').pop();
+      const extFromUri = (asset.uri || '').split('?')[0].split('.').pop()?.toLowerCase();
       const ext = extFromUri && extFromUri.length <= 4 ? extFromUri : (Platform.OS === 'ios' ? 'mov' : 'mp4');
       const fileName = asset.fileName || `video_${Date.now()}.${ext}`;
       const mimeType = asset.type || (ext === 'mov' ? 'video/quicktime' : 'video/mp4');
