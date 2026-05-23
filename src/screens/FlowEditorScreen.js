@@ -12,6 +12,7 @@ import {
   Platform,
   Keyboard,
   Vibration,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -1847,6 +1848,10 @@ const FlowEditorScreen = ({ route, navigation }) => {
                 </View>
               </View>
               <Card.Content>
+                <ScrollView
+                  keyboardShouldPersistTaps="handled"
+                  contentContainerStyle={styles.editingScrollContent}
+                >
                 <TextInput
                   value={editingNode.title}
                   onChangeText={text =>
@@ -2017,6 +2022,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
                     </View>
                   </View>
                 )}
+                </ScrollView>
               </Card.Content>
             </Card>
           </KeyboardAvoidingView>
@@ -2210,7 +2216,11 @@ const styles = StyleSheet.create({
   },
   editingContainer: {
     width: '90%',
+    maxHeight: '90%',
     padding: 8,
+  },
+  editingScrollContent: {
+    paddingBottom: 16,
   },
   editingHeader: {
     flexDirection: 'row',
