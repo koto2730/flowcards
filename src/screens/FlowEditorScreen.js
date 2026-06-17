@@ -1281,7 +1281,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
         let previewImageUrl = null;
 
         try {
-          const previewData = await getLinkPreview(value, { fetch });
+          const previewData = await getLinkPreview(value);
           previewTitle = previewData.title || null;
           previewDescription = previewData.description || null;
           if (
@@ -1357,7 +1357,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
     const fullUrl = `https://` + attachmentUrl;
 
     try {
-      const previewData = await getLinkPreview(fullUrl, { fetch });
+      const previewData = await getLinkPreview(fullUrl);
       let relative_thumbnail_path = null;
       let preview_image_url = null;
 
