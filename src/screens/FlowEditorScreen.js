@@ -79,6 +79,7 @@ import QRScannerModal from '../components/QRScannerModal';
 import AudioRecorderModal from '../components/AudioRecorderModal';
 import AudioAttachmentPlayer from '../components/AudioAttachmentPlayer';
 import { isSafePublicUrl } from '../utils/urlSafety';
+import { sanitizeFilename } from '../utils/fileSafety';
 
 configureReanimatedLogger({
   level: ReanimatedLogLevel.warn,
@@ -896,7 +897,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
       fileName = `file_${Date.now()}.${extFromMime || 'bin'}`;
     }
 
-    const uniqueFileName = `${Date.now()}-${fileName}`;
+    const uniqueFileName = `${Date.now()}-${sanitizeFilename(fileName)}`;
     const absoluteStoredPath = `${ATTACHMENT_DIR}/${uniqueFileName}`;
     const relativeStoredPath = `${ATTACHMENT_DIR_NAME}/${uniqueFileName}`;
 
@@ -1048,7 +1049,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
           await RNFS.mkdir(ATTACHMENT_DIR);
         }
 
-        const uniqueFileName = `${Date.now()}-${fileName}`;
+        const uniqueFileName = `${Date.now()}-${sanitizeFilename(fileName)}`;
         const absoluteStoredPath = `${ATTACHMENT_DIR}/${uniqueFileName}`;
         const relativeStoredPath = `${ATTACHMENT_DIR_NAME}/${uniqueFileName}`;
 
@@ -1128,7 +1129,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
           await RNFS.mkdir(ATTACHMENT_DIR);
         }
 
-        const uniqueFileName = `${Date.now()}-${fileName}`;
+        const uniqueFileName = `${Date.now()}-${sanitizeFilename(fileName)}`;
         const absoluteStoredPath = `${ATTACHMENT_DIR}/${uniqueFileName}`;
         const relativeStoredPath = `${ATTACHMENT_DIR_NAME}/${uniqueFileName}`;
 
