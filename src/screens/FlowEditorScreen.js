@@ -78,6 +78,7 @@ import { v4 as uuidv4 } from 'uuid';
 import QRScannerModal from '../components/QRScannerModal';
 import AudioRecorderModal from '../components/AudioRecorderModal';
 import AudioAttachmentPlayer from '../components/AudioAttachmentPlayer';
+import { isSafePublicUrl } from '../utils/urlSafety';
 
 configureReanimatedLogger({
   level: ReanimatedLogLevel.warn,
@@ -1282,7 +1283,11 @@ const FlowEditorScreen = ({ route, navigation }) => {
           const previewData = await getLinkPreview(value, { fetch });
           previewTitle = previewData.title || null;
           previewDescription = previewData.description || null;
-          if (previewData.images && previewData.images.length > 0) {
+          if (
+            previewData.images &&
+            previewData.images.length > 0 &&
+            isSafePublicUrl(previewData.images[0])
+          ) {
             previewImageUrl = previewData.images[0];
             const ext = (previewImageUrl.split('.').pop() || 'jpg').split('?')[0];
             const uniqueFileName = `${Date.now()}.${ext}`;
@@ -1355,7 +1360,11 @@ const FlowEditorScreen = ({ route, navigation }) => {
       let relative_thumbnail_path = null;
       let preview_image_url = null;
 
-      if (previewData.images && previewData.images.length > 0) {
+      if (
+        previewData.images &&
+        previewData.images.length > 0 &&
+        isSafePublicUrl(previewData.images[0])
+      ) {
         const imageUrl = previewData.images[0];
         preview_image_url = imageUrl;
         const fileExtension = (imageUrl.split('.').pop() || 'jpg').split(
