@@ -271,9 +271,8 @@ const FlowListScreen = ({ navigation }) => {
       const exportTempDir = `${RNFS.TemporaryDirectoryPath}/export_${
         flow.id
       }_${Date.now()}`;
-      const zipPath = `${RNFS.TemporaryDirectoryPath}/${flow.name.replace(
-        /\s/g,
-        '_',
+      const zipPath = `${RNFS.TemporaryDirectoryPath}/${sanitizeFilename(
+        flow.name.replace(/\s/g, '_'),
       )}.zip`;
 
       try {
