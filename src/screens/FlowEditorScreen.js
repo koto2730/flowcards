@@ -12,6 +12,7 @@ import {
   Platform,
   Keyboard,
   Vibration,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -77,6 +78,8 @@ import { v4 as uuidv4 } from 'uuid';
 import QRScannerModal from '../components/QRScannerModal';
 import AudioRecorderModal from '../components/AudioRecorderModal';
 import AudioAttachmentPlayer from '../components/AudioAttachmentPlayer';
+import { isSafePublicUrl } from '../utils/urlSafety';
+import { sanitizeFilename } from '../utils/fileSafety';
 
 configureReanimatedLogger({
   level: ReanimatedLogLevel.warn,
@@ -894,7 +897,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
       fileName = `file_${Date.now()}.${extFromMime || 'bin'}`;
     }
 
-    const uniqueFileName = `${Date.now()}-${fileName}`;
+    const uniqueFileName = `${Date.now()}-${sanitizeFilename(fileName)}`;
     const absoluteStoredPath = `${ATTACHMENT_DIR}/${uniqueFileName}`;
     const relativeStoredPath = `${ATTACHMENT_DIR_NAME}/${uniqueFileName}`;
 
@@ -1046,7 +1049,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
           await RNFS.mkdir(ATTACHMENT_DIR);
         }
 
-        const uniqueFileName = `${Date.now()}-${fileName}`;
+        const uniqueFileName = `${Date.now()}-${sanitizeFilename(fileName)}`;
         const absoluteStoredPath = `${ATTACHMENT_DIR}/${uniqueFileName}`;
         const relativeStoredPath = `${ATTACHMENT_DIR_NAME}/${uniqueFileName}`;
 
@@ -1126,7 +1129,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
           await RNFS.mkdir(ATTACHMENT_DIR);
         }
 
-        const uniqueFileName = `${Date.now()}-${fileName}`;
+        const uniqueFileName = `${Date.now()}-${sanitizeFilename(fileName)}`;
         const absoluteStoredPath = `${ATTACHMENT_DIR}/${uniqueFileName}`;
         const relativeStoredPath = `${ATTACHMENT_DIR_NAME}/${uniqueFileName}`;
 
@@ -1278,10 +1281,14 @@ const FlowEditorScreen = ({ route, navigation }) => {
         let previewImageUrl = null;
 
         try {
-          const previewData = await getLinkPreview(value, { fetch });
+          const previewData = await getLinkPreview(value);
           previewTitle = previewData.title || null;
           previewDescription = previewData.description || null;
-          if (previewData.images && previewData.images.length > 0) {
+          if (
+            previewData.images &&
+            previewData.images.length > 0 &&
+            isSafePublicUrl(previewData.images[0])
+          ) {
             previewImageUrl = previewData.images[0];
             const ext = (previewImageUrl.split('.').pop() || 'jpg').split('?')[0];
             const uniqueFileName = `${Date.now()}.${ext}`;
@@ -1350,11 +1357,15 @@ const FlowEditorScreen = ({ route, navigation }) => {
     const fullUrl = `https://` + attachmentUrl;
 
     try {
-      const previewData = await getLinkPreview(fullUrl, { fetch });
+      const previewData = await getLinkPreview(fullUrl);
       let relative_thumbnail_path = null;
       let preview_image_url = null;
 
-      if (previewData.images && previewData.images.length > 0) {
+      if (
+        previewData.images &&
+        previewData.images.length > 0 &&
+        isSafePublicUrl(previewData.images[0])
+      ) {
         const imageUrl = previewData.images[0];
         preview_image_url = imageUrl;
         const fileExtension = (imageUrl.split('.').pop() || 'jpg').split(
@@ -1847,6 +1858,10 @@ const FlowEditorScreen = ({ route, navigation }) => {
                 </View>
               </View>
               <Card.Content>
+                <ScrollView
+                  keyboardShouldPersistTaps="handled"
+                  contentContainerStyle={styles.editingScrollContent}
+                >
                 <TextInput
                   value={editingNode.title}
                   onChangeText={text =>
@@ -2017,6 +2032,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
                     </View>
                   </View>
                 )}
+                </ScrollView>
               </Card.Content>
             </Card>
           </KeyboardAvoidingView>
@@ -2210,7 +2226,11 @@ const styles = StyleSheet.create({
   },
   editingContainer: {
     width: '90%',
+    maxHeight: '90%',
     padding: 8,
+  },
+  editingScrollContent: {
+    paddingBottom: 16,
   },
   editingHeader: {
     flexDirection: 'row',

@@ -43,6 +43,7 @@ import {
 import OriginalTheme from './OriginalTheme';
 import { useTranslation } from 'react-i18next';
 import { convertFlowToJSONCanvas } from '../utils/flowUtils';
+import { sanitizeFilename } from '../utils/fileSafety';
 import { zip } from 'react-native-zip-archive';
 
 const PAGE_SIZE = 15;
@@ -364,7 +365,7 @@ const FlowListScreen = ({ navigation }) => {
             );
 
             const canvasData = JSON.stringify(jsonCanvas, null, 2);
-            const fileName = `${canvasName.replace(/\s/g, '_')}.canvas`;
+            const fileName = `${sanitizeFilename(canvasName.replace(/\s/g, '_'))}.canvas`;
             const filePath = `${exportTempDir}/${fileName}`;
             await RNFS.writeFile(filePath, canvasData, 'utf8');
           }
@@ -408,7 +409,7 @@ const FlowListScreen = ({ navigation }) => {
             );
 
             const canvasData = JSON.stringify(jsonCanvas, null, 2);
-            const fileName = `${canvasName.replace(/\s/g, '_')}.canvas`;
+            const fileName = `${sanitizeFilename(canvasName.replace(/\s/g, '_'))}.canvas`;
             fileNames.push(fileName);
             const filePath = `${RNFS.TemporaryDirectoryPath}/${fileName}`;
             await RNFS.writeFile(filePath, canvasData, 'utf8');
