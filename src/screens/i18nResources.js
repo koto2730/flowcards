@@ -86,6 +86,9 @@ export const resources = {
       microphonePermissionDenied: 'Microphone permission denied',
       cameraPermissionDenied: 'Camera permission denied',
       recordingFailed: 'Recording failed',
+      cutSelectCard: 'Tap a card to cut',
+      cutMoving: 'Moving "{{name}}"',
+      paste: 'Paste',
     },
   },
   ja: {
@@ -173,6 +176,9 @@ export const resources = {
       microphonePermissionDenied: 'マイクの権限が拒否されました',
       cameraPermissionDenied: 'カメラの権限が拒否されました',
       recordingFailed: '録音に失敗しました',
+      cutSelectCard: '切り取るカードをタップしてください',
+      cutMoving: '「{{name}}」を移動中',
+      paste: '貼り付け',
     },
   },
   zh: {
@@ -259,6 +265,9 @@ export const resources = {
       microphonePermissionDenied: '麦克风权限被拒绝',
       cameraPermissionDenied: '相机权限被拒绝',
       recordingFailed: '录音失败',
+      cutSelectCard: '点击要剪切的卡片',
+      cutMoving: '正在移动「{{name}}」',
+      paste: '粘贴',
     },
   },
 };

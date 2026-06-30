@@ -38,6 +38,7 @@ import {
   getAttachmentByNodeId,
   insertAttachment,
   insertNode,
+  updateNode,
   deleteNode,
   deleteAttachment,
 } from '../db';
@@ -167,6 +168,9 @@ const FlowEditorScreen = ({ route, navigation }) => {
   const [fabMenuOpen, setFabMenuOpen] = useState(false);
   const [qrScannerVisible, setQrScannerVisible] = useState(false);
   const [audioRecorderVisible, setAudioRecorderVisible] = useState(false);
+  // Cut → Paste flow (#38).
+  // mode: 'inactive' | 'selecting' (waiting for user to tap a card) | 'pasting' (card chosen, awaiting paste/cancel)
+  const [cutState, setCutState] = useState({ mode: 'inactive', cardId: null });
 
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
@@ -264,6 +268,12 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
     const run = async () => {
       if (type === 'tap') {
+        // In Cut "selecting" mode, a card tap selects the card for moving
+        // and advances to "pasting" mode instead of running the normal tap flow.
+        if (cutState.mode === 'selecting') {
+          setCutState({ mode: 'pasting', cardId: nodeId });
+          return;
+        }
         await handleCardTap(nodeId);
       } else if (type === 'doubleTap') {
         handleDoubleClick(nodeId);
@@ -280,6 +290,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
     setPendingEvent(null);
   }, [
     pendingEvent,
+    cutState.mode,
     handleCardTap,
     handleDoubleClick,
     handleUpdateNodePosition,
@@ -459,6 +470,8 @@ const FlowEditorScreen = ({ route, navigation }) => {
   });
 
   const handleNodeLongPress = async hitNode => {
+    // Disable editing while in Cut/Paste flow.
+    if (cutState.mode !== 'inactive') return;
     try {
       const attachment = await getAttachmentByNodeId(flowId, hitNode.id);
       setEditingNode({
@@ -568,6 +581,37 @@ const FlowEditorScreen = ({ route, navigation }) => {
       y: (10 - translateY.value) / scale.value,
     };
     addNode(position);
+  };
+
+  const handleStartCut = () => {
+    setCutState({ mode: 'selecting', cardId: null });
+  };
+
+  const handleCancelCut = () => {
+    setCutState({ mode: 'inactive', cardId: null });
+  };
+
+  const handlePaste = async () => {
+    if (!cutState.cardId) {
+      setCutState({ mode: 'inactive', cardId: null });
+      return;
+    }
+    const position = {
+      x: (10 - translateX.value) / scale.value,
+      y: (10 - translateY.value) / scale.value,
+    };
+    try {
+      await updateNode(cutState.cardId, {
+        parentId: currentParentId,
+        x: position.x,
+        y: position.y,
+      });
+      fetchData();
+    } catch (e) {
+      Alert.alert(t('error'), e.message || String(e));
+    } finally {
+      setCutState({ mode: 'inactive', cardId: null });
+    }
   };
 
   const parseBulkText = text => {
@@ -1608,12 +1652,44 @@ const FlowEditorScreen = ({ route, navigation }) => {
         style={styles.container}
         edges={['bottom', 'left', 'right']}
       >
+        {cutState.mode !== 'inactive' && (
+          <View style={styles.cutStatusBar} pointerEvents="box-none">
+            <Text style={styles.cutStatusText}>
+              {cutState.mode === 'selecting'
+                ? t('cutSelectCard')
+                : t('cutMoving', {
+                    name:
+                      allNodes.find(n => n.id === cutState.cardId)?.data
+                        ?.label ||
+                      allNodes.find(n => n.id === cutState.cardId)?.label ||
+                      '',
+                  })}
+            </Text>
+          </View>
+        )}
         <View
           pointerEvents="box-none"
           style={styles.fabRootContainer}
           zIndex={100}
         >
-          {alignModeOpen ? (
+          {cutState.mode === 'pasting' ? (
+            <View style={styles.alignToolsContainer}>
+              <FAB
+                icon="close"
+                style={styles.alignToolButton}
+                onPress={handleCancelCut}
+                small
+                label={t('cancel')}
+              />
+              <FAB
+                icon="content-paste"
+                style={styles.alignToolButton}
+                onPress={handlePaste}
+                small
+                label={t('paste')}
+              />
+            </View>
+          ) : alignModeOpen ? (
             <View style={styles.alignToolsContainer}>
               <FAB
                 icon="format-align-left"
@@ -1781,6 +1857,14 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
                 {/* Edit Group (Bottom Right) */}
                 <View style={styles.fabGroup}>
+                  <FAB
+                    icon="content-cut"
+                    style={styles.fab}
+                    onPress={handleStartCut}
+                    disabled={fabDisabled || linkingState.active || isSeeThrough}
+                    small
+                    visible={true}
+                  />
                   <FAB
                     icon="arrow-up-bold"
                     style={styles.fab}
@@ -2165,6 +2249,24 @@ const styles = StyleSheet.create({
   },
   flowArea: {
     flex: 1,
+  },
+  cutStatusBar: {
+    position: 'absolute',
+    top: 8,
+    left: 16,
+    right: 16,
+    backgroundColor: 'rgba(255, 193, 7, 0.95)',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    zIndex: 200,
+    elevation: 6,
+  },
+  cutStatusText: {
+    color: '#333',
+    fontSize: 14,
+    fontWeight: '500',
+    textAlign: 'center',
   },
   fabRootContainer: {
     position: 'absolute',
