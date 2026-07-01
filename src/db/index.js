@@ -263,6 +263,42 @@ const insertSampleData = (tx, lang) => {
   });
 };
 
+// Add a column via ALTER TABLE only if it does not already exist,
+// using PRAGMA table_info to avoid the "duplicate column name" error
+// (some SQLite plugins abort the entire transaction on such errors).
+export const migrateAddColumnIfMissing = (table, column, type) =>
+  new Promise((resolve, reject) => {
+    db.transaction(
+      tx => {
+        tx.executeSql(
+          `PRAGMA table_info(${table});`,
+          [],
+          (_, { rows }) => {
+            const existing = rows.raw().map(r => r.name);
+            if (existing.includes(column)) {
+              resolve(false);
+              return;
+            }
+            tx.executeSql(
+              `ALTER TABLE ${table} ADD COLUMN ${column} ${type};`,
+              [],
+              () => resolve(true),
+              (_, err) => {
+                reject(err);
+                return true;
+              },
+            );
+          },
+          (_, err) => {
+            reject(err);
+            return true;
+          },
+        );
+      },
+      err => reject(err),
+    );
+  });
+
 export const initDB = lang => {
   return new Promise((resolve, reject) => {
     db.transaction(tx => {
@@ -279,15 +315,6 @@ export const initDB = lang => {
         );`,
         [],
         () => {
-          // Migration: add `color` column for pre-2.8 databases where the
-          // flows table already existed without it. ADD COLUMN fails with
-          // "duplicate column" if it already exists — swallow that.
-          tx.executeSql(
-            'ALTER TABLE flows ADD COLUMN color TEXT;',
-            [],
-            () => {},
-            () => false,
-          );
           tx.executeSql(
             `CREATE TABLE IF NOT EXISTS nodes (
               id TEXT PRIMARY KEY,
