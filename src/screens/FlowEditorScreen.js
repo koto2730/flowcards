@@ -38,6 +38,7 @@ import {
   getAttachmentByNodeId,
   insertAttachment,
   insertNode,
+  updateNode,
   deleteNode,
   deleteAttachment,
 } from '../db';
@@ -167,6 +168,9 @@ const FlowEditorScreen = ({ route, navigation }) => {
   const [fabMenuOpen, setFabMenuOpen] = useState(false);
   const [qrScannerVisible, setQrScannerVisible] = useState(false);
   const [audioRecorderVisible, setAudioRecorderVisible] = useState(false);
+  // Cut → Paste flow (#38).
+  // mode: 'inactive' | 'selecting' (waiting for user to tap a card) | 'pasting' (card chosen, awaiting paste/cancel)
+  const [cutState, setCutState] = useState({ mode: 'inactive', cardId: null });
 
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
@@ -264,6 +268,12 @@ const FlowEditorScreen = ({ route, navigation }) => {
 
     const run = async () => {
       if (type === 'tap') {
+        // In Cut "selecting" mode, a card tap selects the card for moving
+        // and advances to "pasting" mode instead of running the normal tap flow.
+        if (cutState.mode === 'selecting') {
+          setCutState({ mode: 'pasting', cardId: nodeId });
+          return;
+        }
         await handleCardTap(nodeId);
       } else if (type === 'doubleTap') {
         handleDoubleClick(nodeId);
@@ -280,6 +290,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
     setPendingEvent(null);
   }, [
     pendingEvent,
+    cutState.mode,
     handleCardTap,
     handleDoubleClick,
     handleUpdateNodePosition,
@@ -459,6 +470,8 @@ const FlowEditorScreen = ({ route, navigation }) => {
   });
 
   const handleNodeLongPress = async hitNode => {
+    // Disable editing while in Cut/Paste flow.
+    if (cutState.mode !== 'inactive') return;
     try {
       const attachment = await getAttachmentByNodeId(flowId, hitNode.id);
       setEditingNode({
@@ -568,6 +581,37 @@ const FlowEditorScreen = ({ route, navigation }) => {
       y: (10 - translateY.value) / scale.value,
     };
     addNode(position);
+  };
+
+  const handleStartCut = () => {
+    setCutState({ mode: 'selecting', cardId: null });
+  };
+
+  const handleCancelCut = () => {
+    setCutState({ mode: 'inactive', cardId: null });
+  };
+
+  const handlePaste = async () => {
+    if (!cutState.cardId) {
+      setCutState({ mode: 'inactive', cardId: null });
+      return;
+    }
+    const position = {
+      x: (10 - translateX.value) / scale.value,
+      y: (10 - translateY.value) / scale.value,
+    };
+    try {
+      await updateNode(cutState.cardId, {
+        parentId: currentParentId,
+        x: position.x,
+        y: position.y,
+      });
+      fetchData();
+    } catch (e) {
+      Alert.alert(t('error'), e.message || String(e));
+    } finally {
+      setCutState({ mode: 'inactive', cardId: null });
+    }
   };
 
   const parseBulkText = text => {
@@ -1465,6 +1509,100 @@ const FlowEditorScreen = ({ route, navigation }) => {
     }
   };
 
+  const handleDuplicateNode = () => {
+    if (!editingNode) return;
+    Alert.alert(
+      t('duplicateCard'),
+      t('duplicateChildrenNotice'),
+      [
+        { text: t('cancel'), style: 'cancel' },
+        { text: t('duplicate'), onPress: performDuplicateNode },
+      ],
+    );
+  };
+
+  const performDuplicateNode = async () => {
+    if (!editingNode) return;
+    const position = {
+      x: (10 - translateX.value) / scale.value,
+      y: (10 - translateY.value) / scale.value,
+    };
+    const newNodeId = uuidv4();
+    let nodeInserted = false;
+    try {
+      const sourceNode = allNodes.find(n => n.id === editingNode.id);
+      const sourceData = sourceNode?.data || {};
+
+      await insertNode({
+        id: newNodeId,
+        flowId,
+        parentId: currentParentId,
+        label: editingNode.title || sourceData.label || '',
+        description: editingNode.description || sourceData.description || '',
+        x: position.x,
+        y: position.y,
+        width: sourceNode?.size?.width || 150,
+        height: sourceNode?.size?.height || 85,
+        color: editingNode.color || sourceData.color || '#FFFFFF',
+      });
+      nodeInserted = true;
+
+      // Copy attachment as an independent file/row if present.
+      const att = editingNode.attachment;
+      if (att) {
+        const dirExists = await RNFS.exists(ATTACHMENT_DIR);
+        if (!dirExists) await RNFS.mkdir(ATTACHMENT_DIR);
+
+        let newStoredRel = null;
+        if (att.stored_path) {
+          const srcAbs = `${ATTACHMENT_BASE_PATH}/${att.stored_path}`;
+          if (await RNFS.exists(srcAbs)) {
+            const baseName = att.stored_path.split('/').pop();
+            const newName = `${Date.now()}-${sanitizeFilename(baseName)}`;
+            const dstAbs = `${ATTACHMENT_DIR}/${newName}`;
+            await RNFS.copyFile(srcAbs, dstAbs);
+            newStoredRel = `${ATTACHMENT_DIR_NAME}/${newName}`;
+          }
+        }
+
+        let newThumbRel = null;
+        if (att.thumbnail_path && att.thumbnail_path !== att.stored_path) {
+          const srcAbs = `${ATTACHMENT_BASE_PATH}/${att.thumbnail_path}`;
+          if (await RNFS.exists(srcAbs)) {
+            const baseName = att.thumbnail_path.split('/').pop();
+            const newName = `${Date.now()}-thumb-${sanitizeFilename(baseName)}`;
+            const dstAbs = `${ATTACHMENT_DIR}/${newName}`;
+            await RNFS.copyFile(srcAbs, dstAbs);
+            newThumbRel = `${ATTACHMENT_DIR_NAME}/${newName}`;
+          }
+        } else if (att.thumbnail_path === att.stored_path) {
+          newThumbRel = newStoredRel;
+        }
+
+        await insertAttachment({
+          node_id: newNodeId,
+          flow_id: flowId,
+          filename: att.filename,
+          mime_type: att.mime_type,
+          original_uri: att.original_uri,
+          stored_path: newStoredRel,
+          thumbnail_path: newThumbRel,
+          preview_title: att.preview_title,
+          preview_description: att.preview_description,
+          preview_image_url: att.preview_image_url,
+        });
+      }
+
+      fetchData();
+      setEditingNode(null);
+    } catch (e) {
+      if (nodeInserted) {
+        await deleteNode(newNodeId).catch(() => {});
+      }
+      Alert.alert(t('error'), e.message || String(e));
+    }
+  };
+
   const handleSaveEditingNode = async () => {
     if (!editingNode) return;
 
@@ -1608,12 +1746,44 @@ const FlowEditorScreen = ({ route, navigation }) => {
         style={styles.container}
         edges={['bottom', 'left', 'right']}
       >
+        {cutState.mode !== 'inactive' && (
+          <View style={styles.cutStatusBar} pointerEvents="box-none">
+            <Text style={styles.cutStatusText}>
+              {cutState.mode === 'selecting'
+                ? t('cutSelectCard')
+                : t('cutMoving', {
+                    name:
+                      allNodes.find(n => n.id === cutState.cardId)?.data
+                        ?.label ||
+                      allNodes.find(n => n.id === cutState.cardId)?.label ||
+                      '',
+                  })}
+            </Text>
+          </View>
+        )}
         <View
           pointerEvents="box-none"
           style={styles.fabRootContainer}
           zIndex={100}
         >
-          {alignModeOpen ? (
+          {cutState.mode === 'pasting' ? (
+            <View style={styles.alignToolsContainer}>
+              <FAB
+                icon="close"
+                style={styles.alignToolButton}
+                onPress={handleCancelCut}
+                small
+                label={t('cancel')}
+              />
+              <FAB
+                icon="content-paste"
+                style={styles.alignToolButton}
+                onPress={handlePaste}
+                small
+                label={t('paste')}
+              />
+            </View>
+          ) : alignModeOpen ? (
             <View style={styles.alignToolsContainer}>
               <FAB
                 icon="format-align-left"
@@ -1782,6 +1952,14 @@ const FlowEditorScreen = ({ route, navigation }) => {
                 {/* Edit Group (Bottom Right) */}
                 <View style={styles.fabGroup}>
                   <FAB
+                    icon="content-cut"
+                    style={styles.fab}
+                    onPress={handleStartCut}
+                    disabled={fabDisabled || linkingState.active || isSeeThrough}
+                    small
+                    visible={true}
+                  />
+                  <FAB
                     icon="arrow-up-bold"
                     style={styles.fab}
                     onPress={handlePressSectionUp}
@@ -1845,6 +2023,13 @@ const FlowEditorScreen = ({ route, navigation }) => {
               <View style={styles.editingHeader}>
                 <Text style={styles.editingHeaderTitle}>{t('editCard')}</Text>
                 <View style={styles.editingHeaderButtons}>
+                  <TouchableOpacity
+                    onPress={handleDuplicateNode}
+                    style={styles.duplicateIconButton}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Icon source="content-copy" size={22} color="#555" />
+                  </TouchableOpacity>
                   <Button
                     mode="outlined"
                     onPress={() => setEditingNode(null)}
@@ -2166,6 +2351,24 @@ const styles = StyleSheet.create({
   flowArea: {
     flex: 1,
   },
+  cutStatusBar: {
+    position: 'absolute',
+    top: 8,
+    left: 16,
+    right: 16,
+    backgroundColor: 'rgba(255, 193, 7, 0.95)',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    zIndex: 200,
+    elevation: 6,
+  },
+  cutStatusText: {
+    color: '#333',
+    fontSize: 14,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
   fabRootContainer: {
     position: 'absolute',
     bottom: 16,
@@ -2249,6 +2452,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  duplicateIconButton: {
+    padding: 4,
   },
   input: {
     backgroundColor: 'transparent',
