@@ -9,6 +9,7 @@ import {
   Text,
   TouchableOpacity,
   Platform,
+  ScrollView,
 } from 'react-native';
 import {
   Provider as PaperProvider,
@@ -27,8 +28,10 @@ import {
 } from 'react-native-paper';
 import Share from 'react-native-share';
 import RNFS from 'react-native-fs';
+import ColorPalette from 'react-native-color-palette';
 import {
   getFlows,
+  getAllFlowTags,
   insertFlow,
   deleteFlow,
   updateFlow,
@@ -54,7 +57,6 @@ const FlowListScreen = ({ navigation }) => {
   const [newFlowName, setNewFlowName] = useState('');
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedFlows, setSelectedFlows] = useState([]);
-  const [editingExistingName, setEditingExistingName] = useState('');
   const [menuVisible, setMenuVisible] = useState(false);
   const [fabOpen, setFabOpen] = useState(false);
 
@@ -71,6 +73,13 @@ const FlowListScreen = ({ navigation }) => {
   const [sort, setSort] = useState({ sortBy: 'createdAt', sortOrder: 'DESC' });
   const [sortMenuVisible, setSortMenuVisible] = useState(false);
 
+  // Tag / color (#36)
+  const [allTags, setAllTags] = useState([]);
+  const [selectedTag, setSelectedTag] = useState(null);
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editingFlow, setEditingFlow] = useState(null); // { id, name, tag, color }
+  const [colorPickerVisible, setColorPickerVisible] = useState(false);
+
   const { t, i18n } = useTranslation();
 
   const fetchFlows = useCallback(
@@ -84,6 +93,7 @@ const FlowListScreen = ({ navigation }) => {
         limit: PAGE_SIZE,
         offset,
         searchQuery: debouncedSearchQuery,
+        tagFilter: selectedTag,
         sortBy: sort.sortBy,
         sortOrder: sort.sortOrder,
       };
@@ -120,7 +130,7 @@ const FlowListScreen = ({ navigation }) => {
         setLoadingMore(false);
       }
     },
-    [page, hasMore, debouncedSearchQuery, sort],
+    [page, hasMore, debouncedSearchQuery, sort, selectedTag],
   );
 
   // Debounce search query
@@ -134,10 +144,28 @@ const FlowListScreen = ({ navigation }) => {
     };
   }, [searchQuery]);
 
-  // Trigger refresh when debounced query or sort changes
+  // Trigger refresh when debounced query, sort, or tag filter changes
   useEffect(() => {
     fetchFlows(true);
-  }, [debouncedSearchQuery, sort]);
+  }, [debouncedSearchQuery, sort, selectedTag]);
+
+  // Keep the tag filter list in sync with the flows currently in the DB.
+  const refreshTags = useCallback(async () => {
+    try {
+      const tags = await getAllFlowTags();
+      setAllTags(tags);
+      // If the currently selected tag was removed from all flows, clear it.
+      if (selectedTag && !tags.includes(selectedTag)) {
+        setSelectedTag(null);
+      }
+    } catch (e) {
+      console.error('Failed to fetch tags:', e);
+    }
+  }, [selectedTag]);
+
+  useEffect(() => {
+    refreshTags();
+  }, [refreshTags, flows.length]);
 
   const onRefresh = () => fetchFlows(true);
 
@@ -209,28 +237,51 @@ const FlowListScreen = ({ navigation }) => {
   };
 
   const handleEditExistingFlow = item => {
-    setEditingFlowId(item.id);
-    setEditingExistingName(item.name);
+    setEditingFlow({
+      id: item.id,
+      name: item.name || '',
+      tag: item.tag || '',
+      color: item.color || '',
+    });
+    setEditModalVisible(true);
   };
 
-  const handleSaveExistingFlow = async id => {
-    if (!editingExistingName.trim()) {
+  // Normalize a user-entered tag string to " "-separated `#tag` tokens.
+  // Splits on any whitespace or comma, drops empty and single-`#` entries,
+  // prepends `#` when missing.
+  const normalizeTags = input => {
+    if (!input) return '';
+    return String(input)
+      .split(/[\s,]+/)
+      .map(t => t.trim())
+      .filter(t => t.length > 0)
+      .map(t => (t.startsWith('#') ? t : `#${t}`))
+      .filter(t => t.length > 1)
+      .join(' ');
+  };
+
+  const handleSaveEditModal = async () => {
+    if (!editingFlow || !editingFlow.name.trim()) {
       Alert.alert(t('error'), t('flowNameEmpty'));
       return;
     }
     try {
-      await updateFlow(id, { name: editingExistingName });
-      setEditingFlowId(null);
-      setEditingExistingName('');
+      await updateFlow(editingFlow.id, {
+        name: editingFlow.name.trim(),
+        tag: normalizeTags(editingFlow.tag),
+        color: editingFlow.color || null,
+      });
+      setEditModalVisible(false);
+      setEditingFlow(null);
       fetchFlows(true);
     } catch (error) {
       console.error('Failed to update flow:', error);
     }
   };
 
-  const handleCancelEditExistingFlow = () => {
-    setEditingFlowId(null);
-    setEditingExistingName('');
+  const handleCancelEditModal = () => {
+    setEditModalVisible(false);
+    setEditingFlow(null);
   };
 
   const handleDeleteFlow = id => {
@@ -569,41 +620,25 @@ const FlowListScreen = ({ navigation }) => {
         </View>
       );
     }
-    if (item.id === editingFlowId && !item.isNew) {
-      return (
-        <View
-          style={{ flexDirection: 'row', alignItems: 'center', padding: 8 }}
-        >
-          <TextInput
-            style={[styles.textInput, { flex: 1 }]}
-            value={editingExistingName}
-            onChangeText={setEditingExistingName}
-            autoFocus
-            mode="outlined"
-          />
-          <Button
-            mode="contained"
-            onPress={() => handleSaveExistingFlow(item.id)}
-            style={{ marginLeft: 8 }}
-          >
-            {t('save')}
-          </Button>
-          <Button
-            mode="outlined"
-            onPress={handleCancelEditExistingFlow}
-            style={{ marginLeft: 8 }}
-          >
-            {t('cancel')}
-          </Button>
-        </View>
-      );
-    }
-
     const diskUsageText = formatDiskUsage(item.diskUsage);
+    const itemTags = item.tag
+      ? String(item.tag)
+          .split(/\s+/)
+          .filter(x => x.startsWith('#') && x.length > 1)
+      : [];
+
+    const visibleTags = itemTags.slice(0, 2);
+    const extraTagCount = itemTags.length - visibleTags.length;
 
     return (
       <Card
-        style={{ flex: 1, marginVertical: 4, marginHorizontal: 8 }}
+        style={[
+          { flex: 1, marginVertical: 4, marginHorizontal: 8 },
+          item.color && {
+            borderLeftWidth: 6,
+            borderLeftColor: item.color,
+          },
+        ]}
         onPress={() => {
           if (selectionMode) {
             if (!selectionMode) {
@@ -671,6 +706,18 @@ const FlowListScreen = ({ navigation }) => {
             </View>
           )}
         />
+        {itemTags.length > 0 && (
+          <View style={styles.itemTagsRow}>
+            {visibleTags.map(tag => (
+              <View key={tag} style={styles.itemTagChip}>
+                <Text style={styles.itemTagChipText}>{tag}</Text>
+              </View>
+            ))}
+            {extraTagCount > 0 && (
+              <Text style={styles.itemTagOverflow}>+{extraTagCount}</Text>
+            )}
+          </View>
+        )}
       </Card>
     );
   };
@@ -841,7 +888,153 @@ const FlowListScreen = ({ navigation }) => {
           ) : (
             <FAB style={styles.fab} icon="plus" onPress={handleAddFlowRow} />
           )}
+          <Modal
+            visible={editModalVisible}
+            onDismiss={handleCancelEditModal}
+            contentContainerStyle={styles.editModalContainer}
+          >
+            {editingFlow && (
+              <View>
+                <Text style={styles.editModalTitle}>{t('editFlow')}</Text>
+                <TextInput
+                  label={t('name')}
+                  value={editingFlow.name}
+                  onChangeText={txt =>
+                    setEditingFlow(prev => ({ ...prev, name: txt }))
+                  }
+                  mode="outlined"
+                  style={styles.editModalInput}
+                />
+                <TextInput
+                  label={t('tags')}
+                  value={editingFlow.tag}
+                  onChangeText={txt =>
+                    setEditingFlow(prev => ({ ...prev, tag: txt }))
+                  }
+                  placeholder="#work #personal"
+                  mode="outlined"
+                  autoCapitalize="none"
+                  style={styles.editModalInput}
+                />
+                <Text style={styles.editModalHint}>
+                  {t('tagsHint')}
+                </Text>
+                <View style={styles.editModalColorRow}>
+                  <Text style={styles.editModalColorLabel}>{t('color')}</Text>
+                  <TouchableOpacity
+                    style={[
+                      styles.editModalColorSwatch,
+                      {
+                        backgroundColor:
+                          editingFlow.color || 'transparent',
+                        borderColor: editingFlow.color ? '#333' : '#bbb',
+                      },
+                    ]}
+                    onPress={() => setColorPickerVisible(true)}
+                  >
+                    {!editingFlow.color && (
+                      <Text style={styles.editModalColorPlaceholder}>—</Text>
+                    )}
+                  </TouchableOpacity>
+                  {editingFlow.color && (
+                    <Button
+                      compact
+                      onPress={() =>
+                        setEditingFlow(prev => ({ ...prev, color: '' }))
+                      }
+                    >
+                      {t('clear')}
+                    </Button>
+                  )}
+                </View>
+                <View style={styles.editModalButtonRow}>
+                  <Button mode="outlined" onPress={handleCancelEditModal}>
+                    {t('cancel')}
+                  </Button>
+                  <Button mode="contained" onPress={handleSaveEditModal}>
+                    {t('save')}
+                  </Button>
+                </View>
+              </View>
+            )}
+          </Modal>
+          <Modal
+            visible={colorPickerVisible}
+            onDismiss={() => setColorPickerVisible(false)}
+            contentContainerStyle={styles.colorPickerContainer}
+          >
+            {editingFlow && (
+              <ColorPalette
+                onChange={color => {
+                  setEditingFlow(prev => ({ ...prev, color }));
+                  setColorPickerVisible(false);
+                }}
+                value={editingFlow.color}
+                colors={[
+                  '#FCA5A5',
+                  '#FDBA74',
+                  '#FDE047',
+                  '#86EFAC',
+                  '#5EEAD4',
+                  '#93C5FD',
+                  '#A5B4FC',
+                  '#C4B5FD',
+                  '#F9A8D4',
+                  '#D1D5DB',
+                ]}
+                title=""
+                icon={<Text>✓</Text>}
+              />
+            )}
+          </Modal>
         </Portal>
+        {allTags.length > 0 && (
+          <View style={styles.tagFilterBar}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.tagFilterContent}
+            >
+              <TouchableOpacity
+                onPress={() => setSelectedTag(null)}
+                style={[
+                  styles.tagFilterChip,
+                  !selectedTag && styles.tagFilterChipActive,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.tagFilterChipText,
+                    !selectedTag && styles.tagFilterChipTextActive,
+                  ]}
+                >
+                  {t('all')}
+                </Text>
+              </TouchableOpacity>
+              {allTags.map(tag => (
+                <TouchableOpacity
+                  key={tag}
+                  onPress={() =>
+                    setSelectedTag(prev => (prev === tag ? null : tag))
+                  }
+                  style={[
+                    styles.tagFilterChip,
+                    selectedTag === tag && styles.tagFilterChipActive,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.tagFilterChipText,
+                      selectedTag === tag && styles.tagFilterChipTextActive,
+                    ]}
+                  >
+                    {tag}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
         <FlatList
           data={flows}
           renderItem={renderItem}
@@ -871,6 +1064,111 @@ const styles = StyleSheet.create({
     margin: 16,
     right: 0,
     bottom: 0,
+  },
+  tagFilterBar: {
+    backgroundColor: '#F5F5F5',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  tagFilterContent: {
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  tagFilterChip: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    marginRight: 6,
+    borderRadius: 16,
+    backgroundColor: '#E0E0E0',
+  },
+  tagFilterChipActive: {
+    backgroundColor: OriginalTheme.colors.primary,
+  },
+  tagFilterChipText: {
+    fontSize: 13,
+    color: '#333',
+  },
+  tagFilterChipTextActive: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  itemTagsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    paddingHorizontal: 16,
+    paddingBottom: 10,
+    marginTop: -4,
+    gap: 4,
+  },
+  itemTagChip: {
+    backgroundColor: '#E3F2FD',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    marginRight: 4,
+  },
+  itemTagChipText: {
+    fontSize: 11,
+    color: '#1976D2',
+  },
+  itemTagOverflow: {
+    fontSize: 11,
+    color: '#666',
+    marginLeft: 2,
+  },
+  editModalContainer: {
+    backgroundColor: 'white',
+    padding: 20,
+    marginHorizontal: 24,
+    borderRadius: 8,
+  },
+  editModalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  editModalInput: {
+    marginBottom: 8,
+  },
+  editModalHint: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 12,
+  },
+  editModalColorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  editModalColorLabel: {
+    fontSize: 14,
+    marginRight: 12,
+  },
+  editModalColorSwatch: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  editModalColorPlaceholder: {
+    fontSize: 18,
+    color: '#bbb',
+  },
+  editModalButtonRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+  },
+  colorPickerContainer: {
+    backgroundColor: 'white',
+    padding: 20,
+    marginHorizontal: 24,
+    borderRadius: 8,
   },
   textInput: {
     height: 40,
