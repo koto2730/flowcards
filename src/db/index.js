@@ -272,12 +272,22 @@ export const initDB = lang => {
           name TEXT NOT NULL,
           tag TEXT,
           "group" TEXT,
+          color TEXT,
           lastPosition TEXT,
           zoomLevel REAL,
           createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
         );`,
         [],
         () => {
+          // Migration: add `color` column for pre-2.8 databases where the
+          // flows table already existed without it. ADD COLUMN fails with
+          // "duplicate column" if it already exists — swallow that.
+          tx.executeSql(
+            'ALTER TABLE flows ADD COLUMN color TEXT;',
+            [],
+            () => {},
+            () => false,
+          );
           tx.executeSql(
             `CREATE TABLE IF NOT EXISTS nodes (
               id TEXT PRIMARY KEY,
@@ -427,16 +437,32 @@ export const getFlowDiskUsage = async flowId => {
 };
 
 // --- flows CRUD ---
-export const getFlows = (options = {}) => {
-  const { limit, offset, searchQuery, sortBy, sortOrder = 'DESC' } = options;
-
-  let query = 'SELECT * FROM flows';
+const buildFlowFilterClause = ({ searchQuery, tagFilter }) => {
+  const conditions = [];
   const params = [];
-
   if (searchQuery) {
-    query += ' WHERE name LIKE ?';
+    conditions.push('name LIKE ?');
     params.push(`%${searchQuery}%`);
   }
+  if (tagFilter) {
+    // Tags are stored space-separated with a leading '#', e.g. "#work #personal".
+    // Wrap both sides with spaces so '#w' does not match '#work'.
+    conditions.push("(' ' || COALESCE(tag, '') || ' ') LIKE ?");
+    params.push(`% ${tagFilter} %`);
+  }
+  return {
+    where: conditions.length ? ` WHERE ${conditions.join(' AND ')}` : '',
+    params,
+  };
+};
+
+export const getFlows = (options = {}) => {
+  const { limit, offset, searchQuery, tagFilter, sortBy, sortOrder = 'DESC' } =
+    options;
+
+  let query = 'SELECT * FROM flows';
+  const { where, params } = buildFlowFilterClause({ searchQuery, tagFilter });
+  query += where;
 
   // Whitelist of sortable columns to prevent SQL injection
   const sortableColumns = ['name', 'createdAt'];
@@ -459,17 +485,29 @@ export const getFlows = (options = {}) => {
 };
 
 export const getFlowsCount = (options = {}) => {
-  const { searchQuery } = options;
+  const { searchQuery, tagFilter } = options;
   let query = 'SELECT COUNT(*) as count FROM flows';
-  const params = [];
-
-  if (searchQuery) {
-    query += ' WHERE name LIKE ?';
-    params.push(`%${searchQuery}%`);
-  }
+  const { where, params } = buildFlowFilterClause({ searchQuery, tagFilter });
+  query += where;
 
   return executeSql(query, params).then(({ rows }) => rows.raw()[0].count);
 };
+
+// Return the sorted unique list of tags currently used across all flows.
+export const getAllFlowTags = () =>
+  executeSql(
+    "SELECT tag FROM flows WHERE tag IS NOT NULL AND tag != '';",
+    [],
+  ).then(({ rows }) => {
+    const set = new Set();
+    for (const row of rows.raw()) {
+      String(row.tag)
+        .split(/\s+/)
+        .filter(t => t.startsWith('#') && t.length > 1)
+        .forEach(t => set.add(t));
+    }
+    return Array.from(set).sort();
+  });
 
 export const updateFlow = (id, data) => {
   const fields = Object.keys(data)
