@@ -89,6 +89,9 @@ export const resources = {
       cutSelectCard: 'Tap a card to cut',
       cutMoving: 'Moving "{{name}}"',
       paste: 'Paste',
+      duplicate: 'Duplicate',
+      duplicateCard: 'Duplicate card',
+      duplicateChildrenNotice: 'The card will be duplicated. Child cards (cards inside it) will not be included. Continue?',
     },
   },
   ja: {
@@ -179,6 +182,9 @@ export const resources = {
       cutSelectCard: '切り取るカードをタップしてください',
       cutMoving: '「{{name}}」を移動中',
       paste: '貼り付け',
+      duplicate: '複製',
+      duplicateCard: 'カードを複製',
+      duplicateChildrenNotice: 'カードを複製します。中にある子カードは複製されません。続けますか？',
     },
   },
   zh: {
@@ -268,6 +274,9 @@ export const resources = {
       cutSelectCard: '点击要剪切的卡片',
       cutMoving: '正在移动「{{name}}」',
       paste: '粘贴',
+      duplicate: '复制',
+      duplicateCard: '复制卡片',
+      duplicateChildrenNotice: '复制此卡片。其中的子卡片不会被复制。是否继续？',
     },
   },
 };

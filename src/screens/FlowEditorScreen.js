@@ -1509,6 +1509,100 @@ const FlowEditorScreen = ({ route, navigation }) => {
     }
   };
 
+  const handleDuplicateNode = () => {
+    if (!editingNode) return;
+    Alert.alert(
+      t('duplicateCard'),
+      t('duplicateChildrenNotice'),
+      [
+        { text: t('cancel'), style: 'cancel' },
+        { text: t('duplicate'), onPress: performDuplicateNode },
+      ],
+    );
+  };
+
+  const performDuplicateNode = async () => {
+    if (!editingNode) return;
+    const position = {
+      x: (10 - translateX.value) / scale.value,
+      y: (10 - translateY.value) / scale.value,
+    };
+    const newNodeId = uuidv4();
+    let nodeInserted = false;
+    try {
+      const sourceNode = allNodes.find(n => n.id === editingNode.id);
+      const sourceData = sourceNode?.data || {};
+
+      await insertNode({
+        id: newNodeId,
+        flowId,
+        parentId: currentParentId,
+        label: editingNode.title || sourceData.label || '',
+        description: editingNode.description || sourceData.description || '',
+        x: position.x,
+        y: position.y,
+        width: sourceNode?.size?.width || 150,
+        height: sourceNode?.size?.height || 85,
+        color: editingNode.color || sourceData.color || '#FFFFFF',
+      });
+      nodeInserted = true;
+
+      // Copy attachment as an independent file/row if present.
+      const att = editingNode.attachment;
+      if (att) {
+        const dirExists = await RNFS.exists(ATTACHMENT_DIR);
+        if (!dirExists) await RNFS.mkdir(ATTACHMENT_DIR);
+
+        let newStoredRel = null;
+        if (att.stored_path) {
+          const srcAbs = `${ATTACHMENT_BASE_PATH}/${att.stored_path}`;
+          if (await RNFS.exists(srcAbs)) {
+            const baseName = att.stored_path.split('/').pop();
+            const newName = `${Date.now()}-${sanitizeFilename(baseName)}`;
+            const dstAbs = `${ATTACHMENT_DIR}/${newName}`;
+            await RNFS.copyFile(srcAbs, dstAbs);
+            newStoredRel = `${ATTACHMENT_DIR_NAME}/${newName}`;
+          }
+        }
+
+        let newThumbRel = null;
+        if (att.thumbnail_path && att.thumbnail_path !== att.stored_path) {
+          const srcAbs = `${ATTACHMENT_BASE_PATH}/${att.thumbnail_path}`;
+          if (await RNFS.exists(srcAbs)) {
+            const baseName = att.thumbnail_path.split('/').pop();
+            const newName = `${Date.now()}-thumb-${sanitizeFilename(baseName)}`;
+            const dstAbs = `${ATTACHMENT_DIR}/${newName}`;
+            await RNFS.copyFile(srcAbs, dstAbs);
+            newThumbRel = `${ATTACHMENT_DIR_NAME}/${newName}`;
+          }
+        } else if (att.thumbnail_path === att.stored_path) {
+          newThumbRel = newStoredRel;
+        }
+
+        await insertAttachment({
+          node_id: newNodeId,
+          flow_id: flowId,
+          filename: att.filename,
+          mime_type: att.mime_type,
+          original_uri: att.original_uri,
+          stored_path: newStoredRel,
+          thumbnail_path: newThumbRel,
+          preview_title: att.preview_title,
+          preview_description: att.preview_description,
+          preview_image_url: att.preview_image_url,
+        });
+      }
+
+      fetchData();
+      setEditingNode(null);
+    } catch (e) {
+      if (nodeInserted) {
+        await deleteNode(newNodeId).catch(() => {});
+      }
+      Alert.alert(t('error'), e.message || String(e));
+    }
+  };
+
   const handleSaveEditingNode = async () => {
     if (!editingNode) return;
 
@@ -1929,6 +2023,13 @@ const FlowEditorScreen = ({ route, navigation }) => {
               <View style={styles.editingHeader}>
                 <Text style={styles.editingHeaderTitle}>{t('editCard')}</Text>
                 <View style={styles.editingHeaderButtons}>
+                  <TouchableOpacity
+                    onPress={handleDuplicateNode}
+                    style={styles.duplicateIconButton}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Icon source="content-copy" size={22} color="#555" />
+                  </TouchableOpacity>
                   <Button
                     mode="outlined"
                     onPress={() => setEditingNode(null)}
@@ -2351,6 +2452,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  duplicateIconButton: {
+    padding: 4,
   },
   input: {
     backgroundColor: 'transparent',
