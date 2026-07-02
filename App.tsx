@@ -5,7 +5,7 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { View, Text } from 'react-native';
 import FlowListScreen from './src/screens/FlowListScreen';
 import FlowEditorScreen from './src/screens/FlowEditorScreen';
-import { initDB } from './src/db';
+import { initDB, migrateAddColumnIfMissing } from './src/db';
 
 // i18n関連のインポート
 import i18n from 'i18next';
@@ -52,6 +52,7 @@ function App() {
 
   useEffect(() => {
     initDB()
+      .then(() => migrateAddColumnIfMissing('flows', 'color', 'TEXT'))
       .then(() => setDbReady(true))
       .catch(err => {
         console.error('DB initialization failed:', err);

@@ -263,6 +263,42 @@ const insertSampleData = (tx, lang) => {
   });
 };
 
+// Add a column via ALTER TABLE only if it does not already exist,
+// using PRAGMA table_info to avoid the "duplicate column name" error
+// (some SQLite plugins abort the entire transaction on such errors).
+export const migrateAddColumnIfMissing = (table, column, type) =>
+  new Promise((resolve, reject) => {
+    db.transaction(
+      tx => {
+        tx.executeSql(
+          `PRAGMA table_info(${table});`,
+          [],
+          (_, { rows }) => {
+            const existing = rows.raw().map(r => r.name);
+            if (existing.includes(column)) {
+              resolve(false);
+              return;
+            }
+            tx.executeSql(
+              `ALTER TABLE ${table} ADD COLUMN ${column} ${type};`,
+              [],
+              () => resolve(true),
+              (_, err) => {
+                reject(err);
+                return true;
+              },
+            );
+          },
+          (_, err) => {
+            reject(err);
+            return true;
+          },
+        );
+      },
+      err => reject(err),
+    );
+  });
+
 export const initDB = lang => {
   return new Promise((resolve, reject) => {
     db.transaction(tx => {
@@ -272,6 +308,7 @@ export const initDB = lang => {
           name TEXT NOT NULL,
           tag TEXT,
           "group" TEXT,
+          color TEXT,
           lastPosition TEXT,
           zoomLevel REAL,
           createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -427,16 +464,32 @@ export const getFlowDiskUsage = async flowId => {
 };
 
 // --- flows CRUD ---
-export const getFlows = (options = {}) => {
-  const { limit, offset, searchQuery, sortBy, sortOrder = 'DESC' } = options;
-
-  let query = 'SELECT * FROM flows';
+const buildFlowFilterClause = ({ searchQuery, tagFilter }) => {
+  const conditions = [];
   const params = [];
-
   if (searchQuery) {
-    query += ' WHERE name LIKE ?';
+    conditions.push('name LIKE ?');
     params.push(`%${searchQuery}%`);
   }
+  if (tagFilter) {
+    // Tags are stored space-separated with a leading '#', e.g. "#work #personal".
+    // Wrap both sides with spaces so '#w' does not match '#work'.
+    conditions.push("(' ' || COALESCE(tag, '') || ' ') LIKE ?");
+    params.push(`% ${tagFilter} %`);
+  }
+  return {
+    where: conditions.length ? ` WHERE ${conditions.join(' AND ')}` : '',
+    params,
+  };
+};
+
+export const getFlows = (options = {}) => {
+  const { limit, offset, searchQuery, tagFilter, sortBy, sortOrder = 'DESC' } =
+    options;
+
+  let query = 'SELECT * FROM flows';
+  const { where, params } = buildFlowFilterClause({ searchQuery, tagFilter });
+  query += where;
 
   // Whitelist of sortable columns to prevent SQL injection
   const sortableColumns = ['name', 'createdAt'];
@@ -459,17 +512,29 @@ export const getFlows = (options = {}) => {
 };
 
 export const getFlowsCount = (options = {}) => {
-  const { searchQuery } = options;
+  const { searchQuery, tagFilter } = options;
   let query = 'SELECT COUNT(*) as count FROM flows';
-  const params = [];
-
-  if (searchQuery) {
-    query += ' WHERE name LIKE ?';
-    params.push(`%${searchQuery}%`);
-  }
+  const { where, params } = buildFlowFilterClause({ searchQuery, tagFilter });
+  query += where;
 
   return executeSql(query, params).then(({ rows }) => rows.raw()[0].count);
 };
+
+// Return the sorted unique list of tags currently used across all flows.
+export const getAllFlowTags = () =>
+  executeSql(
+    "SELECT tag FROM flows WHERE tag IS NOT NULL AND tag != '';",
+    [],
+  ).then(({ rows }) => {
+    const set = new Set();
+    for (const row of rows.raw()) {
+      String(row.tag)
+        .split(/\s+/)
+        .filter(t => t.startsWith('#') && t.length > 1)
+        .forEach(t => set.add(t));
+    }
+    return Array.from(set).sort();
+  });
 
 export const updateFlow = (id, data) => {
   const fields = Object.keys(data)
