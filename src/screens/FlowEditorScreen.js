@@ -1769,6 +1769,12 @@ const FlowEditorScreen = ({ route, navigation }) => {
           {cutState.mode === 'pasting' ? (
             <View style={styles.alignToolsContainer}>
               <FAB
+                icon="arrow-up-bold"
+                style={styles.alignToolButton}
+                onPress={handlePressSectionUp}
+                small
+              />
+              <FAB
                 icon="close"
                 style={styles.alignToolButton}
                 onPress={handleCancelCut}

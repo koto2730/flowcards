@@ -51,6 +51,18 @@ import { zip } from 'react-native-zip-archive';
 
 const PAGE_SIZE = 15;
 
+// Override Paper theme fragments so the outlined TextInput inside the
+// edit modal reads black-on-white regardless of the app's dark surface.
+const editModalInputTheme = {
+  colors: {
+    background: '#FFFFFF',
+    surface: '#FFFFFF',
+    onSurface: '#000000',
+    onSurfaceVariant: '#666666',
+    primary: OriginalTheme.colors.primary,
+  },
+};
+
 const FlowListScreen = ({ navigation }) => {
   const [flows, setFlows] = useState([]);
   const [editingFlowId, setEditingFlowId] = useState(null);
@@ -904,6 +916,8 @@ const FlowListScreen = ({ navigation }) => {
                   }
                   mode="outlined"
                   style={styles.editModalInput}
+                  textColor="#000"
+                  theme={editModalInputTheme}
                 />
                 <TextInput
                   label={t('tags')}
@@ -915,6 +929,8 @@ const FlowListScreen = ({ navigation }) => {
                   mode="outlined"
                   autoCapitalize="none"
                   style={styles.editModalInput}
+                  textColor="#000"
+                  theme={editModalInputTheme}
                 />
                 <Text style={styles.editModalHint}>
                   {t('tagsHint')}
