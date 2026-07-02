@@ -286,6 +286,9 @@ const FlowListScreen = ({ navigation }) => {
       setEditModalVisible(false);
       setEditingFlow(null);
       fetchFlows(true);
+      // Tag / color edits do not change flow count, so trigger a tag
+      // refresh explicitly (the length-based effect wouldn't fire).
+      refreshTags();
     } catch (error) {
       console.error('Failed to update flow:', error);
     }

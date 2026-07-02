@@ -1529,6 +1529,9 @@ const FlowEditorScreen = ({ route, navigation }) => {
     };
     const newNodeId = uuidv4();
     let nodeInserted = false;
+    // Track files copied during this run so we can clean them up if a
+    // later step (e.g. insertAttachment) throws.
+    const copiedAbsPaths = [];
     try {
       const sourceNode = allNodes.find(n => n.id === editingNode.id);
       const sourceData = sourceNode?.data || {};
@@ -1561,6 +1564,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
             const newName = `${Date.now()}-${sanitizeFilename(baseName)}`;
             const dstAbs = `${ATTACHMENT_DIR}/${newName}`;
             await RNFS.copyFile(srcAbs, dstAbs);
+            copiedAbsPaths.push(dstAbs);
             newStoredRel = `${ATTACHMENT_DIR_NAME}/${newName}`;
           }
         }
@@ -1573,6 +1577,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
             const newName = `${Date.now()}-thumb-${sanitizeFilename(baseName)}`;
             const dstAbs = `${ATTACHMENT_DIR}/${newName}`;
             await RNFS.copyFile(srcAbs, dstAbs);
+            copiedAbsPaths.push(dstAbs);
             newThumbRel = `${ATTACHMENT_DIR_NAME}/${newName}`;
           }
         } else if (att.thumbnail_path === att.stored_path) {
@@ -1598,6 +1603,11 @@ const FlowEditorScreen = ({ route, navigation }) => {
     } catch (e) {
       if (nodeInserted) {
         await deleteNode(newNodeId).catch(() => {});
+      }
+      // Roll back any attachment files we copied so we don't leave
+      // orphans in the attachments dir.
+      for (const p of copiedAbsPaths) {
+        await RNFS.unlink(p).catch(() => {});
       }
       Alert.alert(t('error'), e.message || String(e));
     }
