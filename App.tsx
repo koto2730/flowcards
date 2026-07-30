@@ -5,7 +5,11 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { View, Text } from 'react-native';
 import FlowListScreen from './src/screens/FlowListScreen';
 import FlowEditorScreen from './src/screens/FlowEditorScreen';
-import { initDB, migrateAddColumnIfMissing } from './src/db';
+import {
+  initDB,
+  migrateAddColumnIfMissing,
+  cleanupOrphanedCrossSectionEdges,
+} from './src/db';
 
 // i18n関連のインポート
 import i18n from 'i18next';
@@ -53,7 +57,13 @@ function App() {
   useEffect(() => {
     initDB()
       .then(() => migrateAddColumnIfMissing('flows', 'color', 'TEXT'))
-      .then(() => setDbReady(true))
+      .then(() => cleanupOrphanedCrossSectionEdges())
+      .then(removed => {
+        if (removed > 0) {
+          console.log(`Cleaned up ${removed} orphaned cross-section edge(s).`);
+        }
+        setDbReady(true);
+      })
       .catch(err => {
         console.error('DB initialization failed:', err);
       });

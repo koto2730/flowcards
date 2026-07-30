@@ -594,6 +594,25 @@ export const updateEdge = (id, data) => {
 export const deleteEdge = id =>
   executeSql('DELETE FROM edges WHERE id = ?;', [id]);
 
+// One-time cleanup for cross-section edges left behind by earlier
+// versions of Cut → Paste (which only moved parentId but never touched
+// edges). Deletes any edge whose endpoints live in different sections
+// (different parentId) or, defensively, in different flows.
+// Idempotent — after the first successful run, subsequent runs match
+// nothing and do nothing.
+export const cleanupOrphanedCrossSectionEdges = () =>
+  executeSql(
+    `DELETE FROM edges
+     WHERE id IN (
+       SELECT e.id FROM edges e
+       JOIN nodes ns ON ns.id = e.source
+       JOIN nodes nt ON nt.id = e.target
+       WHERE ns.parentId IS NOT nt.parentId
+          OR ns.flowId != nt.flowId
+     );`,
+    [],
+  ).then(({ rowsAffected }) => rowsAffected || 0);
+
 // edgesをflowId単位で全削除
 export const deleteEdgesByFlowId = flowId =>
   executeSql('DELETE FROM edges WHERE flowId = ?;', [flowId]);
