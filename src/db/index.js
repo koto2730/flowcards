@@ -263,11 +263,42 @@ const insertSampleData = (tx, lang) => {
   });
 };
 
+// Identifiers cannot be bound with `?` in SQLite, so this helper has
+// to interpolate table/column/type into the SQL text. Guard against
+// misuse by validating each argument against an explicit allowlist —
+// callers may only pass literal identifiers from this project.
+const MIGRATABLE_TABLES = new Set([
+  'flows',
+  'nodes',
+  'edges',
+  'attachments',
+]);
+const SAFE_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const SQLITE_COLUMN_TYPES = new Set([
+  'TEXT',
+  'INTEGER',
+  'REAL',
+  'BLOB',
+  'NUMERIC',
+  'DATETIME',
+  'BOOLEAN',
+]);
+
 // Add a column via ALTER TABLE only if it does not already exist,
 // using PRAGMA table_info to avoid the "duplicate column name" error
 // (some SQLite plugins abort the entire transaction on such errors).
-export const migrateAddColumnIfMissing = (table, column, type) =>
-  new Promise((resolve, reject) => {
+export const migrateAddColumnIfMissing = (table, column, type) => {
+  if (!MIGRATABLE_TABLES.has(table)) {
+    return Promise.reject(new Error(`Unsupported table: ${table}`));
+  }
+  if (typeof column !== 'string' || !SAFE_IDENTIFIER.test(column)) {
+    return Promise.reject(new Error(`Unsafe column name: ${column}`));
+  }
+  const normalizedType = String(type || '').toUpperCase();
+  if (!SQLITE_COLUMN_TYPES.has(normalizedType)) {
+    return Promise.reject(new Error(`Unsupported column type: ${type}`));
+  }
+  return new Promise((resolve, reject) => {
     db.transaction(
       tx => {
         tx.executeSql(
@@ -280,7 +311,7 @@ export const migrateAddColumnIfMissing = (table, column, type) =>
               return;
             }
             tx.executeSql(
-              `ALTER TABLE ${table} ADD COLUMN ${column} ${type};`,
+              `ALTER TABLE ${table} ADD COLUMN ${column} ${normalizedType};`,
               [],
               () => resolve(true),
               (_, err) => {
