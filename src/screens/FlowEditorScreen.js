@@ -40,6 +40,7 @@ import {
   insertNode,
   updateNode,
   deleteNode,
+  deleteEdge,
   deleteAttachment,
 } from '../db';
 import { pick, types, isCancel } from '@react-native-documents/picker';
@@ -591,7 +592,39 @@ const FlowEditorScreen = ({ route, navigation }) => {
     setCutState({ mode: 'inactive', cardId: null });
   };
 
-  const handlePaste = async () => {
+  const handlePaste = () => {
+    if (!cutState.cardId) {
+      setCutState({ mode: 'inactive', cardId: null });
+      return;
+    }
+    // Detect edges that will become cross-section after the move:
+    // the moved card is one endpoint, the other endpoint lives in a
+    // section other than the destination (currentParentId).
+    const affected = edges.filter(e => {
+      const involves =
+        e.source === cutState.cardId || e.target === cutState.cardId;
+      if (!involves) return false;
+      const otherId = e.source === cutState.cardId ? e.target : e.source;
+      const otherNode = allNodes.find(n => n.id === otherId);
+      if (!otherNode) return false;
+      return otherNode.parentId !== currentParentId;
+    });
+
+    if (affected.length > 0) {
+      Alert.alert(
+        t('pasteBreaksLinksTitle'),
+        t('pasteBreaksLinksMessage', { count: affected.length }),
+        [
+          { text: t('cancel'), style: 'cancel' },
+          { text: t('ok'), onPress: () => performPaste(affected) },
+        ],
+      );
+      return;
+    }
+    performPaste([]);
+  };
+
+  const performPaste = async edgesToDelete => {
     if (!cutState.cardId) {
       setCutState({ mode: 'inactive', cardId: null });
       return;
@@ -601,6 +634,11 @@ const FlowEditorScreen = ({ route, navigation }) => {
       y: (10 - translateY.value) / scale.value,
     };
     try {
+      // Remove edges that would become cross-section first — errors
+      // here are non-fatal (cleanup migration will catch strays).
+      for (const e of edgesToDelete) {
+        await deleteEdge(e.id).catch(() => {});
+      }
       await updateNode(cutState.cardId, {
         parentId: currentParentId,
         x: position.x,
