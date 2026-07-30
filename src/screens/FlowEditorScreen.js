@@ -1492,9 +1492,16 @@ const FlowEditorScreen = ({ route, navigation }) => {
     const { mime_type, stored_path, original_uri } = editingNode.attachment;
 
     if (mime_type === 'text/url' && original_uri) {
+      // Re-validate scheme just before dispatching to Linking, in case a
+      // non-http(s) URI slipped past earlier filters (or came from an
+      // older version's DB row).
+      if (!/^https?:\/\//i.test(original_uri)) {
+        Alert.alert(t('error'), t('invalidUrlScheme'));
+        return;
+      }
       Linking.openURL(original_uri).catch(err => {
         console.error('Failed to open URL', err);
-        Alert.alert('Error', 'Could not open the URL.');
+        Alert.alert(t('error'), t('cannotOpenUrl'));
       });
     } else if (stored_path) {
       const absolutePath = `${ATTACHMENT_BASE_PATH}/${stored_path}`;
