@@ -329,6 +329,7 @@ export const migrateAddColumnIfMissing = (table, column, type) => {
       err => reject(err),
     );
   });
+};
 
 export const initDB = lang => {
   return new Promise((resolve, reject) => {
