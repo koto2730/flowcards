@@ -258,6 +258,23 @@ const FlowListScreen = ({ navigation }) => {
     setEditModalVisible(true);
   };
 
+  // Live-transform the tag input while the user is typing: when the
+  // last character just became a separator (space / comma) and the
+  // token immediately before it lacks a leading `#`, prepend one so
+  // users don't have to reach for `#` on the mobile keyboard.
+  const autocompleteHashInTagInput = text => {
+    if (typeof text !== 'string' || text.length === 0) return text;
+    const lastChar = text.slice(-1);
+    if (lastChar !== ' ' && lastChar !== ',') return text;
+    const beforeSep = text.replace(/[\s,]+$/, '');
+    const trailing = text.slice(beforeSep.length);
+    if (!beforeSep) return text;
+    const tokens = beforeSep.split(/[\s,]+/);
+    const lastToken = tokens[tokens.length - 1];
+    if (!lastToken || lastToken.startsWith('#')) return text;
+    return beforeSep.slice(0, -lastToken.length) + '#' + lastToken + trailing;
+  };
+
   // Normalize a user-entered tag string to " "-separated `#tag` tokens.
   // Splits on any whitespace or comma, drops empty and single-`#` entries,
   // prepends `#` when missing.
@@ -926,9 +943,12 @@ const FlowListScreen = ({ navigation }) => {
                   label={t('tags')}
                   value={editingFlow.tag}
                   onChangeText={txt =>
-                    setEditingFlow(prev => ({ ...prev, tag: txt }))
+                    setEditingFlow(prev => ({
+                      ...prev,
+                      tag: autocompleteHashInTagInput(txt),
+                    }))
                   }
-                  placeholder="#work #personal"
+                  placeholder="work personal"
                   mode="outlined"
                   autoCapitalize="none"
                   style={styles.editModalInput}
