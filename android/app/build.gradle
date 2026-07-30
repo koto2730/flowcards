@@ -84,7 +84,7 @@ android {
         applicationId "com.flowcards"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode project.hasProperty('versionCode') ? project.property('versionCode').toInteger() : 8
+        versionCode project.hasProperty('versionCode') ? project.property('versionCode').toInteger() : 9
         def packageJson = new JsonSlurper().parse(file('../../package.json'))
         versionName packageJson.version
     }

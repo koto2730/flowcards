@@ -40,6 +40,7 @@ import {
   insertNode,
   updateNode,
   deleteNode,
+  deleteEdge,
   deleteAttachment,
 } from '../db';
 import { pick, types, isCancel } from '@react-native-documents/picker';
@@ -591,7 +592,39 @@ const FlowEditorScreen = ({ route, navigation }) => {
     setCutState({ mode: 'inactive', cardId: null });
   };
 
-  const handlePaste = async () => {
+  const handlePaste = () => {
+    if (!cutState.cardId) {
+      setCutState({ mode: 'inactive', cardId: null });
+      return;
+    }
+    // Detect edges that will become cross-section after the move:
+    // the moved card is one endpoint, the other endpoint lives in a
+    // section other than the destination (currentParentId).
+    const affected = edges.filter(e => {
+      const involves =
+        e.source === cutState.cardId || e.target === cutState.cardId;
+      if (!involves) return false;
+      const otherId = e.source === cutState.cardId ? e.target : e.source;
+      const otherNode = allNodes.find(n => n.id === otherId);
+      if (!otherNode) return false;
+      return otherNode.parentId !== currentParentId;
+    });
+
+    if (affected.length > 0) {
+      Alert.alert(
+        t('pasteBreaksLinksTitle'),
+        t('pasteBreaksLinksMessage', { count: affected.length }),
+        [
+          { text: t('cancel'), style: 'cancel' },
+          { text: t('ok'), onPress: () => performPaste(affected) },
+        ],
+      );
+      return;
+    }
+    performPaste([]);
+  };
+
+  const performPaste = async edgesToDelete => {
     if (!cutState.cardId) {
       setCutState({ mode: 'inactive', cardId: null });
       return;
@@ -601,6 +634,11 @@ const FlowEditorScreen = ({ route, navigation }) => {
       y: (10 - translateY.value) / scale.value,
     };
     try {
+      // Remove edges that would become cross-section first — errors
+      // here are non-fatal (cleanup migration will catch strays).
+      for (const e of edgesToDelete) {
+        await deleteEdge(e.id).catch(() => {});
+      }
       await updateNode(cutState.cardId, {
         parentId: currentParentId,
         x: position.x,
@@ -1454,9 +1492,16 @@ const FlowEditorScreen = ({ route, navigation }) => {
     const { mime_type, stored_path, original_uri } = editingNode.attachment;
 
     if (mime_type === 'text/url' && original_uri) {
+      // Re-validate scheme just before dispatching to Linking, in case a
+      // non-http(s) URI slipped past earlier filters (or came from an
+      // older version's DB row).
+      if (!/^https?:\/\//i.test(original_uri)) {
+        Alert.alert(t('error'), t('invalidUrlScheme'));
+        return;
+      }
       Linking.openURL(original_uri).catch(err => {
         console.error('Failed to open URL', err);
-        Alert.alert('Error', 'Could not open the URL.');
+        Alert.alert(t('error'), t('cannotOpenUrl'));
       });
     } else if (stored_path) {
       const absolutePath = `${ATTACHMENT_BASE_PATH}/${stored_path}`;
