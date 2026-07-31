@@ -592,9 +592,31 @@ const FlowEditorScreen = ({ route, navigation }) => {
     setCutState({ mode: 'inactive', cardId: null });
   };
 
+  // True when the current section is the cut card itself or any of its
+  // descendants — pasting there would create a cycle in parentId and
+  // orphan the subtree.
+  const isPasteTargetIllegal = () => {
+    if (!cutState.cardId) return false;
+    if (currentParentId === cutState.cardId) return true;
+    let cursor = currentParentId;
+    const seen = new Set();
+    while (cursor && cursor !== 'root' && !seen.has(cursor)) {
+      seen.add(cursor);
+      const node = allNodes.find(n => n.id === cursor);
+      if (!node) break;
+      if (node.id === cutState.cardId) return true;
+      cursor = node.parentId;
+    }
+    return false;
+  };
+
   const handlePaste = () => {
     if (!cutState.cardId) {
       setCutState({ mode: 'inactive', cardId: null });
+      return;
+    }
+    if (isPasteTargetIllegal()) {
+      Alert.alert(t('error'), t('pasteIntoSelfMessage'));
       return;
     }
     // Detect edges that will become cross-section after the move:
@@ -1813,6 +1835,9 @@ const FlowEditorScreen = ({ route, navigation }) => {
                       allNodes.find(n => n.id === cutState.cardId)?.label ||
                       '',
                   })}
+              {cutState.mode === 'pasting' &&
+                isPasteTargetIllegal() &&
+                ` — ${t('pasteIntoSelfHint')}`}
             </Text>
           </View>
         )}
@@ -1842,6 +1867,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
                 onPress={handlePaste}
                 small
                 label={t('paste')}
+                disabled={isPasteTargetIllegal()}
               />
             </View>
           ) : alignModeOpen ? (
