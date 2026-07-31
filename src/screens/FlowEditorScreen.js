@@ -277,6 +277,12 @@ const FlowEditorScreen = ({ route, navigation }) => {
         }
         await handleCardTap(nodeId);
       } else if (type === 'doubleTap') {
+        // Block entering the cut card itself while in PASTE mode.
+        // Since descendants can only be reached by entering the cut
+        // card first, this single guard prevents all cycle scenarios.
+        if (cutState.mode === 'pasting' && nodeId === cutState.cardId) {
+          return;
+        }
         handleDoubleClick(nodeId);
       } else if (type === 'dragEnd') {
         await handleUpdateNodePosition(nodeId, extra?.newPosition);
@@ -292,6 +298,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
   }, [
     pendingEvent,
     cutState.mode,
+    cutState.cardId,
     handleCardTap,
     handleDoubleClick,
     handleUpdateNodePosition,
@@ -1835,9 +1842,6 @@ const FlowEditorScreen = ({ route, navigation }) => {
                       allNodes.find(n => n.id === cutState.cardId)?.label ||
                       '',
                   })}
-              {cutState.mode === 'pasting' &&
-                isPasteTargetIllegal() &&
-                ` — ${t('pasteIntoSelfHint')}`}
             </Text>
           </View>
         )}
@@ -1867,7 +1871,6 @@ const FlowEditorScreen = ({ route, navigation }) => {
                 onPress={handlePaste}
                 small
                 label={t('paste')}
-                disabled={isPasteTargetIllegal()}
               />
             </View>
           ) : alignModeOpen ? (
