@@ -9,6 +9,7 @@ import {
   initDB,
   migrateAddColumnIfMissing,
   cleanupOrphanedCrossSectionEdges,
+  cleanupCyclicNodeParents,
 } from './src/db';
 
 // i18n関連のインポート
@@ -61,6 +62,12 @@ function App() {
       .then(removed => {
         if (removed > 0) {
           console.log(`Cleaned up ${removed} orphaned cross-section edge(s).`);
+        }
+        return cleanupCyclicNodeParents();
+      })
+      .then(detached => {
+        if (detached > 0) {
+          console.log(`Detached ${detached} cyclic node(s) back to root.`);
         }
         setDbReady(true);
       })

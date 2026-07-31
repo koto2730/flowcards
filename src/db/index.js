@@ -626,6 +626,34 @@ export const updateEdge = (id, data) => {
 export const deleteEdge = id =>
   executeSql('DELETE FROM edges WHERE id = ?;', [id]);
 
+// One-time cleanup for nodes whose parentId chain forms a cycle,
+// which v2.9.0 could produce if the user pasted a cut card into its
+// own section or a descendant. Any node found to be part of a cycle
+// (self-referential or deeper) is detached back to the root section
+// so the user can find it again.
+// Idempotent — after the first successful run, subsequent runs match
+// nothing and do nothing.
+export const cleanupCyclicNodeParents = () =>
+  executeSql(
+    `UPDATE nodes
+     SET parentId = 'root'
+     WHERE id IN (
+       WITH RECURSIVE ancestors(id, ancestor, depth) AS (
+         SELECT id, parentId, 1 FROM nodes
+         WHERE parentId IS NOT NULL AND parentId != 'root'
+         UNION ALL
+         SELECT a.id, n.parentId, a.depth + 1
+         FROM ancestors a
+         JOIN nodes n ON n.id = a.ancestor
+         WHERE n.parentId IS NOT NULL
+           AND n.parentId != 'root'
+           AND a.depth < 100
+       )
+       SELECT DISTINCT id FROM ancestors WHERE ancestor = id
+     );`,
+    [],
+  ).then(({ rowsAffected }) => rowsAffected || 0);
+
 // One-time cleanup for cross-section edges left behind by earlier
 // versions of Cut → Paste (which only moved parentId but never touched
 // edges). Deletes any edge whose endpoints live in different sections
