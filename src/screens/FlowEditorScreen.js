@@ -169,8 +169,6 @@ const FlowEditorScreen = ({ route, navigation }) => {
   const [fabMenuOpen, setFabMenuOpen] = useState(false);
   const [qrScannerVisible, setQrScannerVisible] = useState(false);
   const [audioRecorderVisible, setAudioRecorderVisible] = useState(false);
-  // Bottom-left utility submenu (reset zoom / target-nearest).
-  const [utilityMenuOpen, setUtilityMenuOpen] = useState(false);
   // Cut → Paste flow (#38).
   // mode: 'inactive' | 'selecting' (waiting for user to tap a card) | 'pasting' (card chosen, awaiting paste/cancel)
   const [cutState, setCutState] = useState({ mode: 'inactive', cardId: null });
@@ -1991,62 +1989,9 @@ const FlowEditorScreen = ({ route, navigation }) => {
             </View>
           ) : (
             <>
-              {/* Global Group (Bottom Left) — Utility menu (⋮) that
-                  expands to reveal Reset Zoom / Move to Nearest Card. */}
-              <View style={styles.fabGroup}>
-                <FAB
-                  icon="dots-vertical"
-                  style={styles.fab}
-                  small
-                  onPress={() => setUtilityMenuOpen(o => !o)}
-                  color={utilityMenuOpen ? '#34C759' : undefined}
-                />
-                {utilityMenuOpen && (
-                  <>
-                    <FAB
-                      icon="magnify"
-                      style={styles.fab}
-                      small
-                      onPress={() => {
-                        runOnJS(resetScale)();
-                        setUtilityMenuOpen(false);
-                      }}
-                    />
-                    <FAB
-                      icon="target"
-                      style={styles.fab}
-                      onPress={() => {
-                        runOnJS(moveToNearestCard)();
-                        setUtilityMenuOpen(false);
-                      }}
-                      small
-                      visible={true}
-                    />
-                  </>
-                )}
-              </View>
-
-              {/* Right Groups */}
-              <View style={styles.fabRightColumn}>
-                {/* Reference Group (Top Right) */}
+              {/* Left column — view toggles on top, nav helpers on bottom */}
+              <View style={styles.fabLeftColumn}>
                 <View style={[styles.fabGroup, { marginBottom: 8 }]}>
-                  <FAB
-                    icon="format-align-justify"
-                    style={styles.fab}
-                    onPress={() => setAlignModeOpen(true)}
-                    small
-                    visible={true}
-                  />
-                  {/* 4: Show Attachments */}
-                  <FAB
-                    icon="paperclip"
-                    style={styles.fab}
-                    onPress={() => setShowAttachmentsOnCanvas(s => !s)}
-                    color={showAttachmentsOnCanvas ? '#34C759' : undefined}
-                    small
-                    visible={true}
-                  />
-                  {/* 5: See-through Mode */}
                   <FAB
                     icon={isSeeThrough ? 'eye-off' : 'eye'}
                     style={styles.fab}
@@ -2055,15 +2000,39 @@ const FlowEditorScreen = ({ route, navigation }) => {
                     small
                     visible={true}
                   />
+                  <FAB
+                    icon="paperclip"
+                    style={styles.fab}
+                    onPress={() => setShowAttachmentsOnCanvas(s => !s)}
+                    color={showAttachmentsOnCanvas ? '#34C759' : undefined}
+                    small
+                    visible={true}
+                  />
                 </View>
-
-                {/* Edit Group (Bottom Right) */}
                 <View style={styles.fabGroup}>
                   <FAB
-                    icon="content-cut"
+                    icon="magnify"
                     style={styles.fab}
-                    onPress={handleStartCut}
-                    disabled={fabDisabled || linkingState.active || isSeeThrough}
+                    small
+                    onPress={() => runOnJS(resetScale)()}
+                  />
+                  <FAB
+                    icon="target"
+                    style={styles.fab}
+                    onPress={() => runOnJS(moveToNearestCard)()}
+                    small
+                    visible={true}
+                  />
+                </View>
+              </View>
+
+              {/* Right column — align / section-up on top, edit modes on bottom */}
+              <View style={styles.fabRightColumn}>
+                <View style={[styles.fabGroup, { marginBottom: 8 }]}>
+                  <FAB
+                    icon="format-align-justify"
+                    style={styles.fab}
+                    onPress={() => setAlignModeOpen(true)}
                     small
                     visible={true}
                   />
@@ -2072,6 +2041,16 @@ const FlowEditorScreen = ({ route, navigation }) => {
                     style={styles.fab}
                     onPress={handlePressSectionUp}
                     disabled={fabDisabled}
+                    small
+                    visible={true}
+                  />
+                </View>
+                <View style={styles.fabGroup}>
+                  <FAB
+                    icon="content-cut"
+                    style={styles.fab}
+                    onPress={handleStartCut}
+                    disabled={fabDisabled || linkingState.active || isSeeThrough}
                     small
                     visible={true}
                   />
@@ -2490,6 +2469,10 @@ const styles = StyleSheet.create({
   fabRightColumn: {
     flexDirection: 'column',
     alignItems: 'flex-end',
+  },
+  fabLeftColumn: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
   },
   fabGroup: {
     flexDirection: 'row',
