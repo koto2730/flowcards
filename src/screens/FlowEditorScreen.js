@@ -169,6 +169,8 @@ const FlowEditorScreen = ({ route, navigation }) => {
   const [fabMenuOpen, setFabMenuOpen] = useState(false);
   const [qrScannerVisible, setQrScannerVisible] = useState(false);
   const [audioRecorderVisible, setAudioRecorderVisible] = useState(false);
+  // Bottom-left utility submenu (reset zoom / target-nearest).
+  const [utilityMenuOpen, setUtilityMenuOpen] = useState(false);
   // Cut → Paste flow (#38).
   // mode: 'inactive' | 'selecting' (waiting for user to tap a card) | 'pasting' (card chosen, awaiting paste/cancel)
   const [cutState, setCutState] = useState({ mode: 'inactive', cardId: null });
@@ -1989,23 +1991,39 @@ const FlowEditorScreen = ({ route, navigation }) => {
             </View>
           ) : (
             <>
-              {/* Global Group (Bottom Left) */}
+              {/* Global Group (Bottom Left) — Utility menu (⋮) that
+                  expands to reveal Reset Zoom / Move to Nearest Card. */}
               <View style={styles.fabGroup}>
-                {/* 6: Reset Zoom */}
                 <FAB
-                  icon="magnify"
+                  icon="dots-vertical"
                   style={styles.fab}
                   small
-                  onPress={() => runOnJS(resetScale)()}
+                  onPress={() => setUtilityMenuOpen(o => !o)}
+                  color={utilityMenuOpen ? '#34C759' : undefined}
                 />
-                {/* 7: Pan/Move mode */}
-                <FAB
-                  icon="target"
-                  style={styles.fab}
-                  onPress={() => runOnJS(moveToNearestCard)()}
-                  small
-                  visible={true}
-                />
+                {utilityMenuOpen && (
+                  <>
+                    <FAB
+                      icon="magnify"
+                      style={styles.fab}
+                      small
+                      onPress={() => {
+                        runOnJS(resetScale)();
+                        setUtilityMenuOpen(false);
+                      }}
+                    />
+                    <FAB
+                      icon="target"
+                      style={styles.fab}
+                      onPress={() => {
+                        runOnJS(moveToNearestCard)();
+                        setUtilityMenuOpen(false);
+                      }}
+                      small
+                      visible={true}
+                    />
+                  </>
+                )}
               </View>
 
               {/* Right Groups */}
