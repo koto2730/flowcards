@@ -433,6 +433,11 @@ export const getAttachmentByNodeId = (flowId, nodeId) =>
     nodeId,
   ]).then(({ rows }) => (rows.length > 0 ? rows.raw()[0] : null));
 
+export const getAttachmentsByFlowId = flowId =>
+  executeSql('SELECT * FROM attachments WHERE flow_id = ?;', [flowId]).then(
+    ({ rows }) => rows.raw(),
+  );
+
 export const insertAttachment = data => {
   const keys = Object.keys(data);
   const values = Object.values(data);

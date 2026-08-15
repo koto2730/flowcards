@@ -28,6 +28,8 @@ import {
 } from 'react-native-paper';
 import Share from 'react-native-share';
 import RNFS from 'react-native-fs';
+import { v4 as uuidv4 } from 'uuid';
+import { sanitizeFilename } from '../utils/fileSafety';
 import ColorPalette from 'react-native-color-palette';
 import {
   getFlows,
@@ -42,11 +44,14 @@ import {
   getNodes,
   getEdges,
   getAttachmentByNodeId,
+  getAttachmentsByFlowId,
+  insertNode,
+  insertEdge,
+  insertAttachment,
 } from '../db';
 import OriginalTheme from './OriginalTheme';
 import { useTranslation } from 'react-i18next';
 import { convertFlowToJSONCanvas } from '../utils/flowUtils';
-import { sanitizeFilename } from '../utils/fileSafety';
 import { zip } from 'react-native-zip-archive';
 
 const PAGE_SIZE = 15;
@@ -314,6 +319,152 @@ const FlowListScreen = ({ navigation }) => {
   const handleCancelEditModal = () => {
     setEditModalVisible(false);
     setEditingFlow(null);
+  };
+
+  // Duplicate a whole flow: its metadata, all nodes / edges (with fresh
+  // ids), and all attachment rows + physical files. The new flow gets
+  // its own AUTOINCREMENT id, so nodes/edges/attachments are re-parented
+  // by mapping every original uuid → new uuid before insert.
+  const performDuplicateFlow = async source => {
+    const insertedNodeIds = [];
+    const insertedEdgeIds = [];
+    const insertedAttachmentIds = [];
+    const copiedFilePaths = [];
+    const attachmentDir = `${RNFS.DocumentDirectoryPath}/attachments`;
+    let newFlowId = null;
+
+    try {
+      const dirExists = await RNFS.exists(attachmentDir);
+      if (!dirExists) await RNFS.mkdir(attachmentDir);
+
+      const newFlowResult = await insertFlow({
+        name: `${source.name} ${t('copySuffix')}`,
+        tag: source.tag || null,
+        color: source.color || null,
+      });
+      newFlowId = newFlowResult.insertId;
+
+      const [sourceNodes, sourceEdges, sourceAttachments] = await Promise.all([
+        getNodes(source.id),
+        getEdges(source.id),
+        getAttachmentsByFlowId(source.id),
+      ]);
+
+      const nodeIdMap = new Map();
+      for (const n of sourceNodes) nodeIdMap.set(n.id, uuidv4());
+
+      for (const n of sourceNodes) {
+        const newId = nodeIdMap.get(n.id);
+        await insertNode({
+          id: newId,
+          flowId: newFlowId,
+          parentId:
+            n.parentId && n.parentId !== 'root'
+              ? nodeIdMap.get(n.parentId) || 'root'
+              : 'root',
+          label: n.label,
+          description: n.description,
+          x: n.x,
+          y: n.y,
+          width: n.width,
+          height: n.height,
+          color: n.color,
+        });
+        insertedNodeIds.push(newId);
+      }
+
+      for (const e of sourceEdges) {
+        const newSource = nodeIdMap.get(e.source);
+        const newTarget = nodeIdMap.get(e.target);
+        if (!newSource || !newTarget) continue;
+        const newId = uuidv4();
+        await insertEdge({
+          id: newId,
+          flowId: newFlowId,
+          source: newSource,
+          target: newTarget,
+          sourceHandle: e.sourceHandle,
+          targetHandle: e.targetHandle,
+          direction: e.direction,
+          type: e.type,
+        });
+        insertedEdgeIds.push(newId);
+      }
+
+      for (const a of sourceAttachments) {
+        const newNodeId = nodeIdMap.get(a.node_id);
+        if (!newNodeId) continue;
+
+        let newStoredRel = null;
+        if (a.stored_path) {
+          const srcAbs = `${RNFS.DocumentDirectoryPath}/${a.stored_path}`;
+          if (await RNFS.exists(srcAbs)) {
+            const baseName = a.stored_path.split('/').pop();
+            const newName = `${Date.now()}-${sanitizeFilename(baseName)}`;
+            const dstAbs = `${attachmentDir}/${newName}`;
+            await RNFS.copyFile(srcAbs, dstAbs);
+            copiedFilePaths.push(dstAbs);
+            newStoredRel = `attachments/${newName}`;
+          }
+        }
+
+        let newThumbRel = null;
+        if (a.thumbnail_path && a.thumbnail_path !== a.stored_path) {
+          const srcAbs = `${RNFS.DocumentDirectoryPath}/${a.thumbnail_path}`;
+          if (await RNFS.exists(srcAbs)) {
+            const baseName = a.thumbnail_path.split('/').pop();
+            const newName = `${Date.now()}-thumb-${sanitizeFilename(baseName)}`;
+            const dstAbs = `${attachmentDir}/${newName}`;
+            await RNFS.copyFile(srcAbs, dstAbs);
+            copiedFilePaths.push(dstAbs);
+            newThumbRel = `attachments/${newName}`;
+          }
+        } else if (a.thumbnail_path === a.stored_path) {
+          newThumbRel = newStoredRel;
+        }
+
+        const attResult = await insertAttachment({
+          flow_id: newFlowId,
+          node_id: newNodeId,
+          filename: a.filename,
+          mime_type: a.mime_type,
+          original_uri: a.original_uri,
+          stored_path: newStoredRel,
+          preview_title: a.preview_title,
+          preview_description: a.preview_description,
+          preview_image_url: a.preview_image_url,
+          thumbnail_path: newThumbRel,
+        });
+        insertedAttachmentIds.push(attResult.insertId);
+      }
+
+      setEditModalVisible(false);
+      setEditingFlow(null);
+      fetchFlows(true);
+      refreshTags();
+    } catch (err) {
+      console.error('Failed to duplicate flow:', err);
+      // Roll back everything we inserted / copied so partial state
+      // doesn't linger.
+      if (newFlowId != null) {
+        try {
+          await deleteFlow(newFlowId);
+          await deleteNodesByFlowId(newFlowId);
+          await deleteEdgesByFlowId(newFlowId);
+        } catch (_) {}
+      }
+      for (const p of copiedFilePaths) {
+        await RNFS.unlink(p).catch(() => {});
+      }
+      Alert.alert(t('error'), err.message || String(err));
+    }
+  };
+
+  const handleDuplicateFlow = () => {
+    if (!editingFlow) return;
+    const source = flows.find(f => f.id === editingFlow.id);
+    if (!source) return;
+    performDuplicateFlow(source);
   };
 
   const handleDeleteFlow = id => {
@@ -987,6 +1138,14 @@ const FlowListScreen = ({ navigation }) => {
                   )}
                 </View>
                 <View style={styles.editModalButtonRow}>
+                  <Button
+                    mode="outlined"
+                    icon="content-copy"
+                    onPress={handleDuplicateFlow}
+                  >
+                    {t('duplicate')}
+                  </Button>
+                  <View style={{ flex: 1 }} />
                   <Button mode="outlined" onPress={handleCancelEditModal}>
                     {t('cancel')}
                   </Button>
