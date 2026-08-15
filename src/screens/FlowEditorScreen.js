@@ -1809,6 +1809,41 @@ const FlowEditorScreen = ({ route, navigation }) => {
     }
   };
 
+  // Section hierarchy mini-map (#128).
+  // A section id equals either 'root' (top level) or a card's id (that
+  // card, when entered, is the section).
+  const nodeByIdForDepth = useMemo(
+    () => new Map((allNodes || []).map(n => [n.id, n])),
+    [allNodes],
+  );
+  const getSectionDepth = sectionId => {
+    if (!sectionId || sectionId === 'root') return 0;
+    const seen = new Set();
+    let cursor = sectionId;
+    let depth = 1;
+    while (cursor && cursor !== 'root' && !seen.has(cursor)) {
+      seen.add(cursor);
+      const node = nodeByIdForDepth.get(cursor);
+      if (!node) break;
+      if (!node.parentId || node.parentId === 'root') return depth;
+      cursor = node.parentId;
+      depth++;
+    }
+    return depth;
+  };
+  const currentSectionDepth = useMemo(
+    () => getSectionDepth(currentParentId),
+    [currentParentId, nodeByIdForDepth],
+  );
+  const maxSectionDepth = useMemo(() => {
+    let max = 0;
+    for (const n of allNodes || []) {
+      const d = getSectionDepth(n.parentId);
+      if (d > max) max = d;
+    }
+    return Math.max(max, currentSectionDepth);
+  }, [allNodes, currentSectionDepth, nodeByIdForDepth]);
+
   const resolveAttachmentPath = relativePath => {
     if (!relativePath) {
       return null;
@@ -1843,6 +1878,19 @@ const FlowEditorScreen = ({ route, navigation }) => {
                       '',
                   })}
             </Text>
+          </View>
+        )}
+        {maxSectionDepth >= 1 && (
+          <View style={styles.sectionMapContainer} pointerEvents="none">
+            {Array.from({ length: maxSectionDepth + 1 }, (_, level) => (
+              <View
+                key={level}
+                style={[
+                  styles.sectionMapCell,
+                  level === currentSectionDepth && styles.sectionMapCellActive,
+                ]}
+              />
+            ))}
           </View>
         )}
         <View
@@ -2449,6 +2497,30 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     zIndex: 200,
     elevation: 6,
+  },
+  sectionMapContainer: {
+    position: 'absolute',
+    right: 4,
+    top: 80,
+    padding: 4,
+    borderRadius: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.6)',
+    alignItems: 'center',
+    zIndex: 150,
+    elevation: 3,
+  },
+  sectionMapCell: {
+    width: 18,
+    height: 10,
+    marginVertical: 2,
+    borderRadius: 2,
+    borderWidth: 1,
+    borderColor: '#888',
+    backgroundColor: 'rgba(255,255,255,0.6)',
+  },
+  sectionMapCellActive: {
+    backgroundColor: OriginalTheme.colors.primary,
+    borderColor: OriginalTheme.colors.primary,
   },
   cutStatusText: {
     color: '#333',
