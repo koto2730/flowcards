@@ -37,6 +37,10 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x android/gradlew
 
+      - name: Read app version
+        id: appver
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
       - name: Decode Keystore
         run: echo -n "${{ secrets.ANDROID_SIGNING_KEY }}" | base64 --decode > "${{ github.workspace }}/release.keystore"
 
@@ -53,8 +57,9 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           draft: true
-          tag_name: build-${{ github.run_number }}
-          files: android/app/build/outputs/apk/release/app-release.apk
+          tag_name: v${{ steps.appver.outputs.version }}
+          name: FlowCards v${{ steps.appver.outputs.version }}
+          files: android/app/build/outputs/apk/release/FlowCards-v${{ steps.appver.outputs.version }}.apk
 
       - name: Upload to Google Play
         uses: r0adkll/upload-google-play@v1
