@@ -151,6 +151,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
     handleDeleteNode,
     handleDoubleClick,
     handleSectionUp,
+    navigateToSection,
     linkingState,
     setLinkingState,
     toggleLinkingMode,
@@ -164,6 +165,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
   const [urlInputVisible, setUrlInputVisible] = useState(false);
   const [attachmentUrl, setAttachmentUrl] = useState('');
   const [showAttachmentsOnCanvas, setShowAttachmentsOnCanvas] = useState(false);
+  const [showSectionMap, setShowSectionMap] = useState(false);
   const [bulkAddModalVisible, setBulkAddModalVisible] = useState(false);
   const [bulkAddText, setBulkAddText] = useState('');
   const [fabMenuOpen, setFabMenuOpen] = useState(false);
@@ -1809,40 +1811,64 @@ const FlowEditorScreen = ({ route, navigation }) => {
     }
   };
 
-  // Section hierarchy mini-map (#128).
-  // A section id equals either 'root' (top level) or a card's id (that
-  // card, when entered, is the section).
-  const nodeByIdForDepth = useMemo(
-    () => new Map((allNodes || []).map(n => [n.id, n])),
-    [allNodes],
-  );
-  const getSectionDepth = sectionId => {
-    if (!sectionId || sectionId === 'root') return 0;
-    const seen = new Set();
-    let cursor = sectionId;
-    let depth = 1;
-    while (cursor && cursor !== 'root' && !seen.has(cursor)) {
-      seen.add(cursor);
-      const node = nodeByIdForDepth.get(cursor);
-      if (!node) break;
-      if (!node.parentId || node.parentId === 'root') return depth;
-      cursor = node.parentId;
-      depth++;
+  // Section hierarchy mini-map (#128 → #130).
+  // Now shows the real tree of sections (parent nodes that have any
+  // descendants) plus the current position, letting the user tap any
+  // row to jump to that section.
+  const sectionMapItems = useMemo(() => {
+    const nodes = allNodes || [];
+    const byId = new Map(nodes.map(n => [n.id, n]));
+    // A node is a "section" if at least one other node has it as parent.
+    const parentIds = new Set();
+    for (const n of nodes) {
+      if (n.parentId && n.parentId !== 'root') parentIds.add(n.parentId);
     }
-    return depth;
-  };
-  const currentSectionDepth = useMemo(
-    () => getSectionDepth(currentParentId),
-    [currentParentId, nodeByIdForDepth],
-  );
-  const maxSectionDepth = useMemo(() => {
-    let max = 0;
-    for (const n of allNodes || []) {
-      const d = getSectionDepth(n.parentId);
-      if (d > max) max = d;
+    // Always include the currently viewed section so the user's position
+    // is visible even if that section has no children yet.
+    if (
+      currentParentId &&
+      currentParentId !== 'root' &&
+      byId.has(currentParentId)
+    ) {
+      parentIds.add(currentParentId);
     }
-    return Math.max(max, currentSectionDepth);
-  }, [allNodes, currentSectionDepth, nodeByIdForDepth]);
+    // Children lookup limited to section ids only, sorted for stable order.
+    const childrenOf = new Map();
+    childrenOf.set('root', []);
+    for (const id of parentIds) childrenOf.set(id, []);
+    for (const n of nodes) {
+      if (parentIds.has(n.id)) {
+        const parent = n.parentId || 'root';
+        if (!childrenOf.has(parent)) childrenOf.set(parent, []);
+        childrenOf.get(parent).push(n.id);
+      }
+    }
+    for (const arr of childrenOf.values()) {
+      arr.sort((a, b) => {
+        const la = byId.get(a)?.label || '';
+        const lb = byId.get(b)?.label || '';
+        return la.localeCompare(lb);
+      });
+    }
+    // DFS to produce a flat list of { id, depth, label }.
+    const out = [];
+    const walk = (id, depth) => {
+      if (id === 'root') {
+        out.push({ id: 'root', depth: 0, label: t('root') });
+      } else {
+        const node = byId.get(id);
+        out.push({
+          id,
+          depth,
+          label: node?.data?.label || node?.label || '',
+        });
+      }
+      const kids = childrenOf.get(id) || [];
+      for (const kid of kids) walk(kid, depth + 1);
+    };
+    walk('root', 0);
+    return out;
+  }, [allNodes, currentParentId, t]);
 
   const resolveAttachmentPath = relativePath => {
     if (!relativePath) {
@@ -1880,18 +1906,51 @@ const FlowEditorScreen = ({ route, navigation }) => {
             </Text>
           </View>
         )}
-        {maxSectionDepth >= 1 && (
-          <View style={styles.sectionMapContainer} pointerEvents="none">
-            {Array.from({ length: maxSectionDepth + 1 }, (_, level) => (
-              <View
-                key={level}
-                style={[
-                  styles.sectionMapCell,
-                  level === currentSectionDepth && styles.sectionMapCellActive,
-                ]}
-              />
-            ))}
-          </View>
+        {showSectionMap && sectionMapItems.length > 1 && (
+          <ScrollView
+            style={styles.sectionMapContainer}
+            contentContainerStyle={styles.sectionMapContent}
+            showsVerticalScrollIndicator={false}
+          >
+            {sectionMapItems.map(item => {
+              const active =
+                (item.id === 'root' && currentParentId === 'root') ||
+                item.id === currentParentId;
+              return (
+                <TouchableOpacity
+                  key={item.id}
+                  style={[
+                    styles.sectionMapRow,
+                    { paddingLeft: 4 + item.depth * 8 },
+                  ]}
+                  onPress={() => {
+                    if (item.id === 'root') {
+                      navigateToSection('root');
+                    } else {
+                      navigateToSection(item.id);
+                    }
+                  }}
+                  activeOpacity={0.6}
+                >
+                  <View
+                    style={[
+                      styles.sectionMapCell,
+                      active && styles.sectionMapCellActive,
+                    ]}
+                  />
+                  <Text
+                    style={[
+                      styles.sectionMapLabel,
+                      active && styles.sectionMapLabelActive,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {item.label || '—'}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
         )}
         <View
           pointerEvents="box-none"
@@ -2068,6 +2127,14 @@ const FlowEditorScreen = ({ route, navigation }) => {
                     icon="target"
                     style={styles.fab}
                     onPress={() => runOnJS(moveToNearestCard)()}
+                    small
+                    visible={true}
+                  />
+                  <FAB
+                    icon="file-tree"
+                    style={styles.fab}
+                    onPress={() => setShowSectionMap(s => !s)}
+                    color={showSectionMap ? '#34C759' : undefined}
                     small
                     visible={true}
                   />
@@ -2501,26 +2568,44 @@ const styles = StyleSheet.create({
   sectionMapContainer: {
     position: 'absolute',
     right: 4,
-    top: 80,
-    padding: 4,
+    top: 40,
+    maxHeight: '50%',
+    maxWidth: 180,
     borderRadius: 6,
-    backgroundColor: 'rgba(255, 255, 255, 0.6)',
-    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.85)',
     zIndex: 150,
     elevation: 3,
   },
+  sectionMapContent: {
+    paddingVertical: 4,
+    paddingRight: 6,
+  },
+  sectionMapRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 3,
+  },
   sectionMapCell: {
-    width: 18,
-    height: 10,
-    marginVertical: 2,
+    width: 8,
+    height: 8,
     borderRadius: 2,
     borderWidth: 1,
     borderColor: '#888',
     backgroundColor: 'rgba(255,255,255,0.6)',
+    marginRight: 6,
   },
   sectionMapCellActive: {
     backgroundColor: OriginalTheme.colors.primary,
     borderColor: OriginalTheme.colors.primary,
+  },
+  sectionMapLabel: {
+    fontSize: 11,
+    color: '#333',
+    flexShrink: 1,
+  },
+  sectionMapLabelActive: {
+    color: OriginalTheme.colors.primary,
+    fontWeight: '600',
   },
   cutStatusText: {
     color: '#333',

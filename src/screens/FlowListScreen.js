@@ -52,7 +52,9 @@ import {
 import OriginalTheme from './OriginalTheme';
 import { useTranslation } from 'react-i18next';
 import { convertFlowToJSONCanvas } from '../utils/flowUtils';
-import { zip } from 'react-native-zip-archive';
+import { importZip, importCanvas } from '../utils/flowImport';
+import { zip, unzip } from 'react-native-zip-archive';
+import { pick, types, isCancel } from '@react-native-documents/picker';
 
 const PAGE_SIZE = 15;
 
@@ -571,6 +573,21 @@ const FlowListScreen = ({ navigation }) => {
             }
           }
 
+          // Manifest for round-trip import (v2.11.0+). Records the flow's
+          // metadata and the section hierarchy that JSON Canvas alone
+          // cannot express, so import can re-create the same tree.
+          const manifest = {
+            schemaVersion: 1,
+            exportedAt: new Date().toISOString(),
+            appVersion: '2.11.0',
+            flow: {
+              name: flow.name,
+              tag: flow.tag || null,
+              color: flow.color || null,
+            },
+            sections: [],
+          };
+
           for (const parentId in nodesByParent) {
             const sectionNodes = [...nodesByParent[parentId]];
             const sectionNodeIds = new Set(sectionNodes.map(n => n.id));
@@ -601,7 +618,23 @@ const FlowListScreen = ({ navigation }) => {
             const fileName = `${sanitizeFilename(canvasName.replace(/\s/g, '_'))}.canvas`;
             const filePath = `${exportTempDir}/${fileName}`;
             await RNFS.writeFile(filePath, canvasData, 'utf8');
+
+            manifest.sections.push({
+              sectionId: parentId,
+              parentSectionId:
+                parentId === 'root'
+                  ? null
+                  : allNodes.find(n => n.id === parentId)?.parentId || 'root',
+              canvasFile: fileName,
+              label: parentId === 'root' ? null : sectionName,
+            });
           }
+
+          await RNFS.writeFile(
+            `${exportTempDir}/_flowcards_manifest.json`,
+            JSON.stringify(manifest, null, 2),
+            'utf8',
+          );
 
           await zip(exportTempDir, zipPath);
 
@@ -730,6 +763,69 @@ const FlowListScreen = ({ navigation }) => {
       ],
       { cancelable: true },
     );
+  };
+
+  const handleImportFlow = async () => {
+    setMenuVisible(false);
+    let result;
+    try {
+      result = await pick({
+        type: [types.zip, types.allFiles],
+        allowMultiSelection: false,
+      });
+    } catch (err) {
+      if (isCancel(err)) return;
+      Alert.alert(t('error'), err.message || String(err));
+      return;
+    }
+    if (!result || result.length === 0) return;
+    const file = result[0];
+    const nameLower = (file.name || '').toLowerCase();
+    const ext = nameLower.endsWith('.zip')
+      ? '.zip'
+      : nameLower.endsWith('.canvas')
+        ? '.canvas'
+        : null;
+    if (!ext) {
+      Alert.alert(t('error'), t('importUnsupportedFile'));
+      return;
+    }
+
+    // Copy the picked file to a real local path first. On Android the
+    // picker returns a content:// URI that react-native-zip-archive can't
+    // consume directly; on iOS decode the file:// URI before copying.
+    const tempPath = `${RNFS.TemporaryDirectoryPath}/import_${Date.now()}${ext}`;
+    const ctx = {
+      RNFS,
+      ATTACHMENT_BASE_PATH: RNFS.DocumentDirectoryPath,
+      unzip,
+      db: { insertFlow, insertNode, insertEdge, insertAttachment },
+    };
+
+    try {
+      if (Platform.OS === 'ios') {
+        const src = decodeURIComponent(
+          (file.uri || '').replace(/^file:\/\//, ''),
+        );
+        await RNFS.copyFile(src, tempPath);
+      } else {
+        await RNFS.copyFile(file.uri, tempPath);
+      }
+
+      if (ext === '.zip') {
+        await importZip(tempPath, ctx);
+      } else {
+        await importCanvas(tempPath, ctx);
+      }
+      fetchFlows(true);
+      refreshTags();
+      Alert.alert(t('importFlow'), t('importDone'));
+    } catch (err) {
+      console.error('Failed to import flow:', err);
+      Alert.alert(t('error'), err.message || String(err));
+    } finally {
+      await RNFS.unlink(tempPath).catch(() => {});
+    }
   };
 
   const handleResetDB = async () => {
@@ -1006,6 +1102,14 @@ const FlowListScreen = ({ navigation }) => {
             contentContainerStyle={styles.menuModal}
           >
             <View>
+              <Button
+                icon="import"
+                mode="contained"
+                onPress={handleImportFlow}
+                style={{ marginBottom: 16 }}
+              >
+                {t('importFlow')}
+              </Button>
               <Button
                 icon="database-refresh"
                 mode="contained"
