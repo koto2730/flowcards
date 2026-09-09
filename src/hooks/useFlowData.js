@@ -461,6 +461,29 @@ export const useFlowData = (flowId, isSeeThrough, alignModeOpen, t) => {
     }
   };
 
+  // Jump directly to a given section (e.g., from the section map).
+  // Rebuilds parentIdHistory as the chain from root down to the parent
+  // of the target so subsequent section-up presses behave as if the
+  // user had drilled in normally.
+  const navigateToSection = sectionId => {
+    if (isSeeThrough || linkingState.active) return;
+    if (sectionId === currentParentId) return;
+    const nodeById = new Map(allNodes.map(n => [n.id, n]));
+    const chain = [];
+    let cursor = sectionId;
+    const seen = new Set();
+    while (cursor && cursor !== 'root' && !seen.has(cursor)) {
+      seen.add(cursor);
+      const node = nodeById.get(cursor);
+      if (!node) break;
+      chain.unshift(node.parentId || 'root');
+      cursor = node.parentId;
+      if (!cursor || cursor === 'root') break;
+    }
+    setParentIdHistory(chain);
+    setCurrentParentId(sectionId);
+  };
+
   const handleSectionUp = async screenCenter => {
     if (isSeeThrough || linkingState.active) return;
     if (parentIdHistory.length > 0) {
@@ -621,6 +644,7 @@ export const useFlowData = (flowId, isSeeThrough, alignModeOpen, t) => {
     handleDeleteNode,
     handleDoubleClick,
     handleSectionUp,
+    navigateToSection,
     linkingState,
     setLinkingState,
     toggleLinkingMode,
