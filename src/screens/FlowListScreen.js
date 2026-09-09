@@ -780,13 +780,21 @@ const FlowListScreen = ({ navigation }) => {
     }
     if (!result || result.length === 0) return;
     const file = result[0];
-    // Resolve to a real filesystem path on iOS if needed.
-    const sourcePath =
-      Platform.OS === 'ios'
-        ? decodeURIComponent((file.uri || '').replace(/^file:\/\//, ''))
-        : file.uri;
-    const name = (file.name || '').toLowerCase();
+    const nameLower = (file.name || '').toLowerCase();
+    const ext = nameLower.endsWith('.zip')
+      ? '.zip'
+      : nameLower.endsWith('.canvas')
+        ? '.canvas'
+        : null;
+    if (!ext) {
+      Alert.alert(t('error'), t('importUnsupportedFile'));
+      return;
+    }
 
+    // Copy the picked file to a real local path first. On Android the
+    // picker returns a content:// URI that react-native-zip-archive can't
+    // consume directly; on iOS decode the file:// URI before copying.
+    const tempPath = `${RNFS.TemporaryDirectoryPath}/import_${Date.now()}${ext}`;
     const ctx = {
       RNFS,
       ATTACHMENT_BASE_PATH: RNFS.DocumentDirectoryPath,
@@ -795,13 +803,19 @@ const FlowListScreen = ({ navigation }) => {
     };
 
     try {
-      if (name.endsWith('.zip')) {
-        await importZip(sourcePath, ctx);
-      } else if (name.endsWith('.canvas')) {
-        await importCanvas(sourcePath, ctx);
+      if (Platform.OS === 'ios') {
+        const src = decodeURIComponent(
+          (file.uri || '').replace(/^file:\/\//, ''),
+        );
+        await RNFS.copyFile(src, tempPath);
       } else {
-        Alert.alert(t('error'), t('importUnsupportedFile'));
-        return;
+        await RNFS.copyFile(file.uri, tempPath);
+      }
+
+      if (ext === '.zip') {
+        await importZip(tempPath, ctx);
+      } else {
+        await importCanvas(tempPath, ctx);
       }
       fetchFlows(true);
       refreshTags();
@@ -809,6 +823,8 @@ const FlowListScreen = ({ navigation }) => {
     } catch (err) {
       console.error('Failed to import flow:', err);
       Alert.alert(t('error'), err.message || String(err));
+    } finally {
+      await RNFS.unlink(tempPath).catch(() => {});
     }
   };
 
