@@ -165,6 +165,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
   const [urlInputVisible, setUrlInputVisible] = useState(false);
   const [attachmentUrl, setAttachmentUrl] = useState('');
   const [showAttachmentsOnCanvas, setShowAttachmentsOnCanvas] = useState(false);
+  const [showSectionMap, setShowSectionMap] = useState(false);
   const [bulkAddModalVisible, setBulkAddModalVisible] = useState(false);
   const [bulkAddText, setBulkAddText] = useState('');
   const [fabMenuOpen, setFabMenuOpen] = useState(false);
@@ -1905,7 +1906,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
             </Text>
           </View>
         )}
-        {sectionMapItems.length > 1 && (
+        {showSectionMap && sectionMapItems.length > 1 && (
           <ScrollView
             style={styles.sectionMapContainer}
             contentContainerStyle={styles.sectionMapContent}
@@ -2111,6 +2112,14 @@ const FlowEditorScreen = ({ route, navigation }) => {
                     style={styles.fab}
                     onPress={() => setShowAttachmentsOnCanvas(s => !s)}
                     color={showAttachmentsOnCanvas ? '#34C759' : undefined}
+                    small
+                    visible={true}
+                  />
+                  <FAB
+                    icon="file-tree"
+                    style={styles.fab}
+                    onPress={() => setShowSectionMap(s => !s)}
+                    color={showSectionMap ? '#34C759' : undefined}
                     small
                     visible={true}
                   />
