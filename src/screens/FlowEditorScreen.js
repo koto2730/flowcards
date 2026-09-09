@@ -2115,14 +2115,6 @@ const FlowEditorScreen = ({ route, navigation }) => {
                     small
                     visible={true}
                   />
-                  <FAB
-                    icon="file-tree"
-                    style={styles.fab}
-                    onPress={() => setShowSectionMap(s => !s)}
-                    color={showSectionMap ? '#34C759' : undefined}
-                    small
-                    visible={true}
-                  />
                 </View>
                 <View style={styles.fabGroup}>
                   <FAB
@@ -2135,6 +2127,14 @@ const FlowEditorScreen = ({ route, navigation }) => {
                     icon="target"
                     style={styles.fab}
                     onPress={() => runOnJS(moveToNearestCard)()}
+                    small
+                    visible={true}
+                  />
+                  <FAB
+                    icon="file-tree"
+                    style={styles.fab}
+                    onPress={() => setShowSectionMap(s => !s)}
+                    color={showSectionMap ? '#34C759' : undefined}
                     small
                     visible={true}
                   />
