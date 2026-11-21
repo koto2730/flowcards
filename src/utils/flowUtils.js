@@ -227,7 +227,12 @@ export const convertFlowToJSONCanvas = (flow, nodes, edges, attachments) => {
     return {
       ...baseNode,
       type: 'text',
-      text: `${node.label || ''}\n${node.description || ''}`.trim(),
+      // Keep the first line as the label even when it is empty, so the
+      // importer (which splits at the first newline) restores the fields.
+      text: node.description
+        ? `${node.label || ''}\n${node.description}`
+        : node.label || '',
+      ...(node.kind === 'comment' ? { flowcardsKind: 'comment' } : {}),
     };
   });
 

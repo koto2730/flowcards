@@ -32,6 +32,7 @@ const parseCanvas = canvas => {
       color: n.color || '#FFFFFF',
       label: '',
       description: '',
+      kind: n.flowcardsKind === 'comment' ? 'comment' : null,
     };
     if (n.type === 'text') {
       const text = String(n.text || '');
@@ -204,6 +205,7 @@ const insertFlowContents = async ({
         width: n.width,
         height: n.height,
         color: n.color || '#FFFFFF',
+        kind: n.kind || null,
       });
 
       const att = parsed.attachments[n.id];

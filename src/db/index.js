@@ -331,7 +331,7 @@ export const migrateAddColumnIfMissing = (table, column, type) => {
   });
 };
 
-export const initDB = lang => {
+const initDBBase = lang => {
   return new Promise((resolve, reject) => {
     db.transaction(tx => {
       tx.executeSql(
@@ -425,6 +425,9 @@ export const initDB = lang => {
     });
   });
 };
+
+export const initDB = lang =>
+  initDBBase(lang).then(() => migrateAddColumnIfMissing('nodes', 'kind', 'TEXT'));
 
 // --- attachments CRUD ---
 export const getAttachmentByNodeId = (flowId, nodeId) =>

@@ -371,6 +371,7 @@ const FlowListScreen = ({ navigation }) => {
           width: n.width,
           height: n.height,
           color: n.color,
+          kind: n.kind || null,
         });
         insertedNodeIds.push(newId);
       }
