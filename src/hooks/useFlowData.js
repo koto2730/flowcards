@@ -109,6 +109,7 @@ export const useFlowData = (flowId, isSeeThrough, alignModeOpen, t) => {
                 description: n.description ?? '',
                 size: size,
                 color: n.color ?? '#FFFFFF',
+                kind: n.kind === 'comment' ? 'comment' : 'card',
               },
               position: { x: n.x, y: n.y },
               size: { width: n.width, height: n.height },
@@ -388,6 +389,27 @@ export const useFlowData = (flowId, isSeeThrough, alignModeOpen, t) => {
     }
   };
 
+  const addCommentNode = async position => {
+    try {
+      await insertNode({
+        id: uuidv4(),
+        flowId: flowId,
+        parentId: currentParentId,
+        label: t('newComment'),
+        description: '',
+        x: position.x,
+        y: position.y,
+        width: CARD_SIZES.large.width,
+        height: CARD_SIZES.large.height,
+        color: '#FFF9C4',
+        kind: 'comment',
+      });
+      fetchData();
+    } catch (error) {
+      console.error('Failed to add comment node:', error);
+    }
+  };
+
   const addBulkNodes = async (labels, startPosition) => {
     const VERTICAL_SPACING = CARD_SIZES.medium.height + 20;
     try {
@@ -640,6 +662,7 @@ export const useFlowData = (flowId, isSeeThrough, alignModeOpen, t) => {
     handleUpdateNodeData,
     handleUpdateNodePosition,
     addNode,
+    addCommentNode,
     addBulkNodes,
     handleDeleteNode,
     handleDoubleClick,

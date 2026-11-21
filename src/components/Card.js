@@ -97,6 +97,7 @@ const SkiaCard = ({
   );
 
   const cardSize = node.data.size || 'medium';
+  const isComment = node.data.kind === 'comment';
   const layoutWidth = (node.size.width || CARD_MIN_WIDTH) - marginRow * 2;
 
   const imagePath = useMemo(() => {
@@ -214,9 +215,9 @@ const SkiaCard = ({
     builder.addText(node.data.label ?? '');
     builder.pop();
 
-    if (node.data.description && cardSize !== 'small') {
+    if (node.data.description && (isComment || cardSize !== 'small')) {
       let descriptionText = node.data.description;
-      if (cardSize === 'medium' && descriptionText.length > 8) {
+      if (!isComment && cardSize === 'medium' && descriptionText.length > 8) {
         descriptionText = descriptionText.substring(0, 8) + '...';
       }
       builder.pushStyle(descriptionStyle);
@@ -249,6 +250,7 @@ ${urlText}`);
     titleColor,
     descriptionColor,
     cardSize,
+    isComment,
   ]);
 
   const titleY = node.position.y + marginRow;
@@ -369,7 +371,7 @@ ${urlText}`);
             width={layoutWidth}
           />
         )}
-        {isSeeThroughParent ? (
+        {isSeeThroughParent || isComment ? (
           <Path
             path={borderPath}
             style="stroke"

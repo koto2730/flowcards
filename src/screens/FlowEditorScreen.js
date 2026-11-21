@@ -147,6 +147,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
     handleUpdateNodeData,
     handleUpdateNodePosition,
     addNode,
+    addCommentNode,
     addBulkNodes,
     handleDeleteNode,
     handleDoubleClick,
@@ -251,6 +252,20 @@ const FlowEditorScreen = ({ route, navigation }) => {
       title: flowName || 'Flow',
       headerStyle: { backgroundColor: OriginalTheme.colors.primary },
       headerTintColor: '#fff',
+      headerLeft: () => (
+        <TouchableOpacity
+          onPress={() =>
+            Alert.alert(t('leaveEditorTitle'), t('leaveEditorMessage'), [
+              { text: t('cancel'), style: 'cancel' },
+              { text: t('leave'), onPress: () => navigation.goBack() },
+            ])
+          }
+          style={{ marginLeft: 8, marginRight: 8, padding: 4 }}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Icon source="arrow-left" size={24} color="#fff" />
+        </TouchableOpacity>
+      ),
       headerRight: () => (
         <TouchableOpacity
           onPress={() => setBulkAddModalVisible(true)}
@@ -260,7 +275,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
         </TouchableOpacity>
       ),
     });
-  }, [navigation, flowName]);
+  }, [navigation, flowName, t]);
 
   const [pendingEvent, setPendingEvent] = useState(null);
 
@@ -278,11 +293,16 @@ const FlowEditorScreen = ({ route, navigation }) => {
           return;
         }
         await handleCardTap(nodeId);
-      } else if (type === 'doubleTap') {
+      } else if (type === 'enterSection') {
         // Block entering the cut card itself while in PASTE mode.
         // Since descendants can only be reached by entering the cut
         // card first, this single guard prevents all cycle scenarios.
         if (cutState.mode === 'pasting' && nodeId === cutState.cardId) {
+          return;
+        }
+        // Comment cards are notes, not sections.
+        const target = allNodes.find(n => n.id === nodeId);
+        if (target?.data?.kind === 'comment') {
           return;
         }
         handleDoubleClick(nodeId);
@@ -303,6 +323,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
     cutState.cardId,
     handleCardTap,
     handleDoubleClick,
+    allNodes,
     handleUpdateNodePosition,
     handleDeleteNode,
     handleDeleteEdge,
@@ -479,7 +500,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
     }
   });
 
-  const handleNodeLongPress = async hitNode => {
+  const handleNodeEdit = async hitNode => {
     // Disable editing while in Cut/Paste flow.
     if (cutState.mode !== 'inactive') return;
     try {
@@ -490,6 +511,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
         description: hitNode.data.description,
         size: hitNode.data.size || 'medium',
         color: hitNode.data.color || '#FFFFFF',
+        kind: hitNode.data.kind || 'card',
         attachment: attachment,
       });
     } catch (e) {
@@ -501,6 +523,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
         description: hitNode.data.description,
         size: hitNode.data.size || 'medium',
         color: hitNode.data.color || '#FFFFFF',
+        kind: hitNode.data.kind || 'card',
         attachment: null,
       });
     }
@@ -539,7 +562,10 @@ const FlowEditorScreen = ({ route, navigation }) => {
           .reverse()
           .find(node => isPointInCard(node, worldX, worldY));
         if (hitNode) {
-          runOnJS(handleNodeLongPress)(hitNode);
+          runOnJS(setPendingEvent)({
+            type: 'enterSection',
+            nodeId: hitNode.id,
+          });
         }
       }
     })
@@ -559,10 +585,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
           .reverse()
           .find(node => isPointInCard(node, worldX, worldY));
         if (hitNode) {
-          runOnJS(setPendingEvent)({
-            type: 'doubleTap',
-            nodeId: hitNode.id,
-          });
+          runOnJS(handleNodeEdit)(hitNode);
         }
       }
     });
@@ -591,6 +614,13 @@ const FlowEditorScreen = ({ route, navigation }) => {
       y: (10 - translateY.value) / scale.value,
     };
     addNode(position);
+  };
+
+  const handleAddComment = () => {
+    addCommentNode({
+      x: (10 - translateX.value) / scale.value,
+      y: (10 - translateY.value) / scale.value,
+    });
   };
 
   const handleStartCut = () => {
@@ -1623,6 +1653,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
         width: sourceNode?.size?.width || 150,
         height: sourceNode?.size?.height || 85,
         color: editingNode.color || sourceData.color || '#FFFFFF',
+        kind: sourceData.kind === 'comment' ? 'comment' : null,
       });
       nodeInserted = true;
 
@@ -2055,6 +2086,13 @@ const FlowEditorScreen = ({ route, navigation }) => {
                   visible={true}
                 />
                 <FAB
+                  icon="comment-text-outline"
+                  style={styles.alignToolButton}
+                  onPress={() => { setFabMenuOpen(false); handleAddComment(); }}
+                  small
+                  visible={true}
+                />
+                <FAB
                   icon="video"
                   style={styles.alignToolButton}
                   onPress={handleAddNodeFromVideo}
@@ -2257,7 +2295,7 @@ const FlowEditorScreen = ({ route, navigation }) => {
                   style={styles.input}
                   placeholder={t('title')}
                   autoFocus
-                  maxLength={16}
+                  maxLength={editingNode.kind === 'comment' ? 40 : 16}
                 />
                 <TextInput
                   value={editingNode.description}
@@ -2267,8 +2305,11 @@ const FlowEditorScreen = ({ route, navigation }) => {
                   style={styles.input}
                   placeholder={t('description')}
                   multiline
-                  maxLength={100}
-                  editable={editingNode.size !== 'small'}
+                  maxLength={editingNode.kind === 'comment' ? 800 : 100}
+                  editable={
+                    editingNode.kind === 'comment' ||
+                    editingNode.size !== 'small'
+                  }
                 />
                 <SegmentedButtons
                   value={editingNode.size}
