@@ -32,6 +32,19 @@ target 'FlowCards' do
       # :ccache_enabled => true,
     )
 
+    # Some pods (e.g. the RNImagePickerPrivacyInfo resource bundle) still
+    # declare iOS 9.0, which recent Xcode rejects. Raise anything older than
+    # React Native's minimum. Reapplies on every pod install.
+    min_ios = Gem::Version.new(min_ios_version_supported)
+    installer.pods_project.targets.each do |t|
+      t.build_configurations.each do |c|
+        current = c.build_settings['IPHONEOS_DEPLOYMENT_TARGET']
+        if current && Gem::Version.new(current) < min_ios
+          c.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = min_ios.to_s
+        end
+      end
+    end
+
     # Xcode 26.5+ clang strict consteval workaround for fmt 11.0.2.
     # base.h self-defines FMT_USE_CONSTEVAL based on compiler detection and
     # ignores preprocessor overrides, so we patch the header to force
